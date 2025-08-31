@@ -4,19 +4,52 @@ import { GameState } from '@/types/game';
 import { gameApi } from '@/services/gameApi';
 import Authenticated from '@/Layouts/AuthenticatedLayout';
 
-// Import game components
+// Import multi-stage components
+import StageProgress from '@/Components/Game/StageProgress';
 import GamePlay from '@/Components/Game/GamePlay';
-import CodeAnalysisView from '@/Components/Game/CodeAnalysisView';
+import StageTransition from '@/Components/Game/StageTransition';
+// Fix: Change the import path to match the actual component location
+// You need to check if this component exists, if not, create it or use a different path
+// import GameComplete from '@/Components/Game/GameComplete';
 
 interface Props {
   sessionId: number;
   role?: 'defuser' | 'expert' | 'host';
 }
 
+interface StageResult {
+  stageComplete?: boolean;
+  gameComplete?: boolean;
+  nextStage?: number;
+  stageScore?: number;
+  finalScore?: number;
+  message?: string;
+  attemptsRemaining?: number;
+}
+
+// Fix: Update GameState interface to include stage property
+interface ExtendedGameState extends GameState {
+  stage?: {
+    current?: number;
+    total?: number;
+    config?: {
+      title?: string;
+      timeLimit?: number;
+      maxAttempts?: number;
+    };
+    progress?: {
+      completed?: number[];
+      totalScore?: number;
+    };
+  };
+}
+
 export default function GameSession({ sessionId, role }: Props) {
-  const [gameState, setGameState] = useState<GameState | null>(null);
+  const [gameState, setGameState] = useState<ExtendedGameState | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>('');
+  const [showTransition, setShowTransition] = useState(false);
+  const [stageResult, setStageResult] = useState<StageResult | null>(null);
 
   useEffect(() => {
     if (!sessionId) {
@@ -30,7 +63,7 @@ export default function GameSession({ sessionId, role }: Props) {
         const state = await gameApi.getGameState(sessionId);
 
         if (state && state.session) {
-          const safeState: GameState = {
+          const safeState: ExtendedGameState = {
             ...state,
             session: {
               ...state.session,
@@ -57,28 +90,34 @@ export default function GameSession({ sessionId, role }: Props) {
 
   const handleStartSession = async () => {
     try {
-      console.log('🚀 Starting session...');
+      console.log('🚀 Starting multi-stage session...');
       await gameApi.startSession(sessionId);
+
       // Refresh game state after starting
-      const state = await gameApi.getGameState(sessionId);
-      if (state) {
-        const safeState: GameState = {
-          ...state,
-          session: {
-            ...state.session,
-            participants: Array.isArray(state.session.participants) ? state.session.participants : [],
-            attempts: Array.isArray(state.session.attempts) ? state.session.attempts : [],
+      setTimeout(() => {
+        const loadState = async () => {
+          const state = await gameApi.getGameState(sessionId);
+          if (state) {
+            const safeState: ExtendedGameState = {
+              ...state,
+              session: {
+                ...state.session,
+                participants: Array.isArray(state.session.participants) ? state.session.participants : [],
+                attempts: Array.isArray(state.session.attempts) ? state.session.attempts : [],
+              }
+            };
+            setGameState(safeState);
           }
         };
-        setGameState(safeState);
-      }
+        loadState();
+      }, 1000);
     } catch (error: any) {
       console.error('Error starting session:', error);
       alert(error.response?.data?.message || 'Failed to start session');
     }
   };
 
-  const handleSubmitAttempt = async (inputValue: string) => {
+  const handleAttemptSubmit = async (inputValue: string) => {
     if (!gameState) return;
 
     try {
@@ -88,11 +127,48 @@ export default function GameSession({ sessionId, role }: Props) {
         inputValue
       );
 
-      const newGameState = {
-        ...gameState,
-        session: result.session
-      };
-      setGameState(newGameState);
+      // Check if stage or game completed
+      if (result.stageComplete || result.gameComplete) {
+        setStageResult(result);
+        setShowTransition(true);
+
+        // Auto-hide transition after 4 seconds and reload state
+        setTimeout(() => {
+          setShowTransition(false);
+          setStageResult(null);
+
+          // Reload game state for next stage or completion
+          const loadState = async () => {
+            const state = await gameApi.getGameState(sessionId);
+            if (state) {
+              const safeState: ExtendedGameState = {
+                ...state,
+                session: {
+                  ...state.session,
+                  participants: Array.isArray(state.session.participants) ? state.session.participants : [],
+                  attempts: Array.isArray(state.session.attempts) ? state.session.attempts : [],
+                }
+              };
+              setGameState(safeState);
+            }
+          };
+          loadState();
+        }, 4000);
+      } else {
+        // Update state for incorrect attempt or partial progress
+        setGameState({
+          ...gameState,
+          session: {
+            ...gameState.session,
+            attempts: result.session?.attempts || gameState.session.attempts
+          }
+        });
+
+        // Show attempts remaining if provided
+        if (result.attemptsRemaining !== undefined) {
+          console.log(`Attempts remaining: ${result.attemptsRemaining}`);
+        }
+      }
     } catch (error: any) {
       console.error('Error submitting attempt:', error);
       alert(error.response?.data?.message || 'Failed to submit attempt');
@@ -102,12 +178,13 @@ export default function GameSession({ sessionId, role }: Props) {
   if (loading) {
     return (
       <Authenticated>
-        <Head title="Loading..." />
+        <Head title="Loading Multi-Stage Challenge..." />
         <div className="py-12">
           <div className="max-w-7xl mx-auto sm:px-6 lg:px-8">
             <div className="bg-white shadow-sm sm:rounded-lg p-6 text-center">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-              <p>Loading game session...</p>
+              <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-500 mx-auto mb-4"></div>
+              <h3 className="text-lg font-semibold text-gray-700 mb-2">Loading Multi-Stage Challenge</h3>
+              <p className="text-gray-500">Preparing your adventure...</p>
             </div>
           </div>
         </div>
@@ -122,20 +199,23 @@ export default function GameSession({ sessionId, role }: Props) {
         <div className="py-12">
           <div className="max-w-7xl mx-auto sm:px-6 lg:px-8">
             <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
-              <div className="text-red-600 text-xl mb-4">⚠️ Error</div>
-              <p className="text-red-600 mb-4">{error || 'No game data available'}</p>
-              <button
-                onClick={() => window.location.reload()}
-                className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600 mr-2"
-              >
-                Retry
-              </button>
-              <button
-                onClick={() => window.location.href = '/game'}
-                className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600"
-              >
-                Back to Lobby
-              </button>
+              <div className="text-red-600 text-4xl mb-4">⚠️</div>
+              <h3 className="text-xl font-semibold text-red-800 mb-2">Connection Error</h3>
+              <p className="text-red-600 mb-6">{error || 'Unable to load game data'}</p>
+              <div className="space-x-4">
+                <button
+                  onClick={() => window.location.reload()}
+                  className="bg-red-500 text-white px-6 py-2 rounded-lg hover:bg-red-600 transition-colors"
+                >
+                  Retry Connection
+                </button>
+                <button
+                  onClick={() => window.location.href = '/game'}
+                  className="bg-gray-500 text-white px-6 py-2 rounded-lg hover:bg-gray-600 transition-colors"
+                >
+                  Back to Lobby
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -143,95 +223,211 @@ export default function GameSession({ sessionId, role }: Props) {
     );
   }
 
-  const { session, puzzle } = gameState;
+  const { session, puzzle, stage } = gameState;
   const participants = session.participants || [];
-  const attempts = session.attempts || [];
 
-  // Debug logging
-  console.log('🔍 GameSession render:', {
-    sessionStatus: session.status,
-    role,
-    puzzleType: puzzle?.type,
-    participants: participants.length
-  });
+  // Show transition screen between stages
+  if (showTransition && stageResult) {
+    return (
+      <Authenticated>
+        <Head title="Stage Transition" />
+        <StageTransition
+          result={stageResult}
+          currentStage={stage?.current}
+          totalStages={stage?.total}
+        />
+      </Authenticated>
+    );
+  }
+
+  // Fix: Change the comparison to check for 'completed' or 'success' status
+  // Show final game completion screen
+  if (session.status === 'completed' || session.status === 'success') {
+    return (
+      <Authenticated>
+        <Head title="Mission Accomplished!" />
+        <div className="py-12">
+          <div className="max-w-4xl mx-auto sm:px-6 lg:px-8">
+            <div className="bg-green-50 border border-green-200 rounded-lg p-8 text-center">
+              <div className="text-6xl mb-4">🎉</div>
+              <h2 className="text-3xl font-bold text-green-800 mb-4">Mission Accomplished!</h2>
+              <p className="text-green-600 mb-6 text-lg">
+                Congratulations! You have successfully completed all stages of the challenge.
+              </p>
+
+              {/* Show final stage progress */}
+              {stage && (
+                <div className="mb-6">
+                  <StageProgress
+                    current={stage.current || 1}
+                    total={stage.total || 3}
+                    completed={stage.progress?.completed || []}
+                    totalScore={stage.progress?.totalScore || 0}
+                  />
+                </div>
+              )}
+
+              <div className="space-x-4">
+                <button
+                  onClick={() => window.location.href = '/game'}
+                  className="bg-blue-500 hover:bg-blue-600 text-white px-8 py-3 rounded-lg text-lg font-medium transition-colors"
+                >
+                  Play Again
+                </button>
+                <button
+                  onClick={() => window.location.href = '/dashboard'}
+                  className="bg-gray-500 hover:bg-gray-600 text-white px-8 py-3 rounded-lg text-lg font-medium transition-colors"
+                >
+                  Back to Dashboard
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Authenticated>
+    );
+  }
+
+  // Show game failure screen
+  if (session.status === 'failed') {
+    return (
+      <Authenticated>
+        <Head title="Mission Failed" />
+        <div className="py-12">
+          <div className="max-w-4xl mx-auto sm:px-6 lg:px-8">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-8 text-center">
+              <div className="text-6xl mb-4">💥</div>
+              <h2 className="text-3xl font-bold text-red-800 mb-4">Mission Failed</h2>
+              <p className="text-red-600 mb-6 text-lg">
+                The challenge could not be completed within the given constraints.
+              </p>
+
+              {/* Show stage progress even in failure */}
+              {stage && (
+                <div className="mb-6">
+                  <StageProgress
+                    current={stage.current || 1}
+                    total={stage.total || 3}
+                    completed={stage.progress?.completed || []}
+                    totalScore={stage.progress?.totalScore || 0}
+                  />
+                </div>
+              )}
+
+              <div className="space-x-4">
+                <button
+                  onClick={() => window.location.href = '/game'}
+                  className="bg-blue-500 hover:bg-blue-600 text-white px-8 py-3 rounded-lg text-lg font-medium transition-colors"
+                >
+                  Try Again
+                </button>
+                <button
+                  onClick={() => window.location.href = '/dashboard'}
+                  className="bg-gray-500 hover:bg-gray-600 text-white px-8 py-3 rounded-lg text-lg font-medium transition-colors"
+                >
+                  Back to Dashboard
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Authenticated>
+    );
+  }
 
   return (
     <Authenticated>
-      <Head title={`Session ${session.team_code}`} />
-      <div className="py-12">
+      <Head title={`Multi-Stage Challenge - ${session.team_code}`} />
+      <div className="py-8">
         <div className="max-w-7xl mx-auto sm:px-6 lg:px-8 space-y-6">
 
-          {/* Debug Info - TEMPORARY */}
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-            <h3 className="font-bold text-yellow-800 mb-2">🐛 GameSession Debug:</h3>
-            <p className="text-sm text-yellow-700">SessionId: <strong>{sessionId}</strong></p>
-            <p className="text-sm text-yellow-700">Status: <strong>{session.status}</strong></p>
-            <p className="text-sm text-yellow-700">Role: <strong>{role || 'undefined'}</strong></p>
-            <p className="text-sm text-yellow-700">Puzzle Type: <strong>{puzzle?.type || 'unknown'}</strong></p>
-            <p className="text-sm text-yellow-700">Participants: <strong>{participants.length}</strong></p>
-            <p className="text-sm text-yellow-700">Has Puzzle Data: <strong>{!!puzzle ? 'YES' : 'NO'}</strong></p>
-          </div>
-
-          {/* Session Header */}
+          {/* Session Header with Stage Info */}
           <div className="bg-white shadow-sm sm:rounded-lg p-6">
             <div className="flex items-center justify-between">
               <div>
-                <h1 className="text-2xl font-bold text-gray-800">
+                <h1 className="text-3xl font-bold text-gray-800">
                   Session: {session.team_code}
                 </h1>
-                <p className="text-gray-600">
+                <p className="text-gray-600 mt-1">
                   Status: <span className={`font-semibold ${
                     session.status === 'waiting' ? 'text-yellow-600' :
                     session.status === 'running' ? 'text-blue-600' :
                     session.status === 'success' ? 'text-green-600' :
                     'text-red-600'
-                  }`}>{session.status}</span>
+                  }`}>{session.status.toUpperCase()}</span>
                 </p>
                 <p className="text-sm text-gray-500">
-                  Your role: <span className="font-medium">{role || 'Observer'}</span>
+                  Your role: <span className="font-medium capitalize">{role || 'Observer'}</span>
                 </p>
               </div>
               <div className="text-right">
-                <div className="text-lg font-bold text-blue-600">
+                <div className="text-2xl font-bold text-blue-600">
                   {participants.length}/2
                 </div>
-                <div className="text-sm text-gray-500">Players</div>
+                <div className="text-sm text-gray-500">Players Ready</div>
               </div>
             </div>
           </div>
 
-          {/* MAIN GAME RENDERING LOGIC */}
+          {/* WAITING STATE - Pre-Game */}
           {session.status === 'waiting' && (
-            <div className="bg-white shadow-sm sm:rounded-lg p-6">
+            <div className="bg-white shadow-sm sm:rounded-lg p-8">
               <div className="text-center">
-                <h2 className="text-xl font-semibold text-yellow-600 mb-4">
-                  🕐 Waiting for Game to Start
+                <div className="text-6xl mb-4">🚀</div>
+                <h2 className="text-2xl font-semibold text-yellow-600 mb-6">
+                  Preparing Multi-Stage Challenge
                 </h2>
 
                 {participants.length < 2 ? (
                   <div>
-                    <p className="text-gray-600 mb-6">
+                    <p className="text-gray-600 mb-8 text-lg">
                       Waiting for more players to join... ({participants.length}/2)
                     </p>
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                      <p className="text-blue-800 font-medium mb-2">
-                        Invite a friend to join!
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 max-w-md mx-auto">
+                      <p className="text-blue-800 font-medium mb-3">
+                        🎮 Invite a teammate to join this epic challenge!
                       </p>
-                      <p className="text-sm text-blue-600">
-                        Share this team code: <span className="font-mono font-bold">{session.team_code}</span>
-                      </p>
+                      <div className="bg-white border border-blue-300 rounded p-3">
+                        <p className="text-sm text-blue-600 mb-1">Share this team code:</p>
+                        <p className="font-mono font-bold text-lg text-blue-800">{session.team_code}</p>
+                      </div>
                     </div>
                   </div>
                 ) : (
                   <div>
-                    <p className="text-gray-600 mb-6">
-                      All players ready! ({participants.length}/2)
+                    <p className="text-gray-600 mb-8 text-lg">
+                      All players ready! Time to begin the 3-stage challenge. ({participants.length}/2)
                     </p>
+
+                    <div className="bg-green-50 border border-green-200 rounded-lg p-6 mb-6 max-w-2xl mx-auto">
+                      <h3 className="font-bold text-green-800 mb-3">🎯 Mission Overview</h3>
+                      <div className="grid md:grid-cols-3 gap-4 text-sm">
+                        <div className="text-center">
+                          <div className="bg-green-100 rounded-full w-12 h-12 flex items-center justify-center mx-auto mb-2">
+                            <span className="font-bold text-green-700">1</span>
+                          </div>
+                          <p className="font-medium text-green-700">Pattern Analysis</p>
+                        </div>
+                        <div className="text-center">
+                          <div className="bg-green-100 rounded-full w-12 h-12 flex items-center justify-center mx-auto mb-2">
+                            <span className="font-bold text-green-700">2</span>
+                          </div>
+                          <p className="font-medium text-green-700">Code Analysis</p>
+                        </div>
+                        <div className="text-center">
+                          <div className="bg-green-100 rounded-full w-12 h-12 flex items-center justify-center mx-auto mb-2">
+                            <span className="font-bold text-green-700">3</span>
+                          </div>
+                          <p className="font-medium text-green-700">Navigation Challenge</p>
+                        </div>
+                      </div>
+                    </div>
+
                     <button
                       onClick={handleStartSession}
-                      className="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-8 rounded-lg text-lg transition-colors shadow-lg"
+                      className="bg-gradient-to-r from-green-600 to-blue-600 hover:from-green-700 hover:to-blue-700 text-white font-bold py-4 px-12 rounded-lg text-xl transition-all duration-300 shadow-lg transform hover:scale-105"
                     >
-                      🚀 Start Game
+                      🚀 Begin Multi-Stage Challenge
                     </button>
                   </div>
                 )}
@@ -239,80 +435,75 @@ export default function GameSession({ sessionId, role }: Props) {
             </div>
           )}
 
-          {/* GAME IS RUNNING - RENDER GAMEPLAY COMPONENT */}
+          {/* ACTIVE GAME STATE - Multi-Stage Gameplay */}
           {session.status === 'running' && (
             <div className="space-y-6">
-              {/* Game Status Header */}
-              <div className="bg-gray-900 text-white rounded-lg p-6 text-center">
-                <div className="text-sm text-gray-300 mb-2">GAME IS ACTIVE</div>
-                <div className="text-2xl font-bold text-green-400">
-                  Challenge: {puzzle?.title || 'Loading...'}
-                </div>
-                <div className="text-sm text-gray-400 mt-2">
-                  Type: {puzzle?.type || 'Unknown'}
+              {/* Stage Progress Header */}
+              {stage && (
+                <StageProgress
+                  current={stage.current || 1}
+                  total={stage.total || 3}
+                  completed={stage.progress?.completed || []}
+                  totalScore={stage.progress?.totalScore || 0}
+                />
+              )}
+
+              {/* Current Stage Header */}
+              <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg p-6 text-center">
+                <h1 className="text-3xl font-bold mb-2">
+                  {stage?.config?.title || puzzle?.title || 'Current Challenge'}
+                </h1>
+                <div className="flex justify-center space-x-8 text-sm">
+                  <span className="flex items-center">
+                    <span className="mr-2">⏱️</span>
+                    Time Limit: {Math.floor((stage?.config?.timeLimit || 0) / 60)} min
+                  </span>
+                  <span className="flex items-center">
+                    <span className="mr-2">🎯</span>
+                    Max Attempts: {stage?.config?.maxAttempts || 'N/A'}
+                  </span>
+                  <span className="flex items-center">
+                    <span className="mr-2">📊</span>
+                    Stage: {stage?.current || 1}/{stage?.total || 3}
+                  </span>
                 </div>
               </div>
 
-              {/* RENDER GAMEPLAY COMPONENT - THIS IS THE KEY FIX */}
-              <div className="bg-purple-50 border-2 border-purple-300 rounded-lg p-4">
-                <h3 className="font-bold text-purple-800 mb-2">🎮 GAME COMPONENT:</h3>
-                <p className="text-sm text-purple-700 mb-4">
-                  Rendering GamePlay component for puzzle type: <strong>{puzzle?.type}</strong>
-                </p>
-
+              {/* Main Game Interface - Fix: Remove onSubmitAttempt prop if not supported */}
+              <div className="bg-white rounded-lg shadow-sm border p-6">
                 <GamePlay
                   gameState={gameState}
                   role={role}
-                  onGameStateUpdate={setGameState}
                 />
               </div>
             </div>
           )}
 
-          {/* GAME COMPLETED */}
-          {(session.status === 'success' || session.status === 'failed') && (
-            <div className="bg-white shadow-sm sm:rounded-lg p-6 text-center">
-              <h2 className={`text-xl font-semibold mb-4 ${
-                session.status === 'success' ? 'text-green-600' : 'text-red-600'
-              }`}>
-                {session.status === 'success' ? '🎉 Mission Accomplished!' : '💥 Mission Failed'}
-              </h2>
-              <p className="text-gray-600 mb-6">
-                {session.status === 'success'
-                  ? 'Congratulations! You successfully completed the challenge.'
-                  : 'Better luck next time! The challenge was not completed.'}
-              </p>
-              <button
-                onClick={() => window.location.href = '/game'}
-                className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded"
-              >
-                Back to Lobby
-              </button>
-            </div>
-          )}
-
-          {/* Participants List - Always visible */}
+          {/* Participants List - Always visible when not in transition */}
           <div className="bg-white shadow-sm sm:rounded-lg p-6">
-            <h2 className="text-lg font-semibold mb-4">
-              Participants ({participants.length})
+            <h2 className="text-lg font-semibold mb-4 flex items-center">
+              <span className="mr-2">👥</span>
+              Team Members ({participants.length})
             </h2>
-            <div className="space-y-3">
+            <div className="grid md:grid-cols-2 gap-3">
               {participants.map((participant, index) => (
                 <div
                   key={participant.id || index}
-                  className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+                  className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border"
                 >
                   <div className="flex items-center space-x-3">
-                    <div className={`w-3 h-3 rounded-full ${
+                    <div className={`w-4 h-4 rounded-full ${
                       participant.role === 'defuser' ? 'bg-red-500' : 'bg-blue-500'
                     }`}></div>
-                    <span className="font-medium">{participant.nickname}</span>
-                    <span className="text-sm text-gray-500 capitalize">
-                      ({participant.role === 'defuser' ? '💣 Defuser' : '📖 Expert'})
-                    </span>
+                    <div>
+                      <span className="font-medium text-gray-800">{participant.nickname}</span>
+                      <div className="text-sm text-gray-500 capitalize">
+                        {participant.role === 'defuser' ? '💣 Bomb Defuser' : '📖 Expert Guide'}
+                      </div>
+                    </div>
                   </div>
                   {participant.role === role && (
-                    <span className="text-sm bg-green-100 text-green-600 px-2 py-1 rounded">
+                    <span className="text-sm bg-green-100 text-green-700 px-3 py-1 rounded-full font-medium">
                       You
                     </span>
                   )}
