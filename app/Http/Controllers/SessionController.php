@@ -3,708 +3,321 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
-use App\Models\{Stage, GameSession, SessionParticipant, Attempt};
-use Illuminate\Support\Facades\Log;
+use Illuminate\Http\Controller;
+use App\Models\GameSession;
+use App\Models\GameAttempt;
+use Carbon\Carbon;
 
 class SessionController extends Controller
 {
-    /**
-     * Create new game session
-     */
-    public function create(Request $req)
+    private $stageConfigurations = [
+        1 => [
+            'title' => 'Stage 1: Pattern Analysis',
+            'type' => 'pattern_analysis',
+            'maxAttempts' => 3,
+            'timeLimit' => 300, // 5 minutes
+        ],
+        2 => [
+            'title' => 'Stage 2: Code Analysis',
+            'type' => 'code_analysis',
+            'maxAttempts' => 3,
+            'timeLimit' => 400, // 6.67 minutes
+        ],
+        3 => [
+            'title' => 'Stage 3: Navigation Challenge',
+            'type' => 'navigation_challenge',
+            'maxAttempts' => 2,
+            'timeLimit' => 600, // 10 minutes
+        ]
+    ];
+
+    public function state($sessionId)
     {
-        $validated = $req->validate(['stage_id' => 'required|exists:stages,id']);
-        $stage = Stage::findOrFail($validated['stage_id']);
+        $session = GameSession::with(['participants', 'attempts'])->findOrFail($sessionId);
 
-        $session = GameSession::create([
-            'stage_id' => $stage->id,
-            'team_code' => GameSession::generateTeamCode(),
-            'status' => 'waiting',
-            'learning_progress' => [],
-            'hint_count' => 0,
-            'peer_feedback' => [],
-            'collaboration_score' => 0
-        ]);
+        $currentStage = $session->current_stage ?? 1;
+        $stageConfig = $this->stageConfigurations[$currentStage];
 
-        return response()->json($session);
-    }
-
-    /**
-     * Join existing game session
-     */
-    public function join(Request $req)
-    {
-        $data = $req->validate([
-            'team_code' => 'required|string|exists:game_sessions,team_code',
-            'role' => 'required|in:defuser,expert',
-            'nickname' => 'required|string|max:32'
-        ]);
-
-        $session = GameSession::where('team_code', $data['team_code'])->first();
-
-        if ($session->status !== 'waiting' && $session->status !== 'running') {
-            return response()->json(['message' => 'Session is closed'], 400);
-        }
-
-        if ($session->participants()->where('role', $data['role'])->exists()) {
-            return response()->json(['message' => 'Role already taken'], 409);
-        }
-
-        $participant = $session->participants()->create($data);
-
-        return response()->json([
-            'session' => $this->formatSessionData($session),
-            'participant' => $participant
-        ]);
-    }
-
-    /**
-     * Start game session
-     */
-    public function start($id)
-    {
-        $session = GameSession::findOrFail($id);
-
-        if ($session->status !== 'waiting') {
-            return response()->json(['message' => 'Already started'], 400);
-        }
-
-        $timeLimit = $session->stage->config['timeLimit'] ?? 180;
-
-        $session->update([
-            'status' => 'running',
-            'started_at' => now(),
-            'ends_at' => now()->addSeconds($timeLimit)
-        ]);
-
-        return response()->json($this->formatSessionData($session));
-    }
-
-    /**
-     * Get current game state - PERBAIKAN UTAMA
-     */
-    public function state($id)
-    {
-        try {
-            $session = GameSession::with(['participants', 'attempts', 'stage.mission'])->findOrFail($id);
-
-            if (!$session->stage || !$session->stage->config) {
-                return response()->json(['message' => 'Stage configuration not found'], 404);
-            }
-
-            $cfg = $session->stage->config;
-
-            if (!isset($cfg['puzzles']) || empty($cfg['puzzles'])) {
-                return response()->json(['message' => 'Puzzle configuration not found'], 404);
-            }
-
-            // **PERBAIKAN: Format session data dengan participants & attempts yang selalu array**
-            $sessionData = $this->formatSessionData($session);
-
-            $puzzle = $cfg['puzzles'][0];
-            $seed = crc32($session->team_code . $session->id);
-
-            // Handle different puzzle types
-            switch ($puzzle['type'] ?? 'symbol_mapping') {
-                case 'code_analysis':
-                    return $this->handleCodeAnalysisPuzzle($sessionData, $puzzle);
-
-                case 'pattern_analysis':
-                    return $this->handlePatternAnalysisPuzzle($sessionData, $puzzle, $seed);
-
-                case 'navigation_challenge':
-                    return $this->handleNavigationChallenge($sessionData, $puzzle, $seed);
-
-                default:
-                    return $this->handleSymbolMappingPuzzle($sessionData, $puzzle, $seed);
-            }
-
-        } catch (\Exception $e) {
-            Log::error('Error in session state:', [
-                'session_id' => $id,
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
+        if ($session->status === 'running') {
+            $puzzle = $this->generatePuzzleForStage($currentStage, $session->seed);
 
             return response()->json([
-                'message' => 'Internal server error',
-                'error' => config('app.debug') ? $e->getMessage() : 'Something went wrong'
-            ], 500);
-        }
-    }
-
-    /**
-     * Format session data - HELPER METHOD BARU
-     */
-    private function formatSessionData($session)
-    {
-        // Pastikan session fresh dengan relasi
-        $session->load(['participants', 'attempts', 'stage.mission']);
-
-        return [
-            'id' => $session->id,
-            'team_code' => $session->team_code,
-            'status' => $session->status,
-            'started_at' => $session->started_at,
-            'ends_at' => $session->ends_at,
-            'participants' => $session->participants->toArray(), // Force to array
-            'attempts' => $session->attempts->toArray(),         // Force to array
-            'stage' => [
-                'id' => $session->stage->id,
-                'name' => $session->stage->name,
-                'config' => $session->stage->config,
-                'mission' => $session->stage->mission ? [
-                    'id' => $session->stage->mission->id,
-                    'code' => $session->stage->mission->code,
-                    'title' => $session->stage->mission->title,
-                    'description' => $session->stage->mission->description,
-                ] : null
-            ],
-            // Stage 2 additional fields with defaults
-            'learning_progress' => $session->learning_progress ?? [],
-            'hint_count' => $session->hint_count ?? 0,
-            'peer_feedback' => $session->peer_feedback ?? [],
-            'collaboration_score' => $session->collaboration_score ?? 0,
-        ];
-    }
-
-    /**
-     * Handle code analysis puzzle type
-     */
-    private function handleCodeAnalysisPuzzle($sessionData, $puzzle)
-    {
-        return response()->json([
-            'session' => $sessionData,
-            'puzzle' => [
-                'key' => $puzzle['key'],
-                'type' => $puzzle['type'],
-                'title' => $puzzle['title'],
-                'description' => $puzzle['description'],
-                'codeSnippet' => $puzzle['codeSnippet'],
-                'testInput' => $puzzle['testInput'],
-                'expectedOutput' => $puzzle['expectedOutput'],
-                'defuserView' => [
-                    'codeLines' => $puzzle['codeSnippet'],
-                    'testCase' => [
-                        'input' => $puzzle['testInput'],
-                        'expected' => $puzzle['expectedOutput']
+                'session' => $session,
+                'puzzle' => $puzzle,
+                'stage' => [
+                    'current' => $currentStage,
+                    'total' => count($this->stageConfigurations),
+                    'config' => $stageConfig,
+                    'progress' => [
+                        'completed' => $session->stages_completed ?? [],
+                        'totalScore' => $session->total_score ?? 0,
                     ]
                 ],
-                'expertView' => [
-                    'bugs' => $puzzle['bugs'],
-                    'solutions' => $puzzle['solutions']
-                ],
-                'learningObjectives' => $sessionData['stage']['config']['learningObjectives'] ?? []
-            ],
-            'serverTime' => now()->toISOString()
-        ]);
-    }
-
-    /**
-     * Handle pattern analysis puzzle type
-     */
-    private function handlePatternAnalysisPuzzle($sessionData, $puzzle, $seed)
-    {
-        mt_srand($seed);
-        $sequences = $puzzle['sequences'];
-        $selectedSequence = $sequences[mt_rand(0, count($sequences) - 1)];
-
-        return response()->json([
-            'session' => $sessionData,
-            'puzzle' => [
-                'key' => $puzzle['key'],
-                'type' => $puzzle['type'],
-                'title' => $puzzle['title'],
-                'description' => $puzzle['description'],
-                'defuserView' => [
-                    'pattern' => $selectedSequence['pattern'],
-                    'hints' => $puzzle['hints'],
-                    'sequenceId' => $selectedSequence['id']
-                ],
-                'expertView' => [
-                    'rule' => $selectedSequence['rule'],
-                    'answer' => $selectedSequence['answer'],
-                    'category' => $selectedSequence['category']
-                ],
-                'learningObjectives' => $sessionData['stage']['config']['learningObjectives'] ?? []
-            ],
-            'serverTime' => now()->toISOString()
-        ]);
-    }
-
-    /**
-     * Handle navigation challenge puzzle type
-     */
-    private function handleNavigationChallenge($sessionData, $puzzle, $seed)
-    {
-        mt_srand($seed);
-        $challenges = $puzzle['challenges'];
-        $selectedChallenge = $challenges[mt_rand(0, count($challenges) - 1)];
-
-        return response()->json([
-            'session' => $sessionData,
-            'puzzle' => [
-                'key' => $puzzle['key'],
-                'type' => $puzzle['type'],
-                'title' => $puzzle['title'],
-                'description' => $puzzle['description'],
-                'defuserView' => [
-                    'task' => $selectedChallenge['task'],
-                    'traversalOptions' => ['left', 'right', 'root']
-                ],
-                'expertView' => [
-                    'tree' => $puzzle['tree'],
-                    'answer' => $selectedChallenge['answer'],
-                    'explanation' => $selectedChallenge['explanation'],
-                    'traversalMethods' => $puzzle['traversalMethods']
-                ],
-                'learningObjectives' => $sessionData['stage']['config']['learningObjectives'] ?? []
-            ],
-            'serverTime' => now()->toISOString()
-        ]);
-    }
-
-    /**
-     * Handle original symbol mapping puzzle type
-     */
-    private function handleSymbolMappingPuzzle($sessionData, $puzzle, $seed)
-    {
-        mt_srand($seed);
-        $symbols = $puzzle['symbols'];
-        $pick = [];
-        $pool = $symbols;
-
-        for ($i = 0; $i < 3; $i++) {
-            if (count($pool) === 0) break;
-            $idx = mt_rand(0, count($pool) - 1);
-            $pick[] = $pool[$idx];
-            array_splice($pool, $idx, 1);
+                'serverTime' => now()->toISOString()
+            ]);
         }
 
         return response()->json([
-            'session' => $sessionData,
-            'puzzle' => [
-                'key' => $puzzle['key'],
-                'symbols' => $pick,
-                'mappingAvailableTo' => 'expert',
-                'type' => 'symbol_mapping',
-                'mapping' => $puzzle['mapping'] ?? []
+            'session' => $session,
+            'stage' => [
+                'current' => $currentStage,
+                'total' => count($this->stageConfigurations),
+                'config' => $stageConfig,
             ],
             'serverTime' => now()->toISOString()
         ]);
     }
 
-    /**
-     * Submit puzzle attempt
-     */
-    public function attempt($id, Request $req)
+    public function attempt(Request $request, $sessionId)
     {
-        $session = GameSession::with(['stage', 'participants', 'attempts'])->findOrFail($id);
+        $session = GameSession::findOrFail($sessionId);
 
         if ($session->status !== 'running') {
-            return response()->json(['message' => 'Not running'], 400);
+            return response()->json(['message' => 'Session is not active'], 400);
         }
 
-        if (now()->greaterThan($session->ends_at)) {
-            $session->update(['status' => 'failed']);
-            return response()->json([
-                'message' => 'Time up',
-                'session' => $this->formatSessionData($session)
-            ], 400);
-        }
+        $currentStage = $session->current_stage ?? 1;
+        $puzzle = $this->generatePuzzleForStage($currentStage, $session->seed);
 
-        $data = $req->validate([
-            'puzzle_key' => 'required|string',
-            'input' => 'required|string',
-            'attempt_type' => 'string|nullable'
-        ]);
+        $isCorrect = $this->validateAnswer($puzzle, $request->input);
 
-        $cfg = $session->stage->config;
-        $puzzle = $cfg['puzzles'][0];
-
-        $isCorrect = $this->validateAttempt($session, $puzzle, $data);
-
-        $attempt = $session->attempts()->create([
-            'puzzle_key' => $data['puzzle_key'],
-            'input' => $data['input'],
-            'is_correct' => $isCorrect
+        // Record attempt
+        $attempt = GameAttempt::create([
+            'game_session_id' => $sessionId,
+            'stage' => $currentStage,
+            'input' => $request->input,
+            'is_correct' => $isCorrect,
+            'puzzle_key' => $puzzle['key'] ?? "stage_{$currentStage}",
         ]);
 
         if ($isCorrect) {
-            $session->update(['status' => 'success']);
-            $this->updateLearningProgress($session, $puzzle);
-            $this->updateCollaborationScore($session);
+            return $this->handleStageCompletion($session, $currentStage);
+        }
+
+        // Check max attempts for current stage
+        $stageAttempts = $session->attempts()->where('stage', $currentStage)->count();
+        $maxAttempts = $this->stageConfigurations[$currentStage]['maxAttempts'];
+
+        if ($stageAttempts >= $maxAttempts) {
+            return $this->handleStageFailed($session, $currentStage);
         }
 
         return response()->json([
-            'attempt' => $attempt,
-            'session' => $this->formatSessionData($session->fresh())
+            'session' => $session->fresh(),
+            'correct' => false,
+            'attemptsRemaining' => $maxAttempts - $stageAttempts
         ]);
     }
 
     /**
-     * Validate attempt based on puzzle type
+     * Generate puzzle data for a specific stage
      */
-    private function validateAttempt($session, $puzzle, $data)
+    private function generatePuzzleForStage($stage, $seed = null)
     {
-        $seed = crc32($session->team_code . $session->id);
+        // Use seed for consistent puzzle generation
+        if ($seed) {
+            mt_srand($seed);
+        }
 
-        switch ($puzzle['type'] ?? 'symbol_mapping') {
-            case 'pattern_analysis':
-                mt_srand($seed);
-                $sequences = $puzzle['sequences'];
-                $selectedSequence = $sequences[mt_rand(0, count($sequences) - 1)];
-                return intval($data['input']) === $selectedSequence['answer'];
-
-            case 'navigation_challenge':
-                mt_srand($seed);
-                $challenges = $puzzle['challenges'];
-                $selectedChallenge = $challenges[mt_rand(0, count($challenges) - 1)];
-                $inputPath = array_map('trim', explode(',', strtolower($data['input'])));
-                return $inputPath === $selectedChallenge['answer'];
-
-            case 'code_analysis':
-                $expectedBugLines = array_column($puzzle['bugs'], 'line');
-                $foundBugLines = array_map('intval', explode(',', $data['input']));
-                sort($expectedBugLines);
-                sort($foundBugLines);
-                return $expectedBugLines === $foundBugLines;
-
+        switch ($stage) {
+            case 1:
+                return $this->generatePatternAnalysisPuzzle();
+            case 2:
+                return $this->generateCodeAnalysisPuzzle();
+            case 3:
+                return $this->generateNavigationPuzzle();
             default:
-                // Original symbol mapping logic
-                mt_srand($seed);
-                $symbols = $puzzle['symbols'];
-                $mapping = $puzzle['mapping'];
-                $pick = [];
-                $pool = $symbols;
-
-                for ($i = 0; $i < 3; $i++) {
-                    if (count($pool) === 0) break;
-                    $idx = mt_rand(0, count($pool) - 1);
-                    $pick[] = $pool[$idx];
-                    array_splice($pool, $idx, 1);
-                }
-
-                $answer = implode('', array_map(fn($s) => $mapping[$s], $pick));
-                return strtoupper($data['input']) === $answer;
+                return $this->generatePatternAnalysisPuzzle();
         }
     }
 
     /**
-     * Update learning progress tracking
+     * Generate pattern analysis puzzle
      */
-    private function updateLearningProgress($session, $puzzle)
+    private function generatePatternAnalysisPuzzle()
     {
-        $progress = $session->learning_progress ?? [];
-        $progress[] = [
-            'puzzle_type' => $puzzle['type'] ?? 'symbol_mapping',
-            'puzzle_key' => $puzzle['key'],
-            'completed_at' => now()->toISOString(),
-            'objectives_met' => $session->stage->config['learningObjectives'] ?? [],
-            'attempts_count' => $session->attempts()->count()
+        $patterns = [
+            ['sequence' => [2, 4, 6, 8, '?'], 'answer' => '10', 'type' => 'arithmetic'],
+            ['sequence' => [1, 4, 9, 16, '?'], 'answer' => '25', 'type' => 'square'],
+            ['sequence' => [5, 10, 15, 20, '?'], 'answer' => '25', 'type' => 'multiple'],
         ];
 
-        $session->update(['learning_progress' => $progress]);
+        $puzzle = $patterns[array_rand($patterns)];
+
+        return [
+            'key' => 'pattern_' . md5(json_encode($puzzle['sequence'])),
+            'title' => 'Pattern Analysis Challenge',
+            'type' => 'pattern_analysis',
+            'data' => $puzzle,
+            'instruction' => 'Find the missing number in the sequence',
+            'answer' => $puzzle['answer']
+        ];
     }
 
     /**
-     * Update collaboration score based on performance
+     * Generate code analysis puzzle
      */
-    private function updateCollaborationScore($session)
+    private function generateCodeAnalysisPuzzle()
     {
-        $attempts = $session->attempts()->count();
-        $timeUsed = now()->diffInSeconds($session->started_at);
-        $timeLimit = $session->stage->config['timeLimit'] ?? 180;
+        $codes = [
+            ['cipher' => 'KHOOR', 'key' => 3, 'answer' => 'HELLO', 'type' => 'caesar'],
+            ['cipher' => 'ZRUOG', 'key' => 3, 'answer' => 'WORLD', 'type' => 'caesar'],
+        ];
 
-        // Calculate score based on efficiency
-        $score = 100;
-        if ($attempts > 1) $score -= ($attempts - 1) * 10;
-        if ($timeUsed > $timeLimit * 0.8) $score -= 20;
+        $puzzle = $codes[array_rand($codes)];
 
-        $score = max(0, min(100, $score));
-
-        $session->update(['collaboration_score' => $score]);
+        return [
+            'key' => 'code_' . md5($puzzle['cipher']),
+            'title' => 'Code Analysis Challenge',
+            'type' => 'code_analysis',
+            'data' => $puzzle,
+            'instruction' => 'Decode this Caesar cipher (shift by 3)',
+            'answer' => $puzzle['answer']
+        ];
     }
 
     /**
-     * Provide hint to players
+     * Generate navigation puzzle
      */
-    public function provideHint($id, Request $req)
+    private function generateNavigationPuzzle()
     {
-        $session = GameSession::with('stage')->findOrFail($id);
+        $mazes = [
+            ['start' => 'A1', 'end' => 'C3', 'path' => 'RIGHT,DOWN,RIGHT,DOWN', 'answer' => 'C3'],
+            ['start' => 'B2', 'end' => 'D4', 'path' => 'RIGHT,RIGHT,DOWN,DOWN', 'answer' => 'D4'],
+        ];
 
-        if ($session->status !== 'running') {
-            return response()->json(['message' => 'Session not running'], 400);
-        }
+        $puzzle = $mazes[array_rand($mazes)];
 
-        $data = $req->validate([
-            'hint_type' => 'required|in:general,specific,debugging'
+        return [
+            'key' => 'nav_' . md5($puzzle['start'] . $puzzle['end']),
+            'title' => 'Navigation Challenge',
+            'type' => 'navigation',
+            'data' => $puzzle,
+            'instruction' => 'Find the exit coordinates',
+            'answer' => $puzzle['answer']
+        ];
+    }
+
+    /**
+     * Validate answer against puzzle
+     */
+    private function validateAnswer($puzzle, $userInput)
+    {
+        return strtoupper(trim($userInput)) === strtoupper(trim($puzzle['answer']));
+    }
+
+    /**
+     * Handle stage failure
+     */
+    private function handleStageFailed($session, $stage)
+    {
+        $session->update([
+            'status' => 'failed',
+            'completed_at' => now(),
+            'failed_stage' => $stage
         ]);
-
-        $cfg = $session->stage->config;
-        $puzzle = $cfg['puzzles'][0];
-        $hintCount = $session->hint_count + 1;
-
-        $hint = $this->generateHint($puzzle, $data['hint_type'], $hintCount);
-
-        $session->update(['hint_count' => $hintCount]);
 
         return response()->json([
-            'hint' => $hint,
-            'hint_count' => $hintCount,
-            'max_hints' => 3
+            'session' => $session->fresh(),
+            'stageFailed' => true,
+            'gameComplete' => true,
+            'message' => "Stage {$stage} failed. Maximum attempts exceeded."
         ]);
     }
 
-    /**
-     * Generate contextual hints based on puzzle type
-     */
-    private function generateHint($puzzle, $hintType, $hintCount)
+    private function handleStageCompletion($session, $completedStage)
     {
-        $puzzleType = $puzzle['type'] ?? 'symbol_mapping';
+        $stagesCompleted = $session->stages_completed ?? [];
+        $stagesCompleted[] = $completedStage;
 
-        switch ($puzzleType) {
-            case 'code_analysis':
-                $hints = [
-                    1 => "Look carefully at loop boundaries and conditions.",
-                    2 => "Check the comparison operators - are they correct for the intended sorting order?",
-                    3 => "Focus on lines 3 and 4 - there are logical errors there."
-                ];
-                break;
+        $stageScore = $this->calculateStageScore($session, $completedStage);
+        $totalScore = ($session->total_score ?? 0) + $stageScore;
 
-            case 'pattern_analysis':
-                $hints = [
-                    1 => "Consider mathematical relationships between consecutive numbers.",
-                    2 => "Try operations like multiplication, addition, or exponentials.",
-                    3 => "Look for famous number sequences like Fibonacci or geometric progressions."
-                ];
-                break;
+        if ($completedStage >= count($this->stageConfigurations)) {
+            // All stages completed - Game success
+            $session->update([
+                'status' => 'success',
+                'completed_at' => now(),
+                'stages_completed' => $stagesCompleted,
+                'total_score' => $totalScore,
+                'collaboration_score' => $this->calculateCollaborationScore($session)
+            ]);
 
-            case 'navigation_challenge':
-                $hints = [
-                    1 => "Start from the root and think about binary search tree properties.",
-                    2 => "Smaller values go left, larger values go right in a BST.",
-                    3 => "Trace the path step by step: root -> left/right -> left/right."
-                ];
-                break;
-
-            default:
-                $hints = [
-                    1 => "Expert: Use the symbol mapping to guide the defuser.",
-                    2 => "Defuser: Describe each symbol clearly to the expert.",
-                    3 => "Work together - communication is key!"
-                ];
+            return response()->json([
+                'session' => $session->fresh(),
+                'gameComplete' => true,
+                'finalScore' => $totalScore,
+                'message' => 'Congratulations! All stages completed!'
+            ]);
         }
 
-        return $hints[$hintCount] ?? "You've used all available hints. Keep trying!";
-    }
-
-    /**
-     * Record peer feedback
-     */
-    public function provideFeedback($id, Request $req)
-    {
-        $session = GameSession::findOrFail($id);
-
-        $data = $req->validate([
-            'feedback_type' => 'required|in:peer_review,learning_reflection,collaboration_rating',
-            'content' => 'required|string|max:1000',
-            'rating' => 'integer|min:1|max:5|nullable',
-            'feedback_from' => 'required|in:defuser,expert,host'
+        // Move to next stage
+        $nextStage = $completedStage + 1;
+        $session->update([
+            'current_stage' => $nextStage,
+            'stages_completed' => $stagesCompleted,
+            'total_score' => $totalScore,
+            'stage_started_at' => now()
         ]);
-
-        $feedback = $session->peer_feedback ?? [];
-        $feedback[] = [
-            'type' => $data['feedback_type'],
-            'content' => $data['content'],
-            'rating' => $data['rating'] ?? null,
-            'from' => $data['feedback_from'],
-            'timestamp' => now()->toISOString()
-        ];
-
-        $session->update(['peer_feedback' => $feedback]);
 
         return response()->json([
-            'message' => 'Feedback recorded successfully',
-            'feedback_count' => count($feedback)
+            'session' => $session->fresh(),
+            'stageComplete' => true,
+            'nextStage' => $nextStage,
+            'stageScore' => $stageScore,
+            'message' => "Stage {$completedStage} completed! Moving to Stage {$nextStage}"
         ]);
     }
 
-    /**
-     * Get session analytics and learning insights
-     */
-    public function getAnalytics($id)
+    private function calculateStageScore($session, $stage)
     {
-        $session = GameSession::with(['attempts', 'stage.mission', 'participants'])->findOrFail($id);
+        $attempts = $session->attempts()->where('stage', $stage)->count();
+        $timeBonus = $this->calculateTimeBonus($session, $stage);
 
-        $analytics = [
-            'session_summary' => [
-                'duration' => $session->started_at ? now()->diffInSeconds($session->started_at) : 0,
-                'attempts' => $session->attempts()->count(),
-                'success_rate' => $this->calculateSuccessRate($session),
-                'collaboration_score' => $session->collaboration_score,
-                'hints_used' => $session->hint_count
-            ],
-            'learning_progress' => $session->learning_progress ?? [],
-            'peer_feedback' => $session->peer_feedback ?? [],
-            'recommendations' => $this->generateRecommendations($session)
-        ];
+        $baseScore = 100;
+        $attemptPenalty = ($attempts - 1) * 20;
 
-        return response()->json($analytics);
+        return max(0, $baseScore - $attemptPenalty + $timeBonus);
     }
 
     /**
-     * Calculate success rate
+     * Calculate time bonus for stage completion
      */
-    private function calculateSuccessRate($session)
+    private function calculateTimeBonus($session, $stage)
     {
+        $stageStarted = $session->stage_started_at ?? $session->started_at;
+        $stageCompleted = now();
+        $timeTaken = $stageStarted->diffInSeconds($stageCompleted);
+
+        $timeLimit = $this->stageConfigurations[$stage]['timeLimit'];
+        $timeRemaining = max(0, $timeLimit - $timeTaken);
+
+        // Bonus: 1 point per 10 seconds remaining
+        return floor($timeRemaining / 10);
+    }
+
+    /**
+     * Calculate collaboration score based on team performance
+     */
+    private function calculateCollaborationScore($session)
+    {
+        $participants = $session->participants;
         $totalAttempts = $session->attempts()->count();
-        $correctAttempts = $session->attempts()->where('is_correct', true)->count();
 
-        return $totalAttempts > 0 ? round(($correctAttempts / $totalAttempts) * 100, 2) : 0;
-    }
+        // Base collaboration score
+        $collaborationScore = 50;
 
-    /**
-     * Generate learning recommendations
-     */
-    private function generateRecommendations($session)
-    {
-        $recommendations = [];
-        $attempts = $session->attempts()->count();
-        $stage = $session->stage;
-
-        if ($attempts > 3) {
-            $recommendations[] = "Consider taking more time to analyze the problem before attempting solutions.";
+        // Penalty for too many attempts (indicates poor communication)
+        if ($totalAttempts > 10) {
+            $collaborationScore -= ($totalAttempts - 10) * 2;
         }
 
-        if ($session->hint_count > 2) {
-            $recommendations[] = "Focus on improving pattern recognition and problem-solving strategies.";
+        // Bonus for completing in reasonable time
+        $totalTime = $session->started_at->diffInMinutes($session->completed_at ?? now());
+        if ($totalTime < 20) { // Less than 20 minutes
+            $collaborationScore += 25;
         }
 
-        if ($session->collaboration_score < 70) {
-            $recommendations[] = "Work on communication and coordination between team members.";
-        }
-
-        if ($stage && isset($stage->config['difficulty']) && $stage->config['difficulty'] === 'intermediate') {
-            $recommendations[] = "You're ready for more advanced programming challenges!";
-        }
-
-        return $recommendations ?: ["Great job! Keep practicing to improve your skills."];
-    }
-
-    /**
-     * Pause session (Additional utility method)
-     */
-    public function pauseSession($id)
-    {
-        $session = GameSession::findOrFail($id);
-
-        if ($session->status !== 'running') {
-            return response()->json(['message' => 'Session is not running'], 400);
-        }
-
-        $session->update(['status' => 'paused']);
-
-        return response()->json([
-            'message' => 'Session paused successfully',
-            'session' => $this->formatSessionData($session)
-        ]);
-    }
-
-    /**
-     * Resume session (Additional utility method)
-     */
-    public function resumeSession($id)
-    {
-        $session = GameSession::findOrFail($id);
-
-        if ($session->status !== 'paused') {
-            return response()->json(['message' => 'Session is not paused'], 400);
-        }
-
-        $session->update(['status' => 'running']);
-
-        return response()->json([
-            'message' => 'Session resumed successfully',
-            'session' => $this->formatSessionData($session)
-        ]);
-    }
-
-    /**
-     * End session (Additional utility method)
-     */
-    public function endSession($id)
-    {
-        $session = GameSession::findOrFail($id);
-
-        $session->update(['status' => 'ended']);
-
-        return response()->json([
-            'message' => 'Session ended successfully',
-            'session' => $this->formatSessionData($session)
-        ]);
-    }
-
-    /**
-     * Get participants (Additional utility method)
-     */
-    public function getParticipants($id)
-    {
-        $session = GameSession::with('participants')->findOrFail($id);
-
-        return response()->json([
-            'participants' => $session->participants->toArray()
-        ]);
-    }
-
-    /**
-     * Remove participant (Additional utility method)
-     */
-    public function removeParticipant($sessionId, $participantId)
-    {
-        $session = GameSession::findOrFail($sessionId);
-        $participant = $session->participants()->findOrFail($participantId);
-
-        $participant->delete();
-
-        return response()->json([
-            'message' => 'Participant removed successfully',
-            'session' => $this->formatSessionData($session->fresh())
-        ]);
-    }
-
-    /**
-     * Get learning progress (Additional utility method)
-     */
-    public function getLearningProgress($id)
-    {
-        $session = GameSession::findOrFail($id);
-
-        return response()->json([
-            'learning_progress' => $session->learning_progress ?? [],
-            'hint_count' => $session->hint_count ?? 0,
-            'collaboration_score' => $session->collaboration_score ?? 0
-        ]);
-    }
-
-    /**
-     * Update learning progress (Additional utility method)
-     */
-    public function updateLearningProgressManual($id, Request $req)
-    {
-        $session = GameSession::findOrFail($id);
-
-        $data = $req->validate([
-            'learning_progress' => 'array',
-            'hint_count' => 'integer|min:0',
-            'collaboration_score' => 'integer|min:0|max:100'
-        ]);
-
-        $session->update($data);
-
-        return response()->json([
-            'message' => 'Learning progress updated successfully',
-            'session' => $this->formatSessionData($session)
-        ]);
+        return max(0, $collaborationScore);
     }
 }
