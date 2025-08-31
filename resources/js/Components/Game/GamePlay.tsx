@@ -9,15 +9,26 @@ interface Props {
   gameState: GameState;
   role?: 'defuser' | 'expert' | 'host';
   onGameStateUpdate: (newState: GameState) => void;
+  onSubmitAttempt?: (input: string) => Promise<void>; // Added for MultiStageGame support
+  submitting?: boolean; // Added for external submitting control
 }
 
-export default function GamePlay({ gameState, role, onGameStateUpdate }: Props) {
+export default function GamePlay({
+  gameState,
+  role,
+  onGameStateUpdate,
+  onSubmitAttempt,
+  submitting: externalSubmitting
+}: Props) {
   const [input, setInput] = useState('');
-  const [submitting, setSubmitting] = useState(false);
+  const [internalSubmitting, setInternalSubmitting] = useState(false);
   const [timeLeft, setTimeLeft] = useState(0);
   const [hintsUsed, setHintsUsed] = useState(0);
   const [currentHint, setCurrentHint] = useState<string>('');
   const [showFeedbackForm, setShowFeedbackForm] = useState(false);
+
+  // Use external submitting state if provided, otherwise use internal
+  const submitting = externalSubmitting !== undefined ? externalSubmitting : internalSubmitting;
 
   // Fixed: Changed feedback_type to match API
   const [feedbackData, setFeedbackData] = useState({
@@ -49,9 +60,21 @@ export default function GamePlay({ gameState, role, onGameStateUpdate }: Props) 
   }, [gameState.session.ends_at, gameState.session.id, onGameStateUpdate]);
 
   const handleSubmitAttempt = async (inputValue: string) => {
-    if (submitting) return;
+    // Use external submit handler if provided (for MultiStageGame)
+    if (onSubmitAttempt) {
+      try {
+        await onSubmitAttempt(inputValue);
+        setInput(''); // Clear input after successful submission
+      } catch (error) {
+        console.error('Error in external submit handler:', error);
+      }
+      return;
+    }
 
-    setSubmitting(true);
+    // Fallback to internal logic for backward compatibility
+    if (internalSubmitting) return;
+
+    setInternalSubmitting(true);
 
     try {
       const result = await gameApi.submitAttempt(
@@ -77,7 +100,7 @@ export default function GamePlay({ gameState, role, onGameStateUpdate }: Props) 
       console.error('Error submitting attempt:', error);
       alert(error.response?.data?.message || 'Failed to submit attempt');
     } finally {
-      setSubmitting(false);
+      setInternalSubmitting(false);
     }
   };
 
@@ -290,18 +313,21 @@ export default function GamePlay({ gameState, role, onGameStateUpdate }: Props) 
   console.log('🔍 GamePlay main render:', {
     puzzleType,
     role,
-    sessionStatus: gameState.session.status
+    sessionStatus: gameState.session.status,
+    hasExternalSubmit: !!onSubmitAttempt
   });
 
   return (
     <div className="space-y-6">
-      {/* DEBUG INFO - CRITICAL FOR TROUBLESHOOTING */}
+      {/* DEBUG INFO - Show external/internal mode */}
       <div className="bg-red-50 border border-red-200 rounded-lg p-4">
         <h3 className="font-bold text-red-800 mb-2">🐛 GamePlay Debug:</h3>
         <p className="text-sm text-red-700">Puzzle Type: <strong>{puzzleType}</strong></p>
         <p className="text-sm text-red-700">Role: <strong>{role}</strong></p>
         <p className="text-sm text-red-700">Session Status: <strong>{gameState.session.status}</strong></p>
         <p className="text-sm text-red-700">Has Puzzle: <strong>{!!gameState.puzzle ? 'YES' : 'NO'}</strong></p>
+        <p className="text-sm text-red-700">Submit Mode: <strong>{onSubmitAttempt ? 'EXTERNAL (MultiStage)' : 'INTERNAL'}</strong></p>
+        <p className="text-sm text-red-700">Submitting: <strong>{submitting ? 'YES' : 'NO'}</strong></p>
       </div>
 
       {/* Timer & Game Info */}
@@ -342,7 +368,7 @@ export default function GamePlay({ gameState, role, onGameStateUpdate }: Props) 
         </div>
       )}
 
-      {/* MAIN PUZZLE INTERFACE - THIS IS WHERE THE ISSUE WAS */}
+      {/* MAIN PUZZLE INTERFACE */}
       <div className="bg-green-50 border-2 border-green-300 rounded-lg p-4">
         <h3 className="font-bold text-green-800 mb-2">🎯 PUZZLE INTERFACE:</h3>
         <p className="text-sm text-green-700 mb-4">
@@ -353,43 +379,45 @@ export default function GamePlay({ gameState, role, onGameStateUpdate }: Props) 
         {renderPuzzleView()}
       </div>
 
-      {/* Hint System */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <div className="flex justify-between items-center mb-4">
-          <h4 className="text-lg font-semibold text-gray-800">Need Help?</h4>
-          <div className="text-sm text-gray-500">Hints remaining: {3 - hintsUsed}</div>
+      {/* Hint System - Hide in external mode to avoid conflicts */}
+      {!onSubmitAttempt && (
+        <div className="bg-white border border-gray-200 rounded-lg p-6">
+          <div className="flex justify-between items-center mb-4">
+            <h4 className="text-lg font-semibold text-gray-800">Need Help?</h4>
+            <div className="text-sm text-gray-500">Hints remaining: {3 - hintsUsed}</div>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-3">
+            <button
+              onClick={() => handleGetHint('general')}
+              disabled={hintsUsed >= 3}
+              className="bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 text-white py-2 px-4 rounded text-sm transition-colors"
+            >
+              General Hint
+            </button>
+
+            {puzzleType !== 'symbol_mapping' && (
+              <>
+                <button
+                  onClick={() => handleGetHint('specific')}
+                  disabled={hintsUsed >= 3}
+                  className="bg-green-500 hover:bg-green-600 disabled:bg-gray-400 text-white py-2 px-4 rounded text-sm transition-colors"
+                >
+                  Specific Hint
+                </button>
+
+                <button
+                  onClick={() => handleGetHint('debugging')}
+                  disabled={hintsUsed >= 3}
+                  className="bg-purple-500 hover:bg-purple-600 disabled:bg-gray-400 text-white py-2 px-4 rounded text-sm transition-colors"
+                >
+                  Debug Hint
+                </button>
+              </>
+            )}
+          </div>
         </div>
-
-        <div className="grid md:grid-cols-3 gap-3">
-          <button
-            onClick={() => handleGetHint('general')}
-            disabled={hintsUsed >= 3}
-            className="bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 text-white py-2 px-4 rounded text-sm transition-colors"
-          >
-            General Hint
-          </button>
-
-          {puzzleType !== 'symbol_mapping' && (
-            <>
-              <button
-                onClick={() => handleGetHint('specific')}
-                disabled={hintsUsed >= 3}
-                className="bg-green-500 hover:bg-green-600 disabled:bg-gray-400 text-white py-2 px-4 rounded text-sm transition-colors"
-              >
-                Specific Hint
-              </button>
-
-              <button
-                onClick={() => handleGetHint('debugging')}
-                disabled={hintsUsed >= 3}
-                className="bg-purple-500 hover:bg-purple-600 disabled:bg-gray-400 text-white py-2 px-4 rounded text-sm transition-colors"
-              >
-                Debug Hint
-              </button>
-            </>
-          )}
-        </div>
-      </div>
+      )}
 
       {/* Attempt History */}
       {attempts.length > 0 && (
@@ -497,15 +525,17 @@ export default function GamePlay({ gameState, role, onGameStateUpdate }: Props) 
         </div>
       )}
 
-      {/* Feedback Button */}
-      <div className="text-center">
-        <button
-          onClick={() => setShowFeedbackForm(true)}
-          className="bg-orange-500 hover:bg-orange-600 text-white font-medium py-2 px-6 rounded-lg transition-colors"
-        >
-          💬 Provide Feedback
-        </button>
-      </div>
+      {/* Feedback Button - Hide in external mode */}
+      {!onSubmitAttempt && (
+        <div className="text-center">
+          <button
+            onClick={() => setShowFeedbackForm(true)}
+            className="bg-orange-500 hover:bg-orange-600 text-white font-medium py-2 px-6 rounded-lg transition-colors"
+          >
+            💬 Provide Feedback
+          </button>
+        </div>
+      )}
 
       {/* Feedback Form Modal */}
       {showFeedbackForm && (
