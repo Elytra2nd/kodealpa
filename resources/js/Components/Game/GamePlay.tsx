@@ -229,7 +229,7 @@ export default function GamePlay({
                   {Object.entries(gameState.puzzle.mapping).map(([symbol, letter]) => (
                     <div key={symbol} className="flex items-center justify-between p-2 bg-gray-50 rounded">
                       <span className="font-mono text-lg">{symbol}</span>
-                      <span className="font-bold text-blue-600">→ {String(letter)}</span>
+                      <span className="font-bold text-blue-600">&rarr; {String(letter)}</span>
                     </div>
                   ))}
                 </div>
@@ -320,14 +320,20 @@ export default function GamePlay({
   return (
     <div className="space-y-6">
       {/* DEBUG INFO - Show external/internal mode */}
-      <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-        <h3 className="font-bold text-red-800 mb-2">🐛 GamePlay Debug:</h3>
-        <p className="text-sm text-red-700">Puzzle Type: <strong>{puzzleType}</strong></p>
-        <p className="text-sm text-red-700">Role: <strong>{role}</strong></p>
-        <p className="text-sm text-red-700">Session Status: <strong>{gameState.session.status}</strong></p>
-        <p className="text-sm text-red-700">Has Puzzle: <strong>{!!gameState.puzzle ? 'YES' : 'NO'}</strong></p>
-        <p className="text-sm text-red-700">Submit Mode: <strong>{onSubmitAttempt ? 'EXTERNAL (MultiStage)' : 'INTERNAL'}</strong></p>
-        <p className="text-sm text-red-700">Submitting: <strong>{submitting ? 'YES' : 'NO'}</strong></p>
+      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+        <h3 className="font-bold text-yellow-800 mb-2">🐛 GamePlay Debug Info:</h3>
+        <div className="grid grid-cols-2 gap-4 text-sm text-yellow-700">
+          <div>
+            <p><strong>Puzzle Type:</strong> {puzzleType}</p>
+            <p><strong>Role:</strong> {role}</p>
+            <p><strong>Session Status:</strong> {gameState.session.status}</p>
+          </div>
+          <div>
+            <p><strong>Has Puzzle:</strong> {!!gameState.puzzle ? 'YES' : 'NO'}</p>
+            <p><strong>Submit Mode:</strong> {onSubmitAttempt ? 'EXTERNAL (MultiStage)' : 'INTERNAL'}</p>
+            <p><strong>Submitting:</strong> {submitting ? 'YES' : 'NO'}</p>
+          </div>
+        </div>
       </div>
 
       {/* Timer & Game Info */}

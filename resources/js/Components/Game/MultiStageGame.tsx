@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { GameState } from '@/types/game';
+import { GameState, StageConfig } from '@/types/game';
 import { gameApi } from '@/services/gameApi';
 import StageProgress from './StageProgress';
 import GamePlay from './GamePlay';
@@ -20,16 +20,12 @@ interface StageResult {
   attemptsRemaining?: number;
 }
 
-// Extended GameState interface to include stage property
-interface ExtendedGameState extends GameState {
+// FIXED: Properly extend GameState by omitting conflicting properties and redefining them
+interface ExtendedGameState extends Omit<GameState, 'stage'> {
   stage?: {
     current?: number;
     total?: number;
-    config?: {
-      title?: string;
-      timeLimit?: number;
-      maxAttempts?: number;
-    };
+    config?: Partial<StageConfig>; // Use Partial to make all properties optional
     progress?: {
       completed?: number[];
       totalScore?: number;
@@ -44,6 +40,20 @@ export default function MultiStageGame({ sessionId, role }: Props) {
   const [showTransition, setShowTransition] = useState(false);
   const [stageResult, setStageResult] = useState<StageResult | null>(null);
 
+  // Helper function to convert ExtendedGameState to GameState for compatibility
+  const toGameState = (extendedState: ExtendedGameState): GameState => {
+    const { stage, ...rest } = extendedState;
+    return {
+      ...rest,
+      stage: stage ? {
+        current: stage.current,
+        total: stage.total,
+        config: stage.config as StageConfig, // Type assertion for compatibility
+        progress: stage.progress
+      } : undefined
+    } as GameState;
+  };
+
   useEffect(() => {
     loadGameState();
     const interval = setInterval(loadGameState, 3000);
@@ -53,7 +63,7 @@ export default function MultiStageGame({ sessionId, role }: Props) {
   const loadGameState = async () => {
     try {
       const state = await gameApi.getGameState(sessionId);
-      setGameState(state);
+      setGameState(state as ExtendedGameState); // Type assertion for compatibility
       setError('');
     } catch (err: any) {
       console.error('Error loading game state:', err);
@@ -85,7 +95,6 @@ export default function MultiStageGame({ sessionId, role }: Props) {
         }, 4000);
       } else {
         // Update state for incorrect attempt
-        const updatedAttempts = [...(gameState.session.attempts || [])];
         if (result.session?.attempts) {
           setGameState({
             ...gameState,
@@ -153,7 +162,7 @@ export default function MultiStageGame({ sessionId, role }: Props) {
     );
   }
 
-  // Show game completion screen - FIXED: Only check for 'success' status
+  // Show game completion screen
   if (gameState.session.status === 'success') {
     return (
       <div className="bg-green-50 border border-green-200 rounded-lg p-8 text-center">
@@ -306,9 +315,9 @@ export default function MultiStageGame({ sessionId, role }: Props) {
       {/* Main Game Interface */}
       <div className="bg-white rounded-lg shadow-sm border p-6">
         <GamePlay
-          gameState={gameState}
+          gameState={toGameState(gameState)}
           role={role}
-          onGameStateUpdate={handleGameStateUpdate}
+          onGameStateUpdate={(state) => handleGameStateUpdate(state as ExtendedGameState)}
           onSubmitAttempt={handleAttemptSubmit}
         />
       </div>
