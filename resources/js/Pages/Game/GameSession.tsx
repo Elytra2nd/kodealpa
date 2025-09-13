@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Head } from '@inertiajs/react';
+import { Head, usePage } from '@inertiajs/react';
 import { GameState } from '@/types/game';
 import { gameApi } from '@/services/gameApi';
 import Authenticated from '@/Layouts/AuthenticatedLayout';
@@ -24,8 +24,10 @@ interface StageResult {
   attemptsRemaining?: number;
 }
 
-// Extended GameState interface to include stage property
-interface ExtendedGameState extends GameState {
+// SOLUTION: Create completely separate interface instead of extending GameState
+interface MultiStageGameState {
+  session: GameState['session'];
+  puzzle: GameState['puzzle'];
   stage?: {
     current?: number;
     total?: number;
@@ -39,16 +41,53 @@ interface ExtendedGameState extends GameState {
       totalScore?: number;
     };
   };
+  serverTime?: string;
 }
 
-export default function GameSession({ sessionId, role }: Props) {
-  const [gameState, setGameState] = useState<ExtendedGameState | null>(null);
+export default function GameSession({ sessionId, role: propRole }: Props) {
+  const { auth } = usePage().props as any;
+  const [gameState, setGameState] = useState<MultiStageGameState | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>('');
   const [showTransition, setShowTransition] = useState(false);
   const [stageResult, setStageResult] = useState<StageResult | null>(null);
 
+  // ENHANCED: Better role detection with multiple sources
+  const getCurrentRole = (): 'defuser' | 'expert' | 'host' | 'observer' => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlRole = urlParams.get('role');
+
+    // Priority: URL params > props > participant lookup > default
+    if (urlRole && ['defuser', 'expert', 'host'].includes(urlRole)) {
+      return urlRole as 'defuser' | 'expert' | 'host';
+    }
+
+    if (propRole && ['defuser', 'expert', 'host'].includes(propRole)) {
+      return propRole;
+    }
+
+    // Check if user is a participant with a specific role
+    const participants = gameState?.session?.participants || [];
+    const userParticipant = participants.find(p => p.user_id === auth?.user?.id);
+    if (userParticipant?.role) {
+      return userParticipant.role as 'defuser' | 'expert' | 'host';
+    }
+
+    return 'observer';
+  };
+
+  const currentRole = getCurrentRole();
+
+  // ENHANCED: Better logging and error handling
   useEffect(() => {
+    console.log('🔍 GameSession mounted:', {
+      sessionId,
+      propRole,
+      urlRole: new URLSearchParams(window.location.search).get('role'),
+      currentRole,
+      userId: auth?.user?.id
+    });
+
     if (!sessionId) {
       setError('Session ID is required');
       setLoading(false);
@@ -57,23 +96,36 @@ export default function GameSession({ sessionId, role }: Props) {
 
     const loadGameState = async () => {
       try {
+        console.log('🔄 Loading game state for session:', sessionId);
         const state = await gameApi.getGameState(sessionId);
 
+        console.log('🔍 Raw API response:', state);
+
         if (state && state.session) {
-          const safeState: ExtendedGameState = {
-            ...state,
+          const safeState: MultiStageGameState = {
             session: {
               ...state.session,
               participants: Array.isArray(state.session.participants) ? state.session.participants : [],
               attempts: Array.isArray(state.session.attempts) ? state.session.attempts : [],
-            }
+            },
+            puzzle: state.puzzle,
+            stage: state.stage,
+            serverTime: state.serverTime
           };
+
+          console.log('🔍 Processed game state:', safeState);
+          console.log('🔍 Puzzle exists:', !!safeState.puzzle);
+          console.log('🔍 Expert view exists:', !!safeState.puzzle?.expertView);
+          console.log('🔍 Expert view data:', safeState.puzzle?.expertView);
 
           setGameState(safeState);
           setError('');
+        } else {
+          console.warn('⚠️ Invalid game state response');
+          setError('Invalid game state received');
         }
       } catch (err: any) {
-        console.error('Error loading game state:', err);
+        console.error('❌ Error loading game state:', err);
         setError(err.message || 'Failed to load game state');
       } finally {
         setLoading(false);
@@ -83,7 +135,7 @@ export default function GameSession({ sessionId, role }: Props) {
     loadGameState();
     const interval = setInterval(loadGameState, 3000);
     return () => clearInterval(interval);
-  }, [sessionId]);
+  }, [sessionId, auth?.user?.id]);
 
   const handleStartSession = async () => {
     try {
@@ -91,22 +143,25 @@ export default function GameSession({ sessionId, role }: Props) {
       await gameApi.startSession(sessionId);
 
       // Refresh game state after starting
-      setTimeout(() => {
-        const loadState = async () => {
+      setTimeout(async () => {
+        try {
           const state = await gameApi.getGameState(sessionId);
           if (state) {
-            const safeState: ExtendedGameState = {
-              ...state,
+            const safeState: MultiStageGameState = {
               session: {
                 ...state.session,
                 participants: Array.isArray(state.session.participants) ? state.session.participants : [],
                 attempts: Array.isArray(state.session.attempts) ? state.session.attempts : [],
-              }
+              },
+              puzzle: state.puzzle,
+              stage: state.stage,
+              serverTime: state.serverTime
             };
             setGameState(safeState);
           }
-        };
-        loadState();
+        } catch (error) {
+          console.error('Error reloading state after start:', error);
+        }
       }, 1000);
     } catch (error: any) {
       console.error('Error starting session:', error);
@@ -118,11 +173,14 @@ export default function GameSession({ sessionId, role }: Props) {
     if (!gameState) return;
 
     try {
+      console.log('🎯 Submitting attempt:', inputValue);
       const result = await gameApi.submitAttempt(
         gameState.session.id,
         gameState.puzzle.key,
         inputValue
       );
+
+      console.log('🔍 Submit result:', result);
 
       // Check if stage or game completed
       if (result.stageComplete || result.gameComplete) {
@@ -130,26 +188,28 @@ export default function GameSession({ sessionId, role }: Props) {
         setShowTransition(true);
 
         // Auto-hide transition after 4 seconds and reload state
-        setTimeout(() => {
+        setTimeout(async () => {
           setShowTransition(false);
           setStageResult(null);
 
-          // Reload game state for next stage or completion
-          const loadState = async () => {
+          try {
             const state = await gameApi.getGameState(sessionId);
             if (state) {
-              const safeState: ExtendedGameState = {
-                ...state,
+              const safeState: MultiStageGameState = {
                 session: {
                   ...state.session,
                   participants: Array.isArray(state.session.participants) ? state.session.participants : [],
                   attempts: Array.isArray(state.session.attempts) ? state.session.attempts : [],
-                }
+                },
+                puzzle: state.puzzle,
+                stage: state.stage,
+                serverTime: state.serverTime
               };
               setGameState(safeState);
             }
-          };
-          loadState();
+          } catch (error) {
+            console.error('Error reloading state after completion:', error);
+          }
         }, 4000);
       } else {
         // Update state for incorrect attempt or partial progress
@@ -161,7 +221,6 @@ export default function GameSession({ sessionId, role }: Props) {
           }
         });
 
-        // Show attempts remaining if provided
         if (result.attemptsRemaining !== undefined) {
           console.log(`Attempts remaining: ${result.attemptsRemaining}`);
         }
@@ -173,8 +232,15 @@ export default function GameSession({ sessionId, role }: Props) {
   };
 
   // Handle game state updates from GamePlay component
-  const handleGameStateUpdate = (updatedState: ExtendedGameState) => {
-    setGameState(updatedState);
+  const handleGameStateUpdate = (updatedState: GameState) => {
+    console.log('🔄 Game state update received:', updatedState);
+    const convertedState: MultiStageGameState = {
+      session: updatedState.session,
+      puzzle: updatedState.puzzle,
+      stage: updatedState.stage as any,
+      serverTime: updatedState.serverTime
+    };
+    setGameState(convertedState);
   };
 
   if (loading) {
@@ -314,6 +380,37 @@ export default function GameSession({ sessionId, role }: Props) {
       case 'running':
         return (
           <div className="space-y-6">
+            {/* DEBUG PANEL - TEMPORARY FOR TROUBLESHOOTING */}
+            {process.env.NODE_ENV === 'development' && (
+              <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                <h3 className="font-bold text-purple-800 mb-2">🐛 Debug Panel:</h3>
+                <div className="grid grid-cols-2 gap-4 text-sm text-purple-700">
+                  <div>
+                    <p><strong>Session ID:</strong> {sessionId}</p>
+                    <p><strong>Prop Role:</strong> {propRole || 'None'}</p>
+                    <p><strong>URL Role:</strong> {new URLSearchParams(window.location.search).get('role') || 'None'}</p>
+                    <p><strong>Current Role:</strong> {currentRole}</p>
+                    <p><strong>User ID:</strong> {auth?.user?.id}</p>
+                  </div>
+                  <div>
+                    <p><strong>Session Status:</strong> {session.status}</p>
+                    <p><strong>Has Puzzle:</strong> {!!puzzle ? 'Yes' : 'No'}</p>
+                    <p><strong>Puzzle Type:</strong> {puzzle?.type || 'None'}</p>
+                    <p><strong>Has Expert View:</strong> {!!puzzle?.expertView ? 'Yes' : 'No'}</p>
+                    <p><strong>Participants:</strong> {participants.length}</p>
+                  </div>
+                </div>
+                {puzzle?.expertView && (
+                  <details className="mt-2">
+                    <summary className="cursor-pointer font-medium text-purple-800">Expert View Data</summary>
+                    <pre className="text-xs mt-2 bg-white p-2 rounded overflow-auto max-h-40 border">
+                      {JSON.stringify(puzzle.expertView, null, 2)}
+                    </pre>
+                  </details>
+                )}
+              </div>
+            )}
+
             {/* Stage Progress Header */}
             {stage && (
               <StageProgress
@@ -348,8 +445,8 @@ export default function GameSession({ sessionId, role }: Props) {
             {/* Main Game Interface */}
             <div className="bg-white rounded-lg shadow-sm border p-6">
               <GamePlay
-                gameState={gameState}
-                role={role}
+                gameState={gameState as GameState}
+                role={['defuser', 'expert', 'host'].includes(currentRole) ? currentRole as 'defuser' | 'expert' | 'host' : undefined}
                 onGameStateUpdate={handleGameStateUpdate}
                 onSubmitAttempt={handleAttemptSubmit}
               />
@@ -522,7 +619,6 @@ export default function GameSession({ sessionId, role }: Props) {
         );
 
       default:
-        // Handle unexpected status with proper typing
         return (
           <div className="bg-red-50 border border-red-200 rounded-lg p-8 text-center">
             <div className="text-4xl mb-4">❓</div>
@@ -555,7 +651,7 @@ export default function GameSession({ sessionId, role }: Props) {
       <div className="py-8">
         <div className="max-w-7xl mx-auto sm:px-6 lg:px-8 space-y-6">
 
-          {/* Session Header with Stage Info */}
+          {/* Enhanced Session Header with Role Display */}
           <div className="bg-white shadow-sm sm:rounded-lg p-6">
             <div className="flex items-center justify-between">
               <div>
@@ -574,7 +670,17 @@ export default function GameSession({ sessionId, role }: Props) {
                   }`}>{session.status.toUpperCase()}</span>
                 </p>
                 <p className="text-sm text-gray-500">
-                  Your role: <span className="font-medium capitalize">{role || 'Observer'}</span>
+                  Your role: <span className="font-medium capitalize">{currentRole}</span>
+                  {currentRole === 'expert' && (
+                    <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded">
+                      📖 Manual Holder
+                    </span>
+                  )}
+                  {currentRole === 'defuser' && (
+                    <span className="ml-2 px-2 py-1 bg-red-100 text-red-700 text-xs rounded">
+                      💣 Bomb Handler
+                    </span>
+                  )}
                 </p>
               </div>
               <div className="text-right">
@@ -589,7 +695,7 @@ export default function GameSession({ sessionId, role }: Props) {
           {/* Main Game Content - Rendered by Switch Statement */}
           {renderGameContent()}
 
-          {/* Participants List - Always visible when not in terminal states */}
+          {/* Enhanced Participants List - Always visible when not in terminal states */}
           {!['success', 'failed', 'ended'].includes(session.status) && (
             <div className="bg-white shadow-sm sm:rounded-lg p-6">
               <h2 className="text-lg font-semibold mb-4 flex items-center">
@@ -604,16 +710,18 @@ export default function GameSession({ sessionId, role }: Props) {
                   >
                     <div className="flex items-center space-x-3">
                       <div className={`w-4 h-4 rounded-full ${
-                        participant.role === 'defuser' ? 'bg-red-500' : 'bg-blue-500'
+                        participant.role === 'defuser' ? 'bg-red-500' :
+                        participant.role === 'expert' ? 'bg-blue-500' : 'bg-green-500'
                       }`}></div>
                       <div>
                         <span className="font-medium text-gray-800">{participant.nickname}</span>
                         <div className="text-sm text-gray-500 capitalize">
-                          {participant.role === 'defuser' ? '💣 Bomb Defuser' : '📖 Expert Guide'}
+                          {participant.role === 'defuser' ? '💣 Bomb Defuser' :
+                           participant.role === 'expert' ? '📖 Expert Guide' : '👑 Host'}
                         </div>
                       </div>
                     </div>
-                    {participant.role === role && (
+                    {participant.role === currentRole && (
                       <span className="text-sm bg-green-100 text-green-700 px-3 py-1 rounded-full font-medium">
                         You
                       </span>

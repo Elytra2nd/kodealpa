@@ -81,11 +81,16 @@ export default function SessionWaiting({ gameState, role, onStartSession }: Prop
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600">Time Limit:</span>
-                <span className="font-medium">{session.stage.config.timeLimit || 180}s</span>
+                <span className="font-medium">{session.stage.config?.timeLimit || 180}s</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-600">Puzzles:</span>
-                <span className="font-medium">{session.stage.config.puzzles?.length || 0}</span>
+                <span className="text-gray-600">Challenges:</span>
+                <span className="font-medium">
+                  {/* FIXED: Use safe property access instead of puzzles */}
+                  {(session.stage.config as any)?.puzzles?.length ||
+                   (session.stage as any)?.puzzles?.length ||
+                   'Multiple'}
+                </span>
               </div>
               {session.stage.mission && (
                 <div className="pt-2 border-t">

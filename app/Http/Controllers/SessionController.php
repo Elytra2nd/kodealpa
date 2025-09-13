@@ -5,7 +5,10 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Models\GameSession;
 use App\Models\GameAttempt;
+use App\Models\GameParticipant;
 use Carbon\Carbon;
+use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Log;
 
 class SessionController extends Controller
 {
@@ -30,68 +33,226 @@ class SessionController extends Controller
         ]
     ];
 
-    // Expanded puzzle databases for randomization
+    // Your existing puzzle databases remain the same...
     private $patternPuzzles = [
-        // Arithmetic sequences
+        // ... your existing puzzle data ...
         ['sequence' => [2, 4, 6, 8], 'answer' => '10', 'type' => 'arithmetic', 'rule' => 'Add 2'],
         ['sequence' => [5, 10, 15, 20], 'answer' => '25', 'type' => 'arithmetic', 'rule' => 'Add 5'],
         ['sequence' => [3, 6, 9, 12], 'answer' => '15', 'type' => 'arithmetic', 'rule' => 'Add 3'],
         ['sequence' => [7, 14, 21, 28], 'answer' => '35', 'type' => 'arithmetic', 'rule' => 'Add 7'],
-
-        // Square sequences
         ['sequence' => [1, 4, 9, 16], 'answer' => '25', 'type' => 'square', 'rule' => 'Perfect squares'],
         ['sequence' => [4, 9, 16, 25], 'answer' => '36', 'type' => 'square', 'rule' => 'Perfect squares starting from 2²'],
-
-        // Multiplication sequences
         ['sequence' => [2, 6, 18, 54], 'answer' => '162', 'type' => 'multiplication', 'rule' => 'Multiply by 3'],
         ['sequence' => [3, 6, 12, 24], 'answer' => '48', 'type' => 'multiplication', 'rule' => 'Multiply by 2'],
-        ['sequence' => [5, 10, 20, 40], 'answer' => '80', 'type' => 'multiplication', 'rule' => 'Multiply by 2'],
-
-        // Fibonacci-like sequences
         ['sequence' => [1, 1, 2, 3], 'answer' => '5', 'type' => 'fibonacci', 'rule' => 'Sum of previous two'],
         ['sequence' => [2, 3, 5, 8], 'answer' => '13', 'type' => 'fibonacci', 'rule' => 'Sum of previous two'],
-
-        // Mixed patterns
         ['sequence' => [1, 3, 7, 15], 'answer' => '31', 'type' => 'doubling_plus_one', 'rule' => 'Double and add 1'],
         ['sequence' => [10, 8, 6, 4], 'answer' => '2', 'type' => 'decreasing', 'rule' => 'Subtract 2'],
     ];
 
     private $codePuzzles = [
-        // Caesar ciphers with different shifts
+        // Your existing code puzzles...
         ['cipher' => 'KHOOR', 'answer' => 'HELLO', 'shift' => 3, 'type' => 'caesar'],
         ['cipher' => 'ZRUOG', 'answer' => 'WORLD', 'shift' => 3, 'type' => 'caesar'],
         ['cipher' => 'FRGH', 'answer' => 'CODE', 'shift' => 3, 'type' => 'caesar'],
         ['cipher' => 'SXCCOH', 'answer' => 'PUZZLE', 'shift' => 3, 'type' => 'caesar'],
-
-        // Caesar with shift 1
         ['cipher' => 'IFMMP', 'answer' => 'HELLO', 'shift' => 1, 'type' => 'caesar'],
         ['cipher' => 'XPSME', 'answer' => 'WORLD', 'shift' => 1, 'type' => 'caesar'],
-
-        // Caesar with shift 5
         ['cipher' => 'MJQQT', 'answer' => 'HELLO', 'shift' => 5, 'type' => 'caesar'],
         ['cipher' => 'BTWQI', 'answer' => 'WORLD', 'shift' => 5, 'type' => 'caesar'],
-
-        // Simple substitution
         ['cipher' => 'OLLEH', 'answer' => 'HELLO', 'shift' => 0, 'type' => 'reverse'],
         ['cipher' => 'DLROW', 'answer' => 'WORLD', 'shift' => 0, 'type' => 'reverse'],
     ];
 
     private $navigationPuzzles = [
-        // Grid navigation challenges
+        // Your existing navigation puzzles...
         ['start' => 'A1', 'end' => 'C3', 'grid_size' => '3x3', 'answer' => 'C3', 'moves' => 4],
         ['start' => 'B2', 'end' => 'D4', 'grid_size' => '4x4', 'answer' => 'D4', 'moves' => 4],
         ['start' => 'A1', 'end' => 'E5', 'grid_size' => '5x5', 'answer' => 'E5', 'moves' => 8],
         ['start' => 'C1', 'end' => 'A3', 'grid_size' => '3x3', 'answer' => 'A3', 'moves' => 4],
-
-        // Coordinate-based challenges
         ['start' => '(0,0)', 'end' => '(3,2)', 'grid_size' => '4x3', 'answer' => '(3,2)', 'moves' => 5],
         ['start' => '(1,1)', 'end' => '(4,4)', 'grid_size' => '5x5', 'answer' => '(4,4)', 'moves' => 6],
-
-        // Direction-based puzzles
         ['start' => 'CENTER', 'end' => 'NORTH-EAST', 'grid_size' => '3x3', 'answer' => 'NE', 'moves' => 2],
         ['start' => 'SOUTH-WEST', 'end' => 'NORTH-EAST', 'grid_size' => '3x3', 'answer' => 'NE', 'moves' => 4],
     ];
 
+    /**
+     * NEW: Create new session
+     */
+    public function create(Request $request)
+    {
+        try {
+            // Validate input (stage_id is optional)
+            $request->validate([
+                'stage_id' => 'nullable|integer|min:1|max:3'
+            ]);
+
+            // Use provided stage_id or default to 1
+            $stageId = $request->input('stage_id', 1);
+
+            // Validate stage exists in configuration
+            if (!isset($this->stageConfigurations[$stageId])) {
+                $stageId = 1; // Fallback to stage 1
+            }
+
+        // Generate unique team code
+            do {
+                $teamCode = strtoupper(Str::random(6));
+            } while (GameSession::where('team_code', $teamCode)->exists());
+
+            // Generate unique seed for puzzles
+            $seed = rand(10000, 99999);
+
+            // Create session - ADD stage_id HERE
+            $session = GameSession::create([
+                'team_code' => $teamCode,
+                'status' => 'waiting',
+                'stage_id' => $stageId,        // ADD THIS LINE
+                'current_stage' => $stageId,
+                'seed' => $seed,
+                'created_at' => now(),
+                'updated_at' => now()
+            ]);
+
+            Log::info('Session created successfully', [
+                'session_id' => $session->id,
+                'team_code' => $teamCode,
+                'user_id' => auth()->id(),
+                'stage_id' => $stageId
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'session' => $session,
+                'team_code' => $teamCode,
+                'message' => 'Session created successfully'
+            ], 201);
+
+        } catch (\Exception $e) {
+            Log::error('Session creation failed: ' . $e->getMessage(), [
+                'user_id' => auth()->id(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to create session: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * NEW: Join existing session
+     */
+    public function join(Request $request)
+    {
+        try {
+            $request->validate([
+                'team_code' => 'required|string|size:6',
+                'role' => 'required|in:defuser,expert',
+                'nickname' => 'required|string|max:50'
+            ]);
+
+            $teamCode = strtoupper(trim($request->team_code));
+
+            // Find session by team code
+            $session = GameSession::where('team_code', $teamCode)
+                                 ->where('status', 'waiting')
+                                 ->first();
+
+            if (!$session) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Session not found or not available to join'
+                ], 404);
+            }
+
+            // Check if role is already taken
+            $existingParticipant = GameParticipant::where('game_session_id', $session->id)
+                                                 ->where('role', $request->role)
+                                                 ->first();
+
+            if ($existingParticipant) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Role '{$request->role}' is already taken in this session"
+                ], 400);
+            }
+
+            // Check if user already joined this session
+            $userParticipant = GameParticipant::where('game_session_id', $session->id)
+                                             ->where('user_id', auth()->id())
+                                             ->first();
+
+            if ($userParticipant) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You have already joined this session'
+                ], 400);
+            }
+
+            // Create participant
+            $participant = GameParticipant::create([
+                'game_session_id' => $session->id,
+                'user_id' => auth()->id(),
+                'role' => $request->role,
+                'nickname' => $request->nickname,
+                'joined_at' => now()
+            ]);
+
+            Log::info('User joined session', [
+                'session_id' => $session->id,
+                'user_id' => auth()->id(),
+                'role' => $request->role,
+                'team_code' => $teamCode
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'session' => $session->fresh(['participants']),
+                'participant' => $participant,
+                'message' => 'Successfully joined the session'
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Session join failed: ' . $e->getMessage(), [
+                'user_id' => auth()->id(),
+                'team_code' => $request->team_code ?? null,
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to join session: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get session participants
+     */
+    public function getParticipants($sessionId)
+    {
+        try {
+            $session = GameSession::findOrFail($sessionId);
+            $participants = GameParticipant::where('game_session_id', $sessionId)
+                                         ->with('user:id,name,email')
+                                         ->get();
+
+            return response()->json([
+                'session' => $session,
+                'participants' => $participants,
+                'total_participants' => $participants->count()
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => 'Failed to get participants'
+            ], 500);
+        }
+    }
+
+    // Your existing methods remain the same...
     public function state($sessionId)
     {
         $session = GameSession::with(['participants', 'attempts'])->findOrFail($sessionId);
@@ -270,6 +431,8 @@ class SessionController extends Controller
             'type' => 'code_analysis',
             'defuserView' => [
                 'cipher' => $selectedPuzzle['cipher'],
+                'cipherText' => $selectedPuzzle['cipher'],
+                'codeLines' => [$selectedPuzzle['cipher']],
                 'hints' => $this->generateCodeHints($selectedPuzzle),
                 'cipherId' => md5(json_encode($selectedPuzzle))
             ],
@@ -277,7 +440,8 @@ class SessionController extends Controller
                 'cipher_type' => $selectedPuzzle['type'],
                 'shift' => $selectedPuzzle['shift'],
                 'answer' => $selectedPuzzle['answer'],
-                'explanation' => $this->generateCodeExplanation($selectedPuzzle)
+                'explanation' => $this->generateCodeExplanation($selectedPuzzle),
+                'solution' => $selectedPuzzle['answer']
             ],
             'learningObjectives' => [
                 'Memahami konsep enkripsi sederhana',
@@ -288,6 +452,50 @@ class SessionController extends Controller
         ];
     }
 
+    private function getSolutionMethod($puzzle)
+    {
+        switch ($puzzle['type']) {
+            case 'caesar':
+                return "Sandi Caesar: Geser setiap huruf mundur {$puzzle['shift']} posisi dalam alfabet";
+            case 'reverse':
+                return "Teks Terbalik: Baca dari kanan ke kiri";
+            default:
+                return "Metode dekripsi tidak diketahui";
+        }
+    }
+
+    private function getDecryptionSteps($puzzle)
+    {
+        switch ($puzzle['type']) {
+            case 'caesar':
+                return [
+                    "1. Identifikasi ini adalah sandi Caesar dengan pergeseran {$puzzle['shift']}",
+                    "2. Untuk setiap huruf, geser mundur {$puzzle['shift']} posisi",
+                    "3. Contoh: " . $puzzle['cipher'][0] . " → " . $puzzle['answer'][0],
+                    "4. Hasil akhir: {$puzzle['answer']}"
+                ];
+            case 'reverse':
+                return [
+                    "1. Identifikasi bahwa teks ini dibalik",
+                    "2. Baca karakter dari kanan ke kiri",
+                    "3. {$puzzle['cipher']} dibaca terbalik menjadi {$puzzle['answer']}"
+                ];
+            default:
+                return ["Langkah dekripsi tidak tersedia"];
+        }
+    }
+
+    private function getExpertHints($puzzle)
+    {
+        return [
+            "Bantu Defuser dengan memberikan petunjuk bertahap",
+            "Jangan langsung berikan jawaban",
+            "Tanyakan apa yang dilihat Defuser",
+            "Jelaskan konsep enkripsi sederhana"
+        ];
+    }
+
+
     /**
      * Generate randomized navigation puzzle
      */
@@ -296,28 +504,63 @@ class SessionController extends Controller
         // Randomly select a navigation puzzle
         $selectedPuzzle = $this->navigationPuzzles[array_rand($this->navigationPuzzles)];
 
+        // Generate tree structure for navigation
+        $targetValue = rand(1, 20);
+        $correctPath = ['ROOT', 'LEFT', 'RIGHT']; // Simple example path
+
+        // FIXED: Add complete data structure expected by frontend
         return [
             'key' => 'nav_' . md5(json_encode($selectedPuzzle) . time()),
             'title' => 'Navigasi Tantangan',
-            'description' => 'Temukan jalan keluar dari maze ini!',
+            'description' => 'Temukan jalan dalam struktur tree!',
             'type' => 'navigation_challenge',
             'defuserView' => [
-                'start_position' => $selectedPuzzle['start'],
-                'grid_size' => $selectedPuzzle['grid_size'],
-                'max_moves' => $selectedPuzzle['moves'],
-                'hints' => $this->generateNavigationHints($selectedPuzzle)
+                'task' => "Navigate through the tree to find the target value: {$targetValue}",
+                'traversalOptions' => ['LEFT', 'RIGHT', 'UP', 'DOWN'], // PENTING: Ini yang hilang!
+                'startPosition' => 'ROOT',
+                'targetValue' => $targetValue,
+                'hints' => [
+                    'Start from the root node',
+                    'Use LEFT to go to left child',
+                    'Use RIGHT to go to right child',
+                    'Ask Expert for tree structure guidance'
+                ]
             ],
             'expertView' => [
-                'optimal_path' => $this->generateOptimalPath($selectedPuzzle),
-                'answer' => $selectedPuzzle['answer'],
-                'grid_layout' => $this->generateGridLayout($selectedPuzzle)
+                'tree' => [
+                    'root' => [
+                        'value' => 10,
+                        'left' => [
+                            'value' => 5,
+                            'left' => ['value' => 3, 'left' => null, 'right' => null],
+                            'right' => ['value' => 7, 'left' => null, 'right' => null]
+                        ],
+                        'right' => [
+                            'value' => 15,
+                            'left' => ['value' => 12, 'left' => null, 'right' => null],
+                            'right' => ['value' => 20, 'left' => null, 'right' => null]
+                        ]
+                    ]
+                ],
+                'answer' => $correctPath, // Array untuk expert view
+                'explanation' => "To find {$targetValue}, follow path: " . implode(' → ', $correctPath),
+                'traversalMethods' => [
+                    'inorder' => [3, 5, 7, 10, 12, 15, 20],
+                    'preorder' => [10, 5, 3, 7, 15, 12, 20],
+                    'postorder' => [3, 7, 5, 12, 20, 15, 10]
+                ],
+                'hints' => [
+                    'Guide the Defuser through tree navigation',
+                    'Explain binary search tree properties',
+                    'Help them understand left/right decisions'
+                ]
             ],
             'learningObjectives' => [
-                'Memahami koordinat dan navigasi',
-                'Berpikir strategis untuk mencari jalan',
-                'Komunikasi yang efektif dalam memberikan petunjuk arah'
+                'Memahami struktur data tree',
+                'Belajar navigasi binary search tree',
+                'Berkolaborasi dalam problem solving'
             ],
-            'answer' => $selectedPuzzle['answer']
+            'answer' => implode(',', $correctPath) // String untuk validasi
         ];
     }
 

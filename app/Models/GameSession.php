@@ -1,13 +1,43 @@
 <?php
-namespace App\Models;
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Str;
+// app/Models/GameSession.php
 
-class GameSession extends Model {
-    protected $fillable=['stage_id','team_code','status','started_at','ends_at'];
-    protected $casts=['started_at'=>'datetime','ends_at'=>'datetime'];
-    public static function generateTeamCode(): string { return strtoupper(Str::random(6)); }
-    public function stage(){ return $this->belongsTo(Stage::class); }
-    public function participants(){ return $this->hasMany(SessionParticipant::class); }
-    public function attempts(){ return $this->hasMany(Attempt::class); }
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+
+class GameSession extends Model
+{
+    protected $table = 'game_sessions';
+
+    protected $fillable = [
+        'team_code',
+        'status', 
+        'stage_id',        // Add this
+        'current_stage',
+        'seed',
+        'started_at',
+        'completed_at',
+        'ends_at',
+        'stages_completed',
+        'total_score',
+        'collaboration_score'
+    ];
+
+    protected $casts = [
+        'stages_completed' => 'array',
+        'started_at' => 'datetime',
+        'completed_at' => 'datetime', 
+        'ends_at' => 'datetime'
+    ];
+
+    public function attempts(): HasMany
+    {
+        return $this->hasMany(GameAttempt::class, 'game_session_id');
+    }
+
+    public function participants(): HasMany
+    {
+        return $this->hasMany(GameParticipant::class, 'game_session_id');
+    }
 }
