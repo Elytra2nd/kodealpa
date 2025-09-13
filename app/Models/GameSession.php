@@ -12,7 +12,7 @@ class GameSession extends Model
 
     protected $fillable = [
         'team_code',
-        'status', 
+        'status',
         'stage_id',        // Add this
         'current_stage',
         'seed',
@@ -27,7 +27,7 @@ class GameSession extends Model
     protected $casts = [
         'stages_completed' => 'array',
         'started_at' => 'datetime',
-        'completed_at' => 'datetime', 
+        'completed_at' => 'datetime',
         'ends_at' => 'datetime'
     ];
 
@@ -40,4 +40,43 @@ class GameSession extends Model
     {
         return $this->hasMany(GameParticipant::class, 'game_session_id');
     }
+
+    public function tournament()
+    {
+        return $this->belongsTo(Tournament::class);
+    }
+
+    /**
+    * Session belongs to tournament group
+    */
+    public function tournamentGroup()
+    {
+        return $this->belongsTo(TournamentGroup::class);
+    }
+
+    /**
+    * Check if this is a tournament session
+    */
+    public function isTournamentSession()
+    {
+        return $this->is_tournament_session && $this->tournament_id !== null;
+    }
+
+    /**
+    * Get tournament round name
+    */
+    public function getTournamentRoundNameAttribute()
+    {
+        if (!$this->isTournamentSession()) {
+            return null;
+        }
+
+        switch ($this->tournament_round) {
+            case 1: return 'Qualification Round';
+            case 2: return 'Semifinals';
+            case 3: return 'Finals';
+            default: return "Round {$this->tournament_round}";
+        }
+    }
+    
 }

@@ -1,0 +1,42 @@
+/* Voice Chat Styles */
+.voice-chat-container {
+  @apply bg-white border border-gray-200 rounded-lg shadow-sm;
+}
+
+.voice-participant {
+  @apply transition-all duration-200 ease-in-out;
+}
+
+.voice-participant.speaking {
+  @apply ring-2 ring-green-500 ring-opacity-50;
+}
+
+.audio-level-bar {
+  @apply transition-all duration-100 ease-out;
+}
+
+.voice-status-indicator {
+  @apply w-2 h-2 rounded-full transition-colors duration-200;
+}
+
+.voice-status-indicator.connected {
+  @apply bg-green-500;
+}
+
+.voice-status-indicator.disconnected {
+  @apply bg-gray-400;
+}
+
+.voice-status-indicator.connecting {
+  @apply bg-yellow-500 animate-pulse;
+}
+
+/* Audio Level Animation */
+@keyframes audioLevel {
+  0% { transform: scaleX(0); }
+  100% { transform: scaleX(1); }
+}
+
+.audio-level-animated {
+  animation: audioLevel 0.1s ease-out;
+}

@@ -8,6 +8,7 @@ import Authenticated from '@/Layouts/AuthenticatedLayout';
 import StageProgress from '@/Components/Game/StageProgress';
 import GamePlay from '@/Components/Game/GamePlay';
 import StageTransition from '@/Components/Game/StageTransition';
+import VoiceChat from '@/Components/Game/VoiceChat';
 
 interface Props {
   sessionId: number;
@@ -51,6 +52,10 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
   const [error, setError] = useState<string>('');
   const [showTransition, setShowTransition] = useState(false);
   const [stageResult, setStageResult] = useState<StageResult | null>(null);
+
+  // Voice Chat states
+  const [showVoiceChat, setShowVoiceChat] = useState(true);
+  const [isVoiceChatCollapsed, setIsVoiceChatCollapsed] = useState(false);
 
   // ENHANCED: Better role detection with multiple sources
   const getCurrentRole = (): 'defuser' | 'expert' | 'host' | 'observer' => {
@@ -313,66 +318,106 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
     switch (session.status) {
       case 'waiting':
         return (
-          <div className="bg-white shadow-sm sm:rounded-lg p-8">
-            <div className="text-center">
-              <div className="text-6xl mb-4">🚀</div>
-              <h2 className="text-2xl font-semibold text-yellow-600 mb-6">
-                Preparing Multi-Stage Challenge
-              </h2>
+          <div className="grid lg:grid-cols-4 gap-6">
+            {/* Main waiting content */}
+            <div className="lg:col-span-3">
+              <div className="bg-white shadow-sm sm:rounded-lg p-8">
+                <div className="text-center">
+                  <div className="text-6xl mb-4">🚀</div>
+                  <h2 className="text-2xl font-semibold text-yellow-600 mb-6">
+                    Preparing Multi-Stage Challenge
+                  </h2>
 
-              {participants.length < 2 ? (
-                <div>
-                  <p className="text-gray-600 mb-8 text-lg">
-                    Waiting for more players to join... ({participants.length}/2)
-                  </p>
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 max-w-md mx-auto">
-                    <p className="text-blue-800 font-medium mb-3">
-                      🎮 Invite a teammate to join this epic challenge!
-                    </p>
-                    <div className="bg-white border border-blue-300 rounded p-3">
-                      <p className="text-sm text-blue-600 mb-1">Share this team code:</p>
-                      <p className="font-mono font-bold text-lg text-blue-800">{session.team_code}</p>
+                  {participants.length < 2 ? (
+                    <div>
+                      <p className="text-gray-600 mb-8 text-lg">
+                        Waiting for more players to join... ({participants.length}/2)
+                      </p>
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 max-w-md mx-auto">
+                        <p className="text-blue-800 font-medium mb-3">
+                          🎮 Invite a teammate to join this epic challenge!
+                        </p>
+                        <div className="bg-white border border-blue-300 rounded p-3">
+                          <p className="text-sm text-blue-600 mb-1">Share this team code:</p>
+                          <p className="font-mono font-bold text-lg text-blue-800">{session.team_code}</p>
+                        </div>
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div>
+                      <p className="text-gray-600 mb-8 text-lg">
+                        All players ready! Time to begin the 3-stage challenge. ({participants.length}/2)
+                      </p>
+
+                      <div className="bg-green-50 border border-green-200 rounded-lg p-6 mb-6 max-w-2xl mx-auto">
+                        <h3 className="font-bold text-green-800 mb-3">🎯 Mission Overview</h3>
+                        <div className="grid md:grid-cols-3 gap-4 text-sm">
+                          <div className="text-center">
+                            <div className="bg-green-100 rounded-full w-12 h-12 flex items-center justify-center mx-auto mb-2">
+                              <span className="font-bold text-green-700">1</span>
+                            </div>
+                            <p className="font-medium text-green-700">Pattern Analysis</p>
+                          </div>
+                          <div className="text-center">
+                            <div className="bg-green-100 rounded-full w-12 h-12 flex items-center justify-center mx-auto mb-2">
+                              <span className="font-bold text-green-700">2</span>
+                            </div>
+                            <p className="font-medium text-green-700">Code Analysis</p>
+                          </div>
+                          <div className="text-center">
+                            <div className="bg-green-100 rounded-full w-12 h-12 flex items-center justify-center mx-auto mb-2">
+                              <span className="font-bold text-green-700">3</span>
+                            </div>
+                            <p className="font-medium text-green-700">Navigation Challenge</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={handleStartSession}
+                        className="bg-gradient-to-r from-green-600 to-blue-600 hover:from-green-700 hover:to-blue-700 text-white font-bold py-4 px-12 rounded-lg text-xl transition-all duration-300 shadow-lg transform hover:scale-105"
+                      >
+                        🚀 Begin Multi-Stage Challenge
+                      </button>
+                    </div>
+                  )}
                 </div>
-              ) : (
-                <div>
-                  <p className="text-gray-600 mb-8 text-lg">
-                    All players ready! Time to begin the 3-stage challenge. ({participants.length}/2)
-                  </p>
+              </div>
+            </div>
 
-                  <div className="bg-green-50 border border-green-200 rounded-lg p-6 mb-6 max-w-2xl mx-auto">
-                    <h3 className="font-bold text-green-800 mb-3">🎯 Mission Overview</h3>
-                    <div className="grid md:grid-cols-3 gap-4 text-sm">
-                      <div className="text-center">
-                        <div className="bg-green-100 rounded-full w-12 h-12 flex items-center justify-center mx-auto mb-2">
-                          <span className="font-bold text-green-700">1</span>
-                        </div>
-                        <p className="font-medium text-green-700">Pattern Analysis</p>
-                      </div>
-                      <div className="text-center">
-                        <div className="bg-green-100 rounded-full w-12 h-12 flex items-center justify-center mx-auto mb-2">
-                          <span className="font-bold text-green-700">2</span>
-                        </div>
-                        <p className="font-medium text-green-700">Code Analysis</p>
-                      </div>
-                      <div className="text-center">
-                        <div className="bg-green-100 rounded-full w-12 h-12 flex items-center justify-center mx-auto mb-2">
-                          <span className="font-bold text-green-700">3</span>
-                        </div>
-                        <p className="font-medium text-green-700">Navigation Challenge</p>
-                      </div>
-                    </div>
-                  </div>
-
+            {/* Voice Chat Sidebar for Waiting */}
+            <div className="lg:col-span-1">
+              <div className="space-y-4">
+                {/* Voice Chat Toggle */}
+                <div className="bg-white shadow-sm sm:rounded-lg p-4">
                   <button
-                    onClick={handleStartSession}
-                    className="bg-gradient-to-r from-green-600 to-blue-600 hover:from-green-700 hover:to-blue-700 text-white font-bold py-4 px-12 rounded-lg text-xl transition-all duration-300 shadow-lg transform hover:scale-105"
+                    onClick={() => setShowVoiceChat(!showVoiceChat)}
+                    className={`w-full flex items-center justify-center px-4 py-3 rounded-lg font-medium transition-colors ${
+                      showVoiceChat
+                        ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                        : 'bg-blue-500 text-white hover:bg-blue-600'
+                    }`}
                   >
-                    🚀 Begin Multi-Stage Challenge
+                    🎙️ {showVoiceChat ? 'Hide Voice Chat' : 'Show Voice Chat'}
                   </button>
                 </div>
-              )}
+
+                {/* Voice Chat Component */}
+                {showVoiceChat && (
+                  <VoiceChat
+                    sessionId={sessionId}
+                    userId={auth?.user?.id}
+                    nickname={auth?.user?.name || 'Unknown'}
+                    role={currentRole as 'defuser' | 'expert' | 'host'}
+                    participants={participants.map(p => ({
+                      id: p.id,
+                      user_id: p.user_id ?? 0,
+                      nickname: p.nickname,
+                      role: p.role
+                    }))}
+                  />
+                )}
+              </div>
             </div>
           </div>
         );
@@ -442,14 +487,74 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
               </div>
             </div>
 
-            {/* Main Game Interface */}
-            <div className="bg-white rounded-lg shadow-sm border p-6">
-              <GamePlay
-                gameState={gameState as GameState}
-                role={['defuser', 'expert', 'host'].includes(currentRole) ? currentRole as 'defuser' | 'expert' | 'host' : undefined}
-                onGameStateUpdate={handleGameStateUpdate}
-                onSubmitAttempt={handleAttemptSubmit}
-              />
+            {/* Main Game Interface with Voice Chat Integration */}
+            <div className="grid lg:grid-cols-4 gap-6">
+              {/* Game Content */}
+              <div className={`transition-all duration-300 ${
+                showVoiceChat && !isVoiceChatCollapsed ? 'lg:col-span-3' : 'lg:col-span-4'
+              }`}>
+                <div className="bg-white rounded-lg shadow-sm border p-6">
+                  <GamePlay
+                    gameState={gameState as GameState}
+                    role={['defuser', 'expert', 'host'].includes(currentRole) ? currentRole as 'defuser' | 'expert' | 'host' : undefined}
+                    onGameStateUpdate={handleGameStateUpdate}
+                    onSubmitAttempt={handleAttemptSubmit}
+                  />
+                </div>
+              </div>
+
+              {/* Voice Chat Sidebar */}
+              {showVoiceChat && !isVoiceChatCollapsed && (
+                <div className="lg:col-span-1">
+                  <div className="sticky top-4">
+                    <VoiceChat
+                      sessionId={sessionId}
+                      userId={auth?.user?.id}
+                      nickname={auth?.user?.name || 'Unknown'}
+                      role={currentRole as 'defuser' | 'expert' | 'host'}
+                      participants={participants.map(p => ({
+                        id: p.id,
+                        user_id: p.user_id ?? 0,
+                        nickname: p.nickname,
+                        role: p.role
+                      }))}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Floating Voice Chat Controls */}
+            <div className="fixed bottom-4 right-4 z-50 flex flex-col space-y-2">
+              {!showVoiceChat && (
+                <button
+                  onClick={() => setShowVoiceChat(true)}
+                  className="bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-full shadow-lg transition-all duration-200 hover:scale-110"
+                  title="Show Voice Chat"
+                >
+                  🎙️
+                </button>
+              )}
+
+              {showVoiceChat && (
+                <>
+                  <button
+                    onClick={() => setIsVoiceChatCollapsed(!isVoiceChatCollapsed)}
+                    className="bg-gray-600 hover:bg-gray-700 text-white p-2 rounded-full shadow-lg transition-all duration-200 hover:scale-110"
+                    title={isVoiceChatCollapsed ? "Expand Voice Chat" : "Collapse Voice Chat"}
+                  >
+                    {isVoiceChatCollapsed ? '📱' : '📵'}
+                  </button>
+
+                  <button
+                    onClick={() => setShowVoiceChat(false)}
+                    className="bg-red-600 hover:bg-red-700 text-white p-2 rounded-full shadow-lg transition-all duration-200 hover:scale-110"
+                    title="Hide Voice Chat"
+                  >
+                    ✕
+                  </button>
+                </>
+              )}
             </div>
           </div>
         );
@@ -688,6 +793,14 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
                   {participants.length}/2
                 </div>
                 <div className="text-sm text-gray-500">Players Ready</div>
+
+                {/* Voice Chat Status Indicator */}
+                {showVoiceChat && (
+                  <div className="flex items-center mt-2">
+                    <div className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></div>
+                    <span className="text-xs text-green-600">Voice Chat Active</span>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -701,6 +814,12 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
               <h2 className="text-lg font-semibold mb-4 flex items-center">
                 <span className="mr-2">👥</span>
                 Team Members ({participants.length})
+                {showVoiceChat && (
+                  <span className="ml-auto text-sm text-green-600 flex items-center">
+                    <div className="w-2 h-2 bg-green-500 rounded-full mr-1 animate-pulse"></div>
+                    Voice Chat Enabled
+                  </span>
+                )}
               </h2>
               <div className="grid md:grid-cols-2 gap-3">
                 {participants.map((participant, index) => (

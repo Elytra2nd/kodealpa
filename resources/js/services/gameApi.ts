@@ -2,6 +2,48 @@
 import axios from 'axios';
 import { Stage, GameSession, GameState } from '@/types/game';
 
+// Tournament types
+export interface Tournament {
+  id: number;
+  name: string;
+  status: 'waiting' | 'qualification' | 'semifinals' | 'finals' | 'completed';
+  current_round: number;
+  max_groups: number;
+  groups: TournamentGroup[];
+  bracket: TournamentBracket[];
+  created_at: string;
+  starts_at?: string;
+}
+
+export interface TournamentGroup {
+  id: number;
+  name: string;
+  status: 'waiting' | 'ready' | 'playing' | 'completed' | 'eliminated' | 'champion';
+  participants: Array<{
+    id: number;
+    user_id: number;
+    nickname: string;
+    role: 'defuser' | 'expert';
+  }>;
+  completion_time?: number;
+  score: number;
+  rank?: number;
+}
+
+export interface TournamentBracket {
+  round: number;
+  name: string;
+  groups: TournamentGroup[];
+}
+
+export interface VoiceChatSettings {
+  enabled: boolean;
+  quality: 'low' | 'medium' | 'high';
+  echoCancellation: boolean;
+  noiseSuppression: boolean;
+  autoGainControl: boolean;
+}
+
 // Create separate axios instance for CSRF calls (no baseURL prefix)
 const csrfAxios = axios.create({
   withCredentials: true,
@@ -116,12 +158,13 @@ export const gameApi = {
     await initializeCSRF();
   },
 
+  // === STAGE MANAGEMENT ===
+
   // Get all stages
   createSampleStages: async () => {
     await initializeCSRF(); // Ensure fresh token before creation
     const response = await api.post('/stages/sample');
     return response.data;
-
   },
 
   getStages: async (): Promise<Stage[]> => {
@@ -129,28 +172,30 @@ export const gameApi = {
     return response.data;
   },
 
+  // === REGULAR GAME SESSION MANAGEMENT ===
+
   // Create new game session
   createSession: async (stageId: number): Promise<any> => {
-  await initializeCSRF(); // Ensure fresh token before creation
+    await initializeCSRF(); // Ensure fresh token before creation
 
-  console.log('🚀 Creating session with stage_id:', stageId);
+    console.log('🚀 Creating session with stage_id:', stageId);
 
-  const response = await api.post('/sessions', { stage_id: stageId });
+    const response = await api.post('/sessions', { stage_id: stageId });
 
-  // DEBUG: Log full response structure
-  console.log('🔍 Full createSession response:', response);
-  console.log('🔍 Response data:', response.data);
-  console.log('🔍 Session object:', response.data.session);
-  console.log('🔍 Session ID:', response.data.session?.id);
+    // DEBUG: Log full response structure
+    console.log('🔍 Full createSession response:', response);
+    console.log('🔍 Response data:', response.data);
+    console.log('🔍 Session object:', response.data.session);
+    console.log('🔍 Session ID:', response.data.session?.id);
 
-  // Validate response structure
-  if (!response.data || !response.data.session || !response.data.session.id) {
-    console.error('❌ Invalid response structure from createSession API');
-    throw new Error('Invalid session data received from server');
-  }
+    // Validate response structure
+    if (!response.data || !response.data.session || !response.data.session.id) {
+      console.error('❌ Invalid response structure from createSession API');
+      throw new Error('Invalid session data received from server');
+    }
 
-  return response.data; // Return full response data
-},
+    return response.data; // Return full response data
+  },
 
   // Join session
   joinSession: async (teamCode: string, role: 'defuser' | 'expert', nickname: string) => {
@@ -234,6 +279,474 @@ export const gameApi = {
   getAnalytics: async (sessionId: number) => {
     const response = await api.get(`/sessions/${sessionId}/analytics`);
     return response.data;
+  },
+
+  // === TOURNAMENT SYSTEM ===
+
+  // Get all tournaments
+  getTournaments: async (): Promise<{ tournaments: Tournament[] }> => {
+    try {
+      const response = await api.get('/tournaments');
+      console.log('🏆 Tournaments loaded:', response.data);
+      return response.data;
+    } catch (error: any) {
+      console.error('❌ Failed to load tournaments:', error);
+      throw error;
+    }
+  },
+
+  // Create new tournament
+  createTournament: async (data: {
+    name: string;
+    max_groups?: number;
+    tournament_type?: 'elimination' | 'round_robin';
+  }): Promise<{ tournament: Tournament; success: boolean; message: string }> => {
+    try {
+      await initializeCSRF();
+      console.log('🏆 Creating tournament:', data);
+
+      const response = await api.post('/tournaments', {
+        name: data.name,
+        max_groups: data.max_groups || 4,
+        tournament_type: data.tournament_type || 'elimination'
+      });
+
+      console.log('✅ Tournament created:', response.data);
+      return response.data;
+    } catch (error: any) {
+      console.error('❌ Tournament creation failed:', error);
+      throw error;
+    }
+  },
+
+  // Join tournament
+  joinTournament: async (tournamentId: number, data: {
+    group_name: string;
+    role: 'defuser' | 'expert';
+    nickname: string;
+  }): Promise<{
+    success: boolean;
+    group: TournamentGroup;
+    tournament: Tournament;
+    message: string;
+  }> => {
+    try {
+      await initializeCSRF();
+      console.log('🏆 Joining tournament:', tournamentId, data);
+
+      const response = await api.post(`/tournaments/${tournamentId}/join`, data);
+
+      console.log('✅ Tournament joined:', response.data);
+      return response.data;
+    } catch (error: any) {
+      console.error('❌ Tournament join failed:', error);
+      throw error;
+    }
+  },
+
+  // Get tournament details
+  getTournament: async (tournamentId: number): Promise<{
+    tournament: Tournament;
+    bracket: TournamentBracket[];
+  }> => {
+    try {
+      const response = await api.get(`/tournaments/${tournamentId}`);
+      console.log('🏆 Tournament details loaded:', response.data);
+      return response.data;
+    } catch (error: any) {
+      console.error('❌ Failed to load tournament details:', error);
+      throw error;
+    }
+  },
+
+  // Get tournament session data
+  getTournamentSession: async (tournamentId: number, groupId?: number): Promise<{
+    tournament: Tournament;
+    group: TournamentGroup;
+    session: GameSession;
+    gameState: GameState;
+    leaderboard: TournamentGroup[];
+  }> => {
+    try {
+      const params = groupId ? { group_id: groupId } : {};
+      const response = await api.get(`/tournaments/${tournamentId}/session`, { params });
+
+      console.log('🏆 Tournament session loaded:', response.data);
+      return response.data;
+    } catch (error: any) {
+      console.error('❌ Failed to load tournament session:', error);
+      throw error;
+    }
+  },
+
+  // Complete tournament session
+  completeTournamentSession: async (sessionId: number): Promise<{
+    success: boolean;
+    group: TournamentGroup;
+    tournament: Tournament;
+  }> => {
+    try {
+      await initializeCSRF();
+      const response = await api.post(`/tournaments/sessions/${sessionId}/complete`);
+
+      console.log('🏆 Tournament session completed:', response.data);
+      return response.data;
+    } catch (error: any) {
+      console.error('❌ Tournament completion failed:', error);
+      throw error;
+    }
+  },
+
+  // Get tournament leaderboard
+  getTournamentLeaderboard: async (tournamentId: number): Promise<{
+    tournament: { id: number; name: string; status: string };
+    leaderboard: Array<{
+      id: number;
+      name: string;
+      rank?: number;
+      status: string;
+      completion_time?: number;
+      score: number;
+      participants: Array<{
+        nickname: string;
+        role: string;
+        user: { name: string; email: string };
+      }>;
+    }>;
+  }> => {
+    try {
+      const response = await api.get(`/tournaments/${tournamentId}/leaderboard`);
+      console.log('🏆 Tournament leaderboard loaded:', response.data);
+      return response.data;
+    } catch (error: any) {
+      console.error('❌ Failed to load tournament leaderboard:', error);
+      throw error;
+    }
+  },
+
+  // Leave tournament
+  leaveTournament: async (tournamentId: number): Promise<{
+    success: boolean;
+    message: string;
+  }> => {
+    try {
+      await initializeCSRF();
+      const response = await api.delete(`/tournaments/${tournamentId}/leave`);
+
+      console.log('🏆 Left tournament:', response.data);
+      return response.data;
+    } catch (error: any) {
+      console.error('❌ Failed to leave tournament:', error);
+      throw error;
+    }
+  },
+
+  // === VOICE CHAT SYSTEM ===
+
+  // Get voice chat token
+  getVoiceToken: async (sessionId?: number): Promise<{
+    token: string;
+    iceServers: Array<{ urls: string }>;
+    settings: VoiceChatSettings;
+  }> => {
+    try {
+      const endpoint = sessionId ? `/voice/${sessionId}/token` : '/voice/token';
+      const response = await api.get(endpoint);
+
+      console.log('🎙️ Voice token obtained:', response.data);
+      return response.data;
+    } catch (error: any) {
+      console.error('❌ Failed to get voice token:', error);
+      throw error;
+    }
+  },
+
+  // Join voice chat session
+  joinVoiceSession: async (sessionId: number, data: {
+    nickname: string;
+    role: string;
+  }): Promise<{
+    success: boolean;
+    participants: Array<{
+      userId: number;
+      nickname: string;
+      role: string;
+      isConnected: boolean;
+    }>;
+  }> => {
+    try {
+      await initializeCSRF();
+      const response = await api.post(`/voice/${sessionId}/join`, data);
+
+      console.log('🎙️ Joined voice session:', response.data);
+      return response.data;
+    } catch (error: any) {
+      console.error('❌ Failed to join voice session:', error);
+      throw error;
+    }
+  },
+
+  // Leave voice chat session
+  leaveVoiceSession: async (sessionId: number): Promise<{
+    success: boolean;
+    message: string;
+  }> => {
+    try {
+      await initializeCSRF();
+      const response = await api.post(`/voice/${sessionId}/leave`);
+
+      console.log('🎙️ Left voice session:', response.data);
+      return response.data;
+    } catch (error: any) {
+      console.error('❌ Failed to leave voice session:', error);
+      throw error;
+    }
+  },
+
+  // Get voice chat participants
+  getVoiceParticipants: async (sessionId: number): Promise<{
+    participants: Array<{
+      id: number;
+      user_id: number;
+      nickname: string;
+      role: string;
+      is_online: boolean;
+    }>;
+  }> => {
+    try {
+      const response = await api.get(`/voice/${sessionId}/participants`);
+      return response.data;
+    } catch (error: any) {
+      console.error('❌ Failed to get voice participants:', error);
+      throw error;
+    }
+  },
+
+  // Toggle mute status
+  toggleVoiceMute: async (sessionId: number, muted: boolean): Promise<{
+    success: boolean;
+    muted: boolean;
+  }> => {
+    try {
+      await initializeCSRF();
+      const response = await api.post(`/voice/${sessionId}/mute`, { muted });
+
+      console.log('🎙️ Voice mute toggled:', response.data);
+      return response.data;
+    } catch (error: any) {
+      console.error('❌ Failed to toggle voice mute:', error);
+      throw error;
+    }
+  },
+
+  // Set voice volume
+  setVoiceVolume: async (sessionId: number, volume: number): Promise<{
+    success: boolean;
+    volume: number;
+  }> => {
+    try {
+      await initializeCSRF();
+      const response = await api.post(`/voice/${sessionId}/volume`, {
+        volume: Math.max(0, Math.min(100, volume))
+      });
+
+      return response.data;
+    } catch (error: any) {
+      console.error('❌ Failed to set voice volume:', error);
+      throw error;
+    }
+  },
+
+  // Test voice connection
+  testVoiceConnection: async (): Promise<{
+    success: boolean;
+    latency: number;
+    quality: 'excellent' | 'good' | 'fair' | 'poor';
+    servers: Array<{
+      url: string;
+      region: string;
+      ping: number;
+    }>;
+  }> => {
+    try {
+      const response = await api.post('/voice/test/connection');
+
+      console.log('🎙️ Voice connection test result:', response.data);
+      return response.data;
+    } catch (error: any) {
+      console.error('❌ Voice connection test failed:', error);
+      throw error;
+    }
+  },
+
+  // Test audio quality
+  testAudioQuality: async (audioData: Blob): Promise<{
+    success: boolean;
+    quality: 'excellent' | 'good' | 'fair' | 'poor';
+    recommendations: string[];
+  }> => {
+    try {
+      const formData = new FormData();
+      formData.append('audio', audioData, 'test-audio.wav');
+
+      await initializeCSRF();
+      const response = await api.post('/voice/test/audio', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+
+      console.log('🎙️ Audio quality test result:', response.data);
+      return response.data;
+    } catch (error: any) {
+      console.error('❌ Audio quality test failed:', error);
+      throw error;
+    }
+  },
+
+  // Get voice chat settings
+  getVoiceSettings: async (): Promise<VoiceChatSettings> => {
+    try {
+      const response = await api.get('/voice/settings');
+      return response.data.settings;
+    } catch (error: any) {
+      console.error('❌ Failed to get voice settings:', error);
+      throw error;
+    }
+  },
+
+  // Update voice chat settings
+  updateVoiceSettings: async (settings: Partial<VoiceChatSettings>): Promise<{
+    success: boolean;
+    settings: VoiceChatSettings;
+  }> => {
+    try {
+      await initializeCSRF();
+      const response = await api.post('/voice/settings', { settings });
+
+      console.log('🎙️ Voice settings updated:', response.data);
+      return response.data;
+    } catch (error: any) {
+      console.error('❌ Failed to update voice settings:', error);
+      throw error;
+    }
+  },
+
+  // Report voice chat issue
+  reportVoiceIssue: async (sessionId: number, issue: {
+    type: 'connection' | 'audio_quality' | 'echo' | 'noise' | 'other';
+    description: string;
+    severity: 'low' | 'medium' | 'high';
+  }): Promise<{
+    success: boolean;
+    ticket_id: string;
+    message: string;
+  }> => {
+    try {
+      await initializeCSRF();
+      const response = await api.post(`/voice/${sessionId}/report`, issue);
+
+      console.log('🎙️ Voice issue reported:', response.data);
+      return response.data;
+    } catch (error: any) {
+      console.error('❌ Failed to report voice issue:', error);
+      throw error;
+    }
+  },
+
+  // === WEBRTC SIGNALING ===
+
+  // Handle WebRTC offer
+  sendWebRTCOffer: async (sessionId: number, offer: RTCSessionDescriptionInit, targetUserId: number): Promise<{
+    success: boolean;
+  }> => {
+    try {
+      await initializeCSRF();
+      const response = await api.post(`/signaling/${sessionId}/offer`, {
+        offer,
+        target_user_id: targetUserId
+      });
+
+      return response.data;
+    } catch (error: any) {
+      console.error('❌ Failed to send WebRTC offer:', error);
+      throw error;
+    }
+  },
+
+  // Handle WebRTC answer
+  sendWebRTCAnswer: async (sessionId: number, answer: RTCSessionDescriptionInit, targetUserId: number): Promise<{
+    success: boolean;
+  }> => {
+    try {
+      await initializeCSRF();
+      const response = await api.post(`/signaling/${sessionId}/answer`, {
+        answer,
+        target_user_id: targetUserId
+      });
+
+      return response.data;
+    } catch (error: any) {
+      console.error('❌ Failed to send WebRTC answer:', error);
+      throw error;
+    }
+  },
+
+  // Handle ICE candidate
+  sendICECandidate: async (sessionId: number, candidate: RTCIceCandidateInit, targetUserId: number): Promise<{
+    success: boolean;
+  }> => {
+    try {
+      await initializeCSRF();
+      const response = await api.post(`/signaling/${sessionId}/ice-candidate`, {
+        candidate,
+        target_user_id: targetUserId
+      });
+
+      return response.data;
+    } catch (error: any) {
+      console.error('❌ Failed to send ICE candidate:', error);
+      throw error;
+    }
+  },
+
+  // Get signaling status
+  getSignalingStatus: async (): Promise<{
+    status: 'online' | 'offline' | 'degraded';
+    servers: Array<{
+      url: string;
+      status: 'online' | 'offline';
+      ping: number;
+    }>;
+  }> => {
+    try {
+      const response = await api.get('/signaling/status');
+      return response.data;
+    } catch (error: any) {
+      console.error('❌ Failed to get signaling status:', error);
+      throw error;
+    }
+  },
+
+  // === HEALTH CHECKS ===
+
+  // Voice system health check
+  checkVoiceHealth: async (): Promise<{
+    status: 'healthy' | 'degraded' | 'offline';
+    services: {
+      signaling: 'online' | 'offline';
+      voice_servers: 'online' | 'offline';
+      database: 'online' | 'offline';
+    };
+    timestamp: string;
+  }> => {
+    try {
+      const response = await api.get('/health/voice');
+      return response.data;
+    } catch (error: any) {
+      console.error('❌ Voice health check failed:', error);
+      throw error;
+    }
   },
 };
 
