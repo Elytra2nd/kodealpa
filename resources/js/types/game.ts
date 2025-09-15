@@ -327,6 +327,151 @@ export interface FeedbackSubmissionRequest {
   stage?: number;
 }
 
+// ===========================
+// TOURNAMENT TYPES - ADDED
+// ===========================
+
+// Tournament main interface
+export interface TournamentData {
+  id: number;
+  name: string;
+  status: 'waiting' | 'qualification' | 'semifinals' | 'finals' | 'completed';
+  current_round: number;
+  max_groups: number;
+  groups: TournamentGroup[];
+  bracket: TournamentBracket[];
+  created_at: string;
+  starts_at: string;
+}
+
+// Tournament group interface
+export interface TournamentGroup {
+  id: number;
+  name: string;
+  status: 'waiting' | 'ready' | 'playing' | 'completed' | 'eliminated' | 'champion';
+  participants: Array<{
+    id: number;
+    user_id: number;
+    nickname: string;
+    role: 'defuser' | 'expert';
+  }>;
+  completion_time?: number;
+  score: number;
+  rank?: number;
+}
+
+// Tournament bracket interface
+export interface TournamentBracket {
+  round: number;
+  matches: Array<{
+    id: number;
+    group1_id: number;
+    group2_id: number;
+    winner_group_id: number | null;
+    status: 'pending' | 'active' | 'completed';
+    completion_times: {
+      group1_time: number | null;
+      group2_time: number | null;
+    };
+  }>;
+}
+
+// Tournament API request/response types
+export interface TournamentCreateRequest {
+  name: string;
+  max_groups: number;
+}
+
+export interface TournamentJoinRequest {
+  group_name: string;
+  role: 'defuser' | 'expert';
+  nickname: string;
+}
+
+export interface TournamentJoinResponse {
+  success: boolean;
+  group: TournamentGroup;
+  tournament: TournamentData;
+  message?: string;
+}
+
+export interface TournamentListResponse {
+  tournaments: TournamentData[];
+  message?: string;
+}
+
+// Tournament participant interface
+export interface TournamentParticipant {
+  id: number;
+  user_id: number;
+  group_id: number;
+  tournament_id: number;
+  nickname: string;
+  role: 'defuser' | 'expert';
+  joined_at: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+// Tournament match interface
+export interface TournamentMatch {
+  id: number;
+  tournament_id: number;
+  round: number;
+  group1_id: number;
+  group2_id: number;
+  winner_group_id: number | null;
+  status: 'pending' | 'active' | 'completed';
+  started_at: string | null;
+  completed_at: string | null;
+  completion_times: {
+    group1_time: number | null;
+    group2_time: number | null;
+  };
+  created_at?: string;
+  updated_at?: string;
+}
+
+// Tournament analytics interface
+export interface TournamentAnalytics {
+  tournament_id: number;
+  total_groups: number;
+  groups_completed: number;
+  average_completion_time: number;
+  fastest_group: {
+    group_id: number;
+    group_name: string;
+    completion_time: number;
+  };
+  slowest_group: {
+    group_id: number;
+    group_name: string;
+    completion_time: number;
+  };
+  round_breakdown: Array<{
+    round: number;
+    matches_completed: number;
+    total_matches: number;
+    average_match_time: number;
+  }>;
+  elimination_summary: {
+    total_eliminated: number;
+    elimination_times: number[];
+  };
+}
+
+export interface TournamentSessionData {
+  tournament: TournamentData;
+  group: TournamentGroup;
+  session: GameSession;
+  gameState: GameState;
+  leaderboard: TournamentGroup[];
+}
+
+// ===========================
+// END TOURNAMENT TYPES
+// ===========================
+
 // Legacy aliases for backward compatibility - NO DUPLICATE DECLARATIONS
 export type Stage = GameStage;
 export type SessionParticipant = GameParticipant;

@@ -1,41 +1,18 @@
 // resources/js/services/gameApi.ts
 import axios from 'axios';
-import { Stage, GameSession, GameState } from '@/types/game';
+import type {
+  Stage,
+  GameSession,
+  GameState,
+  TournamentData,
+  TournamentGroup,
+  TournamentBracket,
+  TournamentJoinRequest,
+  TournamentJoinResponse,
+  TournamentCreateRequest
+} from '@/types/game';
 
-// Tournament types
-export interface Tournament {
-  id: number;
-  name: string;
-  status: 'waiting' | 'qualification' | 'semifinals' | 'finals' | 'completed';
-  current_round: number;
-  max_groups: number;
-  groups: TournamentGroup[];
-  bracket: TournamentBracket[];
-  created_at: string;
-  starts_at?: string;
-}
-
-export interface TournamentGroup {
-  id: number;
-  name: string;
-  status: 'waiting' | 'ready' | 'playing' | 'completed' | 'eliminated' | 'champion';
-  participants: Array<{
-    id: number;
-    user_id: number;
-    nickname: string;
-    role: 'defuser' | 'expert';
-  }>;
-  completion_time?: number;
-  score: number;
-  rank?: number;
-}
-
-export interface TournamentBracket {
-  round: number;
-  name: string;
-  groups: TournamentGroup[];
-}
-
+// Interface khusus untuk Voice Chat (tidak ada di game.ts)
 export interface VoiceChatSettings {
   enabled: boolean;
   quality: 'low' | 'medium' | 'high';
@@ -63,7 +40,7 @@ const api = axios.create({
   withCredentials: true,
 });
 
-// FIXED: Initialize CSRF Cookie using separate instance
+// Initialize CSRF Cookie using separate instance
 export const initializeCSRF = async (): Promise<void> => {
   try {
     // Use csrfAxios (no /api prefix) for CSRF cookie
@@ -284,7 +261,7 @@ export const gameApi = {
   // === TOURNAMENT SYSTEM ===
 
   // Get all tournaments
-  getTournaments: async (): Promise<{ tournaments: Tournament[] }> => {
+  getTournaments: async (): Promise<{ tournaments: TournamentData[] }> => {
     try {
       const response = await api.get('/tournaments');
       console.log('🏆 Tournaments loaded:', response.data);
@@ -300,7 +277,7 @@ export const gameApi = {
     name: string;
     max_groups?: number;
     tournament_type?: 'elimination' | 'round_robin';
-  }): Promise<{ tournament: Tournament; success: boolean; message: string }> => {
+  }): Promise<{ tournament: TournamentData; success: boolean; message: string }> => {
     try {
       await initializeCSRF();
       console.log('🏆 Creating tournament:', data);
@@ -320,16 +297,7 @@ export const gameApi = {
   },
 
   // Join tournament
-  joinTournament: async (tournamentId: number, data: {
-    group_name: string;
-    role: 'defuser' | 'expert';
-    nickname: string;
-  }): Promise<{
-    success: boolean;
-    group: TournamentGroup;
-    tournament: Tournament;
-    message: string;
-  }> => {
+  joinTournament: async (tournamentId: number, data: TournamentJoinRequest): Promise<TournamentJoinResponse> => {
     try {
       await initializeCSRF();
       console.log('🏆 Joining tournament:', tournamentId, data);
@@ -346,7 +314,7 @@ export const gameApi = {
 
   // Get tournament details
   getTournament: async (tournamentId: number): Promise<{
-    tournament: Tournament;
+    tournament: TournamentData;
     bracket: TournamentBracket[];
   }> => {
     try {
@@ -361,7 +329,7 @@ export const gameApi = {
 
   // Get tournament session data
   getTournamentSession: async (tournamentId: number, groupId?: number): Promise<{
-    tournament: Tournament;
+    tournament: TournamentData;
     group: TournamentGroup;
     session: GameSession;
     gameState: GameState;
@@ -383,7 +351,7 @@ export const gameApi = {
   completeTournamentSession: async (sessionId: number): Promise<{
     success: boolean;
     group: TournamentGroup;
-    tournament: Tournament;
+    tournament: TournamentData;
   }> => {
     try {
       await initializeCSRF();
