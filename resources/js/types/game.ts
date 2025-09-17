@@ -328,23 +328,10 @@ export interface FeedbackSubmissionRequest {
 }
 
 // ===========================
-// TOURNAMENT TYPES - ADDED
+// TOURNAMENT TYPES - UPDATED FOR TS2345 FIX
 // ===========================
 
-// Tournament main interface
-export interface TournamentData {
-  id: number;
-  name: string;
-  status: 'waiting' | 'qualification' | 'semifinals' | 'finals' | 'completed';
-  current_round: number;
-  max_groups: number;
-  groups: TournamentGroup[];
-  bracket: TournamentBracket[];
-  created_at: string;
-  starts_at: string;
-}
-
-// Tournament group interface
+// ✅ Tournament group interface with proper nullable handling
 export interface TournamentGroup {
   id: number;
   name: string;
@@ -355,12 +342,27 @@ export interface TournamentGroup {
     nickname: string;
     role: 'defuser' | 'expert';
   }>;
-  completion_time?: number;
+  // ✅ FIX: Explicit null/undefined handling for nullable fields
+  completion_time?: number | undefined;
+  rank?: number | undefined;
   score: number;
-  rank?: number;
 }
 
-// Tournament bracket interface
+// ✅ Tournament main interface with proper nullable handling
+export interface TournamentData {
+  id: number;
+  name: string;
+  status: 'waiting' | 'qualification' | 'semifinals' | 'finals' | 'completed';
+  current_round: number;
+  max_groups: number;
+  groups: TournamentGroup[];
+  bracket?: TournamentBracket[];
+  created_at: string;
+  // ✅ FIX: Allow null for starts_at
+  starts_at: string | null;
+}
+
+// ✅ Tournament bracket interface with proper nullable handling
 export interface TournamentBracket {
   round: number;
   matches: Array<{
@@ -413,7 +415,7 @@ export interface TournamentParticipant {
   updated_at?: string;
 }
 
-// Tournament match interface
+// ✅ Tournament match interface with proper nullable handling
 export interface TournamentMatch {
   id: number;
   tournament_id: number;
@@ -432,7 +434,7 @@ export interface TournamentMatch {
   updated_at?: string;
 }
 
-// Tournament analytics interface
+// ✅ Tournament analytics interface with proper nullable handling
 export interface TournamentAnalytics {
   tournament_id: number;
   total_groups: number;
@@ -442,12 +444,12 @@ export interface TournamentAnalytics {
     group_id: number;
     group_name: string;
     completion_time: number;
-  };
+  } | null;
   slowest_group: {
     group_id: number;
     group_name: string;
     completion_time: number;
-  };
+  } | null;
   round_breakdown: Array<{
     round: number;
     matches_completed: number;
@@ -460,11 +462,12 @@ export interface TournamentAnalytics {
   };
 }
 
+// ✅ Tournament session data interface
 export interface TournamentSessionData {
   tournament: TournamentData;
   group: TournamentGroup;
   session: GameSession;
-  gameState: GameState;
+  gameState: GameState | null;
   leaderboard: TournamentGroup[];
 }
 
@@ -477,3 +480,38 @@ export type Stage = GameStage;
 export type SessionParticipant = GameParticipant;
 export type Attempt = GameAttempt;
 export type Puzzle = GamePuzzle;
+
+// ✅ Type guard utilities to prevent TS2345 errors
+export const isValidNumber = (value: any): value is number => {
+  return typeof value === 'number' && !isNaN(value) && value !== 0;
+};
+
+export const isValidBoolean = (value: any): value is boolean => {
+  return typeof value === 'boolean';
+};
+
+export const normalizeNullableNumber = (value: number | null | undefined): number | undefined => {
+  return (value === null || value === undefined) ? undefined : value;
+};
+
+export const normalizeBoolean = (value: any): boolean => {
+  return value === true;
+};
+
+// ✅ Data normalization utilities for API responses
+export const normalizeTournamentGroup = (group: any): TournamentGroup => ({
+  ...group,
+  completion_time: normalizeNullableNumber(group.completion_time),
+  rank: normalizeNullableNumber(group.rank),
+  participants: Array.isArray(group.participants) ? group.participants : [],
+  score: group.score || 0
+});
+
+export const normalizeTournamentData = (tournament: any): TournamentData => ({
+  ...tournament,
+  groups: Array.isArray(tournament.groups)
+    ? tournament.groups.map(normalizeTournamentGroup)
+    : [],
+  bracket: Array.isArray(tournament.bracket) ? tournament.bracket : [],
+  starts_at: tournament.starts_at || null
+});
