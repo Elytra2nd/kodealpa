@@ -1,4 +1,7 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/Components/ui/card';
+import { Button } from '@/Components/ui/button';
+import { Badge } from '@/Components/ui/badge';
 
 interface Props {
   puzzle: any;
@@ -8,214 +11,242 @@ interface Props {
 }
 
 export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, submitting }: Props) {
-  const [answer, setAnswer] = useState('');
-
-  console.log('🔍 PatternAnalysisView props:', { puzzle, role });
-  console.log('🔍 DefuserView pattern:', puzzle?.defuserView?.pattern);
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!answer.trim()) return;
-    onSubmitAttempt(answer.trim());
-    setAnswer(''); // Reset after submit
-  };
+  const [jawaban, setJawaban] = useState('');
 
   const isDefuser = role === 'defuser';
   const isExpert = role === 'expert';
 
-  // Safety check
+  // Obfuscation: sembunyikan angka eksplisit di hint agar lebih samar (mengganti digit dengan simbol rune)
+  const runeMap: Record<string, string> = {
+    '0': '◇','1': '†','2': '♁','3': '♆','4': '♄','5': '♃','6': '☿','7': '☼','8': '◈','9': '★',
+  };
+
+  const obfuscateHint = (text: string) =>
+    text.replace(/\d/g, (d) => runeMap[d] ?? d)
+        .replace(/\b(kali|perkalian)\b/gi, 'ritual penggandaan')
+        .replace(/\b(tambah|penjumlahan)\b/gi, 'ritus penambahan')
+        .replace(/\b(kurang|pengurangan)\b/gi, 'pemotongan runik')
+        .replace(/\b(bagi|pembagian)\b/gi, 'pemisahan sigil')
+        .replace(/\b(pangkat|eksponen)\b/gi, 'sigil eksponensial');
+
+  const transformedHints: string[] = useMemo(() => {
+    const base = Array.isArray(puzzle?.defuserView?.hints) ? puzzle.defuserView.hints : [];
+    // Tambah lapisan kerumitan generatif ringan (tanpa menyingkap jawaban)
+    const extra = [
+      'Amati selisih yang tidak selalu tetap; terkadang ia berulang dalam siklus kabur.',
+      'Jejak perubahan bisa bertumpuk: selisih dari selisih kerap membisikkan pola.',
+      'Cermati lonjakan drastis; itu bisa pertanda ritual penggandaan terselubung.',
+      'Bila aturan tampak tersembunyi, periksa residu ketika dipecah oleh bilangan kecil.',
+    ];
+    return [...base, ...extra].map(obfuscateHint);
+  }, [puzzle]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!jawaban.trim()) return;
+    onSubmitAttempt(jawaban.trim());
+    setJawaban('');
+  };
+
   if (!puzzle) {
     return (
-      <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
-        <p className="text-red-600">No puzzle data available</p>
+      <div className="min-h-[200px] flex items-center justify-center bg-gradient-to-br from-stone-900 to-red-950 border-2 border-red-700 rounded-xl">
+        <p className="text-red-200 font-medium">Data teka-teki tidak tersedia</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      {/* DEBUG INFO - TEMPORARY */}
-      <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
-        <h3 className="font-bold text-orange-800 mb-2">🐛 PatternAnalysisView Debug:</h3>
-        <p className="text-sm text-orange-700">Role: <strong>{role}</strong></p>
-        <p className="text-sm text-orange-700">Puzzle Title: <strong>{puzzle.title}</strong></p>
-        <p className="text-sm text-orange-700">Has defuserView: <strong>{!!puzzle.defuserView ? 'YES' : 'NO'}</strong></p>
-        <p className="text-sm text-orange-700">Has pattern: <strong>{!!puzzle.defuserView?.pattern ? 'YES' : 'NO'}</strong></p>
-        <p className="text-sm text-orange-700">Pattern Length: <strong>{puzzle.defuserView?.pattern?.length || 0}</strong></p>
-        <p className="text-sm text-orange-700">Pattern Data: <strong>{JSON.stringify(puzzle.defuserView?.pattern)}</strong></p>
-      </div>
+    <div className="space-y-6 relative">
+      {/* Animasi & tema dungeon */}
+      <style>{`
+        @keyframes torchFlicker { 0%,100%{opacity:1;filter:brightness(1)} 25%{opacity:.85;filter:brightness(1.15)} 50%{opacity:.75;filter:brightness(.95)} 75%{opacity:.9;filter:brightness(1.05)} }
+        @keyframes crystalGlow { 0%,100%{box-shadow:0 0 20px rgba(180,83,9,.6),0 0 40px rgba(251,191,36,.25)} 50%{box-shadow:0 0 28px rgba(180,83,9,.8),0 0 60px rgba(251,191,36,.45)} }
+        @keyframes runeFloat { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-6px)} }
+        .torch-flicker { animation: torchFlicker 2.2s ease-in-out infinite; }
+        .crystal-glow { animation: crystalGlow 3s ease-in-out infinite; }
+        .rune-float { animation: runeFloat 3.6s ease-in-out infinite; }
+      `}</style>
 
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <h3 className="text-xl font-bold text-gray-800 mb-4">
-          {puzzle.title}
-        </h3>
-        <p className="text-gray-600 mb-6">{puzzle.description}</p>
-
-        {/* Learning Objectives */}
-        {puzzle.learningObjectives && (
-          <div className="mb-6 p-4 bg-blue-50 rounded-lg">
-            <h4 className="font-semibold text-blue-800 mb-2">Learning Objectives:</h4>
-            <ul className="text-sm text-blue-700 space-y-1">
-              {puzzle.learningObjectives.map((objective: string, index: number) => (
-                <li key={index}>• {objective}</li>
-              ))}
-            </ul>
+      <Card className="overflow-hidden border-4 border-amber-700 bg-gradient-to-br from-stone-900 via-stone-800 to-amber-950">
+        <CardHeader className="relative">
+          <div className="absolute top-3 left-3 text-2xl torch-flicker">🔥</div>
+          <div className="absolute top-3 right-3 text-2xl torch-flicker">🔥</div>
+          <CardTitle className="text-amber-300 text-2xl">{puzzle.title}</CardTitle>
+          <CardDescription className="text-stone-300">
+            {puzzle.description}
+          </CardDescription>
+          <div className="pt-2 flex flex-wrap gap-2">
+            <Badge className="bg-amber-800 text-amber-100 border-amber-600">🏰 Mode Dungeon</Badge>
+            <Badge className="bg-stone-700 text-stone-200 border-stone-600">🧩 Analisis Pola</Badge>
+            {role && <Badge className="bg-purple-800 text-purple-100 border-purple-700">🎭 Peran: {role}</Badge>}
           </div>
-        )}
+        </CardHeader>
 
-        <div className="grid lg:grid-cols-2 gap-6">
-          {/* Defuser View - Pattern Display */}
-          {(isDefuser || role === 'host') && (
-            <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-6">
-              <h4 className="text-lg font-bold text-yellow-800 mb-4 text-center">
-                🔢 PATTERN SEQUENCE
-              </h4>
+        <CardContent className="space-y-6">
+          {/* Tujuan Pembelajaran (opsional) */}
+          {Array.isArray(puzzle.learningObjectives) && puzzle.learningObjectives.length > 0 && (
+            <div className="p-4 rounded-xl border-2 border-amber-700 bg-gradient-to-r from-stone-800 to-stone-700">
+              <h4 className="text-amber-300 font-semibold mb-2">Tujuan Pembelajaran</h4>
+              <ul className="text-sm text-stone-200 space-y-1 list-disc pl-5">
+                {puzzle.learningObjectives.map((objective: string, i: number) => (
+                  <li key={i}>{objective}</li>
+                ))}
+              </ul>
+            </div>
+          )}
 
-              <div className="bg-white rounded-lg p-6 text-center mb-4">
-                <div className="text-sm text-gray-600 mb-3">Complete this sequence:</div>
-
-                {/* NUMBER SEQUENCE - FIX THE MAIN ISSUE */}
-                {puzzle.defuserView?.pattern ? (
-                  <div className="flex justify-center items-center space-x-3 mb-6">
-                    {puzzle.defuserView.pattern.map((item: any, index: number) => (
-                      <div
-                        key={index}
-                        className={`w-16 h-16 border-2 rounded-lg flex items-center justify-center text-xl font-bold ${
-                          item === '?' || item === null || item === undefined
-                            ? 'border-red-500 bg-red-100 text-red-600'
-                            : 'border-blue-500 bg-blue-50 text-blue-800'
-                        }`}
-                      >
-                        {item === null || item === undefined ? '?' : item}
-                      </div>
-                    ))}
-                    {/* Add question mark for missing number */}
-                    <div className="w-16 h-16 border-2 border-red-500 bg-red-100 text-red-600 rounded-lg flex items-center justify-center text-xl font-bold">
-                      ?
-                    </div>
-                  </div>
-                ) : (
-                  <div className="p-4 bg-red-50 border border-red-200 rounded mb-4">
-                    <p className="text-red-600 font-medium">⚠️ Pattern data not found</p>
-                    <p className="text-red-500 text-sm mt-1">
-                      The number sequence is missing from puzzle data.
-                    </p>
-                  </div>
-                )}
-
-                {/* Input for defuser */}
-                {isDefuser && (
-                  <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="grid lg:grid-cols-2 gap-6">
+            {/* DEFUSER VIEW */}
+            {(isDefuser || role === 'host') && (
+              <Card className="border-4 border-amber-600 bg-gradient-to-b from-stone-900 to-stone-800">
+                <CardHeader>
+                  <CardTitle className="text-lg text-amber-300 text-center">🔢 Urutan Pola</CardTitle>
+                  <CardDescription className="text-center text-stone-300">Lengkapi urutan berikut</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {Array.isArray(puzzle.defuserView?.pattern) ? (
                     <div>
-                      <input
-                        type="number"
-                        value={answer}
-                        onChange={(e) => setAnswer(e.target.value)}
-                        placeholder="Enter the missing number"
-                        className="w-48 h-12 text-center text-xl font-bold bg-white border-2 border-blue-600 rounded focus:outline-none focus:border-blue-400"
-                        disabled={submitting}
-                      />
+                      <div className="flex justify-center items-center flex-wrap gap-3 mb-6">
+                        {puzzle.defuserView.pattern.map((item: any, idx: number) => {
+                          const kosong = item === '?' || item === null || item === undefined;
+                          return (
+                            <div
+                              key={idx}
+                              className={[
+                                'w-16 h-16 rounded-xl flex items-center justify-center text-xl font-extrabold',
+                                'border-2',
+                                kosong
+                                  ? 'border-red-600 bg-red-900/40 text-red-200'
+                                  : 'border-blue-600 bg-blue-900/40 text-blue-200',
+                                'rune-float',
+                              ].join(' ')}
+                            >
+                              {kosong ? '?' : item}
+                            </div>
+                          );
+                        })}
+                        {/* Slot pertanyaan tambahan */}
+                        <div className="w-16 h-16 rounded-xl flex items-center justify-center text-xl font-extrabold border-2 border-red-600 bg-red-900/40 text-red-200 torch-flicker">
+                          ?
+                        </div>
+                      </div>
+
+                      {isDefuser && (
+                        <form onSubmit={handleSubmit} className="space-y-4 text-center">
+                          <input
+                            type="number"
+                            value={jawaban}
+                            onChange={(e) => setJawaban(e.target.value)}
+                            placeholder="Masukkan angka hilang"
+                            className="w-56 h-12 text-center text-lg font-bold bg-stone-900/70 border-2 border-amber-600 rounded-xl text-amber-200 placeholder-amber-500 focus:outline-none focus:ring-4 focus:ring-amber-500 crystal-glow"
+                            disabled={submitting}
+                          />
+                          <Button
+                            type="submit"
+                            disabled={!jawaban.trim() || submitting}
+                            className="w-full bg-gradient-to-r from-amber-600 via-amber-700 to-red-600 hover:from-amber-500 hover:via-amber-600 hover:to-red-500 text-stone-900 font-bold py-3 rounded-xl"
+                          >
+                            {submitting ? 'Mengirim...' : 'Kirim Jawaban'}
+                          </Button>
+                        </form>
+                      )}
                     </div>
-                    <button
-                      type="submit"
-                      disabled={!answer.trim() || submitting}
-                      className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-bold py-3 px-6 rounded transition-colors"
-                    >
-                      {submitting ? 'SUBMITTING...' : 'SUBMIT ANSWER'}
-                    </button>
-                  </form>
-                )}
-              </div>
-
-              {/* Hints for Defuser */}
-              {isDefuser && puzzle.defuserView?.hints && (
-                <div className="bg-blue-50 border border-blue-200 rounded p-3">
-                  <h5 className="font-medium text-blue-800 mb-2">Hints:</h5>
-                  <ul className="text-sm text-blue-700 space-y-1">
-                    {puzzle.defuserView.hints.map((hint: string, index: number) => (
-                      <li key={index}>• {hint}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Expert View - Pattern Rules */}
-          {(isExpert || role === 'host') && puzzle.expertView && (
-            <div className="bg-green-50 border-2 border-green-300 rounded-lg p-6">
-              <h4 className="text-lg font-bold text-green-800 mb-4 text-center">
-                📚 PATTERN RULES
-              </h4>
-
-              <div className="bg-white rounded-lg p-4 border space-y-4">
-                {puzzle.expertView.rule && (
-                  <div>
-                    <h5 className="font-semibold text-gray-800 mb-2">Pattern Rule:</h5>
-                    <p className="text-gray-700 bg-gray-50 p-3 rounded italic">
-                      "{puzzle.expertView.rule}"
-                    </p>
-                  </div>
-                )}
-
-                {puzzle.expertView.answer !== undefined && (
-                  <div className="border-t pt-3">
-                    <div className="flex justify-between items-center mb-2">
-                      <h5 className="font-semibold text-gray-800">Correct Answer:</h5>
-                      <span className="text-2xl font-bold text-green-600">
-                        {puzzle.expertView.answer}
-                      </span>
+                  ) : (
+                    <div className="p-4 rounded-xl border-2 border-red-700 bg-gradient-to-r from-red-950 to-stone-900 text-red-200">
+                      Data urutan bilangan tidak ditemukan
                     </div>
-                    {puzzle.expertView.category && (
-                      <p className="text-sm text-gray-600">
-                        Category: <span className="font-medium">{puzzle.expertView.category}</span>
+                  )}
+
+                  {/* Petunjuk untuk Defuser (dibuat lebih rumit/tersamar) */}
+                  {isDefuser && transformedHints.length > 0 && (
+                    <div className="mt-6 p-4 rounded-xl border-2 border-blue-700 bg-gradient-to-r from-blue-950 to-stone-900">
+                      <h5 className="text-blue-200 font-medium mb-2">Petunjuk Terselubung</h5>
+                      <ul className="text-sm text-blue-200/90 space-y-1 list-disc pl-5">
+                        {transformedHints.map((hint, i) => (
+                          <li key={i}>{hint}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* EXPERT VIEW (tanpa jawaban benar) */}
+            {(isExpert || role === 'host') && puzzle.expertView && (
+              <Card className="border-4 border-emerald-700 bg-gradient-to-b from-stone-900 to-emerald-950">
+                <CardHeader>
+                  <CardTitle className="text-lg text-emerald-300 text-center">📚 Prinsip Pola</CardTitle>
+                  <CardDescription className="text-center text-stone-300">
+                    Bimbingan konseptual tanpa membuka solusi
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {puzzle.expertView.rule && (
+                    <div className="p-4 rounded-xl border-2 border-stone-700 bg-stone-800/60">
+                      <h5 className="text-stone-200 font-semibold mb-2">Prinsip Umum</h5>
+                      <p className="text-stone-300 italic">
+                        “{obfuscateHint(String(puzzle.expertView.rule))}”
                       </p>
-                    )}
-                  </div>
-                )}
-              </div>
+                    </div>
+                  )}
 
-              {/* Expert Instructions */}
-              {isExpert && (
-                <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded">
-                  <h5 className="font-medium text-yellow-800 mb-2">Your Role:</h5>
-                  <ul className="text-sm text-yellow-700 space-y-1">
-                    <li>• Guide the Defuser to understand the pattern</li>
-                    <li>• Explain the mathematical relationship</li>
-                    <li>• Don't give the answer directly - teach the logic</li>
-                    <li>• Help them see the pattern step by step</li>
+                  {/* Jawaban benar disembunyikan dari Expert UI */}
+                  {puzzle.expertView.category && (
+                    <div className="flex items-center gap-2">
+                      <Badge className="bg-emerald-800 text-emerald-100 border-emerald-700">
+                        Kategori: {String(puzzle.expertView.category)}
+                      </Badge>
+                    </div>
+                  )}
+
+                  {isExpert && (
+                    <div className="p-4 rounded-xl border-2 border-amber-700 bg-gradient-to-r from-amber-900 to-stone-900">
+                      <h5 className="text-amber-300 font-medium mb-2">Peran Expert</h5>
+                      <ul className="text-sm text-amber-200 space-y-1 list-disc pl-5">
+                        <li>Pandu Defuser mengenali pola secara bertahap tanpa menyebutkan angka akhir.</li>
+                        <li>Gunakan pertanyaan penuntun dan verifikasi setiap hipotesis sebelum melangkah.</li>
+                        <li>Fokus pada transformasi antar-suku (selisih, rasio, atau perubahan bertingkat) tanpa menyebut nilai eksplisit.</li>
+                        <li>Sambungkan konsep ke analogi komputasional (iterasi, rekursi, atau state perubahan) secara konseptual.</li>
+                      </ul>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+          </div>
+
+          {/* Tips Analisis Pola (umum) */}
+          <Card className="border-4 border-purple-700 bg-gradient-to-br from-stone-900 to-purple-950">
+            <CardHeader>
+              <CardTitle className="text-purple-300 text-lg">💡 Taktik Analisis Pola</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid md:grid-cols-2 gap-4 text-sm">
+                <div className="p-4 rounded-xl border-2 border-amber-700 bg-stone-800/60">
+                  <h6 className="text-amber-300 font-semibold mb-2">Untuk Defuser</h6>
+                  <ul className="text-stone-200 space-y-1 list-disc pl-5">
+                    <li>Telusuri selisih berurutan dan selisih dari selisih untuk menemukan pola turunan.</li>
+                    <li>Uji kemungkinan progresi (aritmetika, geometri, berpangkat, atau campuran berjenjang).</li>
+                    <li>Perhatikan modul kecil (2, 3, 5) untuk mengendus siklus tersembunyi.</li>
+                    <li>Minta Expert memvalidasi arah pendekatan tanpa mengungkap angka akhir.</li>
                   </ul>
                 </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Pattern Analysis Tips */}
-        <div className="mt-6 p-4 bg-purple-50 border border-purple-200 rounded-lg">
-          <h5 className="font-medium text-purple-800 mb-2">Pattern Analysis Tips:</h5>
-          <div className="grid md:grid-cols-2 gap-4 text-sm text-purple-700">
-            <div>
-              <h6 className="font-medium mb-1">For Defuser:</h6>
-              <ul className="space-y-1 text-xs">
-                <li>• Look at differences between consecutive numbers</li>
-                <li>• Try multiplication, division, addition patterns</li>
-                <li>• Consider exponential or recursive relationships</li>
-                <li>• Ask Expert for guidance on approach</li>
-              </ul>
-            </div>
-            <div>
-              <h6 className="font-medium mb-1">For Expert:</h6>
-              <ul className="space-y-1 text-xs">
-                <li>• Guide through the mathematical logic</li>
-                <li>• Use leading questions to help discovery</li>
-                <li>• Explain the underlying mathematical concept</li>
-                <li>• Connect to real-world programming applications</li>
-              </ul>
-            </div>
-          </div>
-        </div>
-      </div>
+                <div className="p-4 rounded-xl border-2 border-blue-700 bg-stone-800/60">
+                  <h6 className="text-blue-300 font-semibold mb-2">Untuk Expert</h6>
+                  <ul className="text-stone-200 space-y-1 list-disc pl-5">
+                    <li>Mulai dari observasi kualitatif (naik/turun, stabil/berubah) sebelum formalitas numerik.</li>
+                    <li>Batasi petunjuk pada bentuk transformasi, bukan nilai; dorong Defuser menyimpulkan sendiri.</li>
+                    <li>Gunakan contoh setara yang tidak identik agar tidak membeberkan solusi.</li>
+                    <li>Jaga ritme bimbingan: satu hipotesis, satu verifikasi, lalu iterasi.</li>
+                  </ul>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </CardContent>
+      </Card>
     </div>
   );
 }
