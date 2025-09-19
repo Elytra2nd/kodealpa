@@ -8,6 +8,7 @@ use App\Http\Controllers\SessionController;
 use App\Http\Controllers\VoiceChatController;
 use App\Http\Controllers\TournamentController;
 use App\Http\Controllers\GrimoireController;
+use App\Http\Controllers\Auth\GoogleAuthController; // <-- Tambahkan import ini
 use Inertia\Inertia;
 
 /*
@@ -247,7 +248,7 @@ Route::prefix('api')->middleware(['auth', 'verified'])->group(function () {
         // Tournament group management
         Route::get('/{id}/groups', [TournamentController::class, 'getGroups'])->name('groups')->where('id', '[0-9]+');
         Route::post('/{id}/groups/{groupId}/kick/{participantId}', [TournamentController::class, 'kickParticipant'])
-             ->name('groups.kick')->where(['id' => '[0-9]+', 'groupId' => '[0-9]+', 'participantId' => '[0-9]+']);
+            ->name('groups.kick')->where(['id' => '[0-9]+', 'groupId' => '[0-9]+', 'participantId' => '[0-9]+']);
 
         // Tournament spectator features
         Route::get('/{id}/spectate', [TournamentController::class, 'getSpectatorData'])->name('spectate')->where('id', '[0-9]+');
@@ -518,13 +519,23 @@ Route::prefix('docs')->name('docs.')->group(function () {
 Route::middleware(['auth', 'verified'])->prefix('stream')->group(function () {
     // Tournament live stream
     Route::get('/tournament/{id}', [TournamentController::class, 'streamTournament'])
-         ->name('stream.tournament')
-         ->where('id', '[0-9]+');
+        ->name('stream.tournament')
+        ->where('id', '[0-9]+');
 
     // Session live stream (untuk spectators)
     Route::get('/session/{id}', [SessionController::class, 'streamSession'])
-         ->name('stream.session')
-         ->where('id', '[0-9]+');
+        ->name('stream.session')
+        ->where('id', '[0-9]+');
 });
 
+/*
+|--------------------------------------------------------------------------
+| Google Authentication Routes
+|--------------------------------------------------------------------------
+*/
+Route::get('/auth/google/redirect', [GoogleAuthController::class, 'redirect'])->name('google.redirect');
+Route::get('/auth/google/callback', [GoogleAuthController::class, 'callback'])->name('google.callback');
+
+
 require __DIR__.'/auth.php';
+
