@@ -15,6 +15,26 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger';
 // Showcase foto (galeri animasi dari public/images)
 import PhotoShowcase from '@/Components/PhotoShowcase';
 
+// Partikel magis untuk latar belakang
+const Motes = () => (
+  <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
+    {Array.from({ length: 20 }).map((_, i) => (
+      <div
+        key={i}
+        className="absolute rounded-full bg-amber-400/50 mote"
+        style={{
+          left: `${Math.random() * 100}%`,
+          top: `${Math.random() * 100}%`,
+          width: `${Math.random() * 2 + 1}px`,
+          height: `${Math.random() * 2 + 1}px`,
+          animation: `float ${Math.random() * 20 + 15}s linear infinite`,
+          animationDelay: `${Math.random() * -30}s`,
+        }}
+      />
+    ))}
+  </div>
+);
+
 export default function Welcome({
   auth,
   laravelVersion,
@@ -24,9 +44,16 @@ export default function Welcome({
 
   const DungeonCSS = useMemo(() => (
     <style>{`
+      @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@700&family=Inter:wght@400;500&display=swap');
+
+      .font-cinzel { font-family: 'Cinzel', serif; }
+      .font-inter { font-family: 'Inter', sans-serif; }
+
       @keyframes torchFlicker { 0%,100%{opacity:1;filter:brightness(1)} 25%{opacity:.86;filter:brightness(1.12)} 50%{opacity:.75;filter:brightness(.95)} 75%{opacity:.92;filter:brightness(1.05)} }
       @keyframes crystalGlow { 0%,100%{box-shadow:0 0 20px rgba(180,83,9,.6),0 0 40px rgba(251,191,36,.25)} 50%{box-shadow:0 0 28px rgba(180,83,9,.8),0 0 60px rgba(251,191,36,.45)} }
       @keyframes runeFloat { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-6px)} }
+      @keyframes float { 0% { transform: translateY(0); opacity: 0; } 50% { opacity: 1; } 100% { transform: translateY(-100vh) translateX(${Math.random() * 30 - 15}vw); opacity: 0; } }
+
       .torch-flicker { animation: torchFlicker 2.2s ease-in-out infinite; }
       .crystal-glow { animation: crystalGlow 3s ease-in-out infinite; }
       .rune-float { animation: runeFloat 3.2s ease-in-out infinite; }
@@ -35,11 +62,34 @@ export default function Welcome({
 
   useLayoutEffect(() => {
     gsap.registerPlugin(ScrollTrigger);
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const { clientX, clientY } = e;
+      const xPercent = (clientX / window.innerWidth - 0.5) * 2;
+      const yPercent = (clientY / window.innerHeight - 0.5) * 2;
+
+      gsap.to('.mouse-parallax', {
+        x: (index, target) => {
+          const speed = parseFloat((target as HTMLElement).dataset.speed ?? '0');
+          return speed * xPercent * 15;
+        },
+        y: (index, target) => {
+          const speed = parseFloat((target as HTMLElement).dataset.speed ?? '0');
+          return speed * yPercent * 15;
+        },
+        ease: 'power1.out',
+        duration: 0.5,
+      });
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+
     const ctx = gsap.context(() => {
       // Hero entrance
       gsap.from('.hero-title', { y: 24, opacity: 0, duration: 0.8, ease: 'power3.out' });
       gsap.from('.hero-sub', { y: 18, opacity: 0, duration: 0.7, ease: 'power3.out', delay: 0.05 });
       gsap.from('.hero-cta', { y: 14, opacity: 0, duration: 0.6, ease: 'power3.out', stagger: 0.08, delay: 0.1 });
+      gsap.from('.hero-cta > *', { y: 14, opacity: 0, duration: 0.6, ease: 'power3.out', stagger: 0.08, delay: 0.15 });
 
       // Parallax ringan
       gsap.to('.bg-parallax', {
@@ -60,7 +110,10 @@ export default function Welcome({
       gsap.to('.torch-right', { y: 6, repeat: -1, yoyo: true, duration: 2.4, ease: 'sine.inOut' });
     }, scope);
 
-    return () => ctx.revert();
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      ctx.revert();
+    };
   }, []);
 
   return (
@@ -68,16 +121,21 @@ export default function Welcome({
       <Head title="CodeAlpha — Dungeon of Logic" />
       {DungeonCSS}
 
-      <div ref={scope} className="min-h-screen bg-gradient-to-br from-stone-900 via-stone-800 to-amber-950 text-stone-100">
+      <div
+        ref={scope}
+        className="min-h-screen bg-gradient-to-br from-stone-900 via-stone-800 to-amber-950 text-stone-100 font-inter relative"
+      >
+        <Motes />
+
         {/* Navbar */}
         <nav className="relative border-b-4 border-amber-700 bg-gradient-to-r from-stone-900 via-stone-800 to-amber-950">
           <div className="absolute top-1 left-2 text-xl torch-flicker torch-left">🔥</div>
           <div className="absolute top-1 right-2 text-xl torch-flicker torch-right">🔥</div>
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
             <div className="flex items-center gap-3">
-                <span className="text-amber-300 font-bold text-lg drop-shadow-[0_0_8px_rgba(251,191,36,0.6)]">
-                    CodeAlpha
-                </span>
+              <span className="text-amber-300 font-bold text-lg drop-shadow-[0_0_8px_rgba(251,191,36,0.6)] font-cinzel">
+                CodeAlpha
+              </span>
               <Badge className="bg-stone-700 text-stone-200 border-stone-600">Dungeon Style</Badge>
             </div>
             <div className="flex items-center gap-2 hero-cta">
@@ -105,9 +163,13 @@ export default function Welcome({
           <div className="absolute top-6 left-6 text-2xl torch-flicker">🕯️</div>
           <div className="absolute bottom-6 right-6 text-2xl torch-flicker">🕯️</div>
 
+          {/* Parallax background glow */}
+          <div className="absolute -top-1/4 -left-1/4 h-1/2 w-1/2 rounded-full bg-amber-500/5 blur-3xl mouse-parallax" data-speed="1"></div>
+          <div className="absolute -bottom-1/4 -right-1/4 h-1/2 w-1/2 rounded-full bg-indigo-500/5 blur-3xl mouse-parallax" data-speed="-1.5"></div>
+
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-16 lg:py-24 grid lg:grid-cols-2 gap-8 items-center">
             <div>
-              <h1 className="hero-title text-4xl lg:text-5xl font-extrabold text-amber-300 leading-tight">
+              <h1 className="hero-title text-4xl lg:text-5xl font-extrabold text-amber-300 leading-tight font-cinzel">
                 Masuki Dungeon Logika, Taklukkan Teka-teki Kolaboratif
               </h1>
               <p className="hero-sub mt-4 text-stone-300">
@@ -129,7 +191,10 @@ export default function Welcome({
             </div>
 
             {/* Cuplikan Arena memakai PhotoShowcase */}
-            <Card className="reveal-card translate-y-6 opacity-0 border-4 border-amber-700 bg-gradient-to-b from-stone-900 to-stone-800">
+            <Card
+              className="reveal-card translate-y-6 opacity-0 border-4 border-amber-700 bg-gradient-to-b from-stone-900 to-stone-800 mouse-parallax"
+              data-speed="-0.5"
+            >
               <CardHeader>
                 <CardTitle className="text-amber-300">Cuplikan Arena</CardTitle>
                 <CardDescription className="text-stone-300">
