@@ -1,191 +1,209 @@
 import ApplicationLogo from '@/Components/ApplicationLogo';
-import Dropdown from '@/Components/Dropdown';
-import NavLink from '@/Components/NavLink';
-import ResponsiveNavLink from '@/Components/ResponsiveNavLink';
 import { Link, usePage } from '@inertiajs/react';
-import { PropsWithChildren, ReactNode, useState } from 'react';
+import { PropsWithChildren, ReactNode, useMemo, useState } from 'react';
+
+// shadcn/ui
+import { Button } from '@/Components/ui/button';
+import { Card } from '@/Components/ui/card';
+import { Separator } from '@/Components/ui/separator';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger
+} from '@/Components/ui/dropdown-menu';
 
 export default function Authenticated({
-    header,
-    children,
+  header,
+  children,
 }: PropsWithChildren<{ header?: ReactNode }>) {
-    const user = usePage().props.auth.user;
+  const user = (usePage().props as any).auth.user;
+  const [mobileOpen, setMobileOpen] = useState(false);
 
-    const [showingNavigationDropdown, setShowingNavigationDropdown] =
-        useState(false);
+  // Animasi & tema dungeon
+  const DungeonCSS = useMemo(() => (
+    <style>{`
+      @keyframes torchFlicker { 0%,100%{opacity:1;filter:brightness(1)} 25%{opacity:.86;filter:brightness(1.12)} 50%{opacity:.75;filter:brightness(.95)} 75%{opacity:.92;filter:brightness(1.05)} }
+      @keyframes crystalGlow { 0%,100%{box-shadow:0 0 20px rgba(180,83,9,.6),0 0 40px rgba(251,191,36,.25)} 50%{box-shadow:0 0 28px rgba(180,83,9,.8),0 0 60px rgba(251,191,36,.45)} }
+      @keyframes runeFloat { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-6px)} }
+      .torch-flicker { animation: torchFlicker 2.2s ease-in-out infinite; }
+      .crystal-glow { animation: crystalGlow 3s ease-in-out infinite; }
+      .rune-float { animation: runeFloat 3.2s ease-in-out infinite; }
+    `}</style>
+  ), []);
 
-    return (
-        <div className="min-h-screen bg-gray-100">
-            <nav className="border-b border-gray-100 bg-white">
-                <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-                    <div className="flex h-16 justify-between">
-                        <div className="flex">
-                            <div className="flex shrink-0 items-center">
-                                <Link href="/">
-                                    <ApplicationLogo className="block h-9 w-auto fill-current text-gray-800" />
-                                </Link>
-                            </div>
+  const isActive = (pattern: string) => {
+    try { return (window as any).route().current(pattern); } catch { return false; }
+  };
 
-                            <div className="hidden space-x-8 sm:-my-px sm:ms-10 sm:flex">
-                                <NavLink
-                                    href={route('dashboard')}
-                                    active={route().current('dashboard')}
-                                >
-                                    Dashboard
-                                </NavLink>
-                                <NavLink
-                                    href={route('game.lobby')}
-                                    active={route().current('game.*')}
-                                >
-                                    🎮 Game
-                                </NavLink>
-                            </div>
-                        </div>
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-stone-900 via-stone-800 to-amber-950 text-stone-100">
+      {DungeonCSS}
+      {/* Navbar */}
+      <nav className="relative border-b-4 border-amber-700 bg-gradient-to-r from-stone-900 via-stone-800 to-amber-950">
+        <div className="absolute top-1 left-2 text-xl torch-flicker">🔥</div>
+        <div className="absolute top-1 right-2 text-xl torch-flicker">🔥</div>
 
-                        <div className="hidden sm:ms-6 sm:flex sm:items-center">
-                            <div className="relative ms-3">
-                                <Dropdown>
-                                    <Dropdown.Trigger>
-                                        <span className="inline-flex rounded-md">
-                                            <button
-                                                type="button"
-                                                className="inline-flex items-center rounded-md border border-transparent bg-white px-3 py-2 text-sm font-medium leading-4 text-gray-500 transition duration-150 ease-in-out hover:text-gray-700 focus:outline-none"
-                                            >
-                                                {user.name}
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="flex h-16 items-center justify-between">
+            {/* Kiri: Logo + Nav Desktop */}
+            <div className="flex items-center gap-6">
+              <Link href="/" className="flex items-center gap-2">
+                <ApplicationLogo className="block h-9 w-auto fill-current text-amber-300 crystal-glow" />
+                <span className="hidden sm:inline text-amber-300 font-semibold rune-float">CodeAlpha Dungeon</span>
+              </Link>
 
-                                                <svg
-                                                    className="-me-0.5 ms-2 h-4 w-4"
-                                                    xmlns="http://www.w3.org/2000/svg"
-                                                    viewBox="0 0 20 20"
-                                                    fill="currentColor"
-                                                >
-                                                    <path
-                                                        fillRule="evenodd"
-                                                        d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
-                                                        clipRule="evenodd"
-                                                    />
-                                                </svg>
-                                            </button>
-                                        </span>
-                                    </Dropdown.Trigger>
-
-                                    <Dropdown.Content>
-                                        <Dropdown.Link
-                                            href={route('profile.edit')}
-                                        >
-                                            Profile
-                                        </Dropdown.Link>
-                                        <Dropdown.Link
-                                            href={route('logout')}
-                                            method="post"
-                                            as="button"
-                                        >
-                                            Log Out
-                                        </Dropdown.Link>
-                                    </Dropdown.Content>
-                                </Dropdown>
-                            </div>
-                        </div>
-
-                        <div className="-me-2 flex items-center sm:hidden">
-                            <button
-                                onClick={() =>
-                                    setShowingNavigationDropdown(
-                                        (previousState) => !previousState,
-                                    )
-                                }
-                                className="inline-flex items-center justify-center rounded-md p-2 text-gray-400 transition duration-150 ease-in-out hover:bg-gray-100 hover:text-gray-500 focus:bg-gray-100 focus:text-gray-500 focus:outline-none"
-                            >
-                                <svg
-                                    className="h-6 w-6"
-                                    stroke="currentColor"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                >
-                                    <path
-                                        className={
-                                            !showingNavigationDropdown
-                                                ? 'inline-flex'
-                                                : 'hidden'
-                                        }
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth="2"
-                                        d="M4 6h16M4 12h16M4 18h16"
-                                    />
-                                    <path
-                                        className={
-                                            showingNavigationDropdown
-                                                ? 'inline-flex'
-                                                : 'hidden'
-                                        }
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth="2"
-                                        d="M6 18L18 6M6 6l12 12"
-                                    />
-                                </svg>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                <div
-                    className={
-                        (showingNavigationDropdown ? 'block' : 'hidden') +
-                        ' sm:hidden'
-                    }
+              <div className="hidden sm:flex items-center gap-4">
+                <Link
+                  href={route('dashboard')}
+                  className={[
+                    'px-3 py-2 rounded-md text-sm font-medium transition-colors border',
+                    isActive('dashboard')
+                      ? 'bg-amber-900/40 text-amber-300 border-amber-700'
+                      : 'hover:bg-stone-800 text-stone-200 border-stone-700'
+                  ].join(' ')}
                 >
-                    <div className="space-y-1 pb-3 pt-2">
-                        <ResponsiveNavLink
-                            href={route('dashboard')}
-                            active={route().current('dashboard')}
-                        >
-                            Dashboard
-                        </ResponsiveNavLink>
-                        <ResponsiveNavLink
-                            href={route('game.lobby')}
-                            active={route().current('game.*')}
-                        >
-                            🎮 Game
-                        </ResponsiveNavLink>
-                    </div>
+                  Dasbor
+                </Link>
 
-                    <div className="border-t border-gray-200 pb-1 pt-4">
-                        <div className="px-4">
-                            <div className="text-base font-medium text-gray-800">
-                                {user.name}
-                            </div>
-                            <div className="text-sm font-medium text-gray-500">
-                                {user.email}
-                            </div>
-                        </div>
+                <Link
+                  href={route('game.lobby')}
+                  className={[
+                    'px-3 py-2 rounded-md text-sm font-medium transition-colors border',
+                    isActive('game.*')
+                      ? 'bg-amber-900/40 text-amber-300 border-amber-700'
+                      : 'hover:bg-stone-800 text-stone-200 border-stone-700'
+                  ].join(' ')}
+                >
+                  🎮 Gim
+                </Link>
+              </div>
+            </div>
 
-                        <div className="mt-3 space-y-1">
-                            <ResponsiveNavLink href={route('profile.edit')}>
-                                Profile
-                            </ResponsiveNavLink>
-                            <ResponsiveNavLink
-                                method="post"
-                                href={route('logout')}
-                                as="button"
-                            >
-                                Log Out
-                            </ResponsiveNavLink>
-                        </div>
-                    </div>
-                </div>
-            </nav>
+            {/* Kanan: Menu User (Desktop) */}
+            <div className="hidden sm:flex items-center gap-4">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" className="text-stone-200 hover:text-amber-300">
+                    {user?.name}
+                    <span className="ml-2">⌄</span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="min-w-56 border-stone-700 bg-stone-900 text-stone-200">
+                  <div className="px-2 py-2">
+                    <div className="text-sm font-medium">{user?.name}</div>
+                    <div className="text-xs text-stone-400">{user?.email}</div>
+                  </div>
+                  <DropdownMenuSeparator className="bg-stone-700" />
+                  <DropdownMenuItem asChild>
+                    <Link href={route('profile.edit')} className="w-full cursor-pointer">
+                      Profil
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator className="bg-stone-700" />
+                  <DropdownMenuItem asChild>
+                    <Link href={route('logout')} method="post" as="button" className="w-full cursor-pointer text-red-300">
+                      Keluar
+                    </Link>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
 
-            {header && (
-                <header className="bg-white shadow">
-                    <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-                        {header}
-                    </div>
-                </header>
-            )}
+              {/* Toggle Mobile untuk konsistensi aksesibilitas (tersembunyi di desktop) */}
+              <Button
+                variant="outline"
+                onClick={() => setMobileOpen(v => !v)}
+                className="sm:hidden border-stone-700 text-stone-200 hover:bg-stone-800/60"
+                aria-label="Buka menu"
+              >
+                ☰
+              </Button>
+            </div>
 
-            <main>{children}</main>
+            {/* Kanan: Tombol Mobile */}
+            <div className="sm:hidden">
+              <Button
+                variant="outline"
+                onClick={() => setMobileOpen(v => !v)}
+                className="border-stone-700 text-stone-200 hover:bg-stone-800/60"
+                aria-label="Buka menu"
+              >
+                {mobileOpen ? '✕' : '☰'}
+              </Button>
+            </div>
+          </div>
         </div>
-    );
+
+        {/* Mobile Menu */}
+        <div className={(mobileOpen ? 'block' : 'hidden') + ' sm:hidden'}>
+          <Card className="mx-2 mb-3 border-2 border-stone-700 bg-gradient-to-b from-stone-900 to-stone-800">
+            <div className="space-y-1 p-3">
+              <Link
+                href={route('dashboard')}
+                className={[
+                  'block rounded-md px-3 py-2 text-sm font-medium border',
+                  isActive('dashboard')
+                    ? 'bg-amber-900/40 text-amber-300 border-amber-700'
+                    : 'text-stone-200 border-stone-700 hover:bg-stone-800'
+                ].join(' ')}
+              >
+                Dasbor
+              </Link>
+              <Link
+                href={route('game.lobby')}
+                className={[
+                  'block rounded-md px-3 py-2 text-sm font-medium border',
+                  isActive('game.*')
+                    ? 'bg-amber-900/40 text-amber-300 border-amber-700'
+                    : 'text-stone-200 border-stone-700 hover:bg-stone-800'
+                ].join(' ')}
+              >
+                🎮 Gim
+              </Link>
+            </div>
+
+            <Separator className="bg-stone-700" />
+
+            <div className="p-3">
+              <div className="px-2">
+                <div className="text-base font-medium text-amber-300">{user?.name}</div>
+                <div className="text-sm text-stone-400">{user?.email}</div>
+              </div>
+              <div className="mt-3 space-y-1">
+                <Link
+                  href={route('profile.edit')}
+                  className="block rounded-md px-3 py-2 text-sm font-medium text-stone-200 border border-stone-700 hover:bg-stone-800"
+                >
+                  Profil
+                </Link>
+                <Link
+                  href={route('logout')}
+                  method="post"
+                  as="button"
+                  className="block w-full rounded-md px-3 py-2 text-left text-sm font-medium text-red-300 border border-red-700 hover:bg-red-950"
+                >
+                  Keluar
+                </Link>
+              </div>
+            </div>
+          </Card>
+        </div>
+      </nav>
+
+      {/* Header halaman opsional */}
+      {header && (
+        <header className="border-b-4 border-amber-700 bg-gradient-to-r from-stone-900 via-stone-800 to-amber-950">
+          <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+            {header}
+          </div>
+        </header>
+      )}
+
+      {/* Konten utama */}
+      <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+        {children}
+      </main>
+    </div>
+  );
 }

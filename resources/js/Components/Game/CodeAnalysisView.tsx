@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/Components/ui/card';
 import { Button } from '@/Components/ui/button';
 import { Badge } from '@/Components/ui/badge';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/Components/ui/accordion';
 
 interface Props {
   puzzle: any;
@@ -20,7 +21,7 @@ export default function CodeAnalysisView({ puzzle, role, onSubmitAttempt, submit
   const isDefuser = role === 'defuser';
   const isExpert = role === 'expert';
 
-  // Obfuscation untuk petunjuk agar lebih samar (hindari angka langsung dan istilah eksplisit)
+  // Obfuscation untuk petunjuk agar lebih samar
   const runeMap: Record<string, string> = {
     '0': '◇','1': '†','2': '♁','3': '♆','4': '♄','5': '♃','6': '☿','7': '☼','8': '◈','9': '★',
   };
@@ -57,7 +58,6 @@ export default function CodeAnalysisView({ puzzle, role, onSubmitAttempt, submit
     return [...base, ...extra].map(obfuscate);
   }, [puzzle]);
 
-  // Submit
   const handleSubmit = () => {
     if (isCipherPuzzle) {
       if (!input.trim()) return;
@@ -134,7 +134,6 @@ export default function CodeAnalysisView({ puzzle, role, onSubmitAttempt, submit
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
-                {/* Tampilkan cipher untuk Defuser/Host */}
                 {(isDefuser || role === 'host') && (
                   <div className="space-y-3">
                     <h4 className="text-stone-200 font-semibold">Naskah Terkunci</h4>
@@ -147,34 +146,102 @@ export default function CodeAnalysisView({ puzzle, role, onSubmitAttempt, submit
                   </div>
                 )}
 
-                {/* Expert: hanya bimbingan konseptual, tanpa jawaban/angka kunci */}
+                {/* Expert Accordion (tanpa mengungkap kunci/jawaban) */}
                 {(isExpert || role === 'host') && puzzle.expertView && (
                   <div className="space-y-4">
-                    {puzzle.expertView.rule && (
-                      <div className="p-4 rounded-xl border-2 border-stone-700 bg-stone-800/60">
-                        <h5 className="text-stone-200 font-semibold mb-2">Prinsip Umum</h5>
-                        <p className="text-stone-300 italic">“{obfuscate(puzzle.expertView.rule)}”</p>
-                      </div>
-                    )}
-                    {puzzle.expertView.category && (
-                      <Badge className="bg-indigo-800 text-indigo-100 border-indigo-700">
-                        Kategori: {String(puzzle.expertView.category)}
-                      </Badge>
-                    )}
-                    {/* Disembunyikan: cipher_type, shift, decryption steps, answer */}
-                    <div className="p-4 rounded-xl border-2 border-amber-700 bg-gradient-to-r from-amber-900 to-stone-900">
-                      <h5 className="text-amber-300 font-medium mb-2">Peran Expert</h5>
-                      <ul className="text-sm text-amber-200 space-y-1 list-disc pl-5">
-                        <li>Bimbing Defuser menebak transformasi tanpa menyebut angka kunci atau hasil akhir.</li>
-                        <li>Gunakan pertanyaan penuntun dan verifikasi tiap hipotesis secara bertahap.</li>
-                        <li>Fokus pada pola pemetaan huruf dan frekuensi, bukan nilai spesifik.</li>
-                        <li>Berikan analogi konseptual (rotasi, substitusi, komposisi) tanpa contoh identik.</li>
-                      </ul>
-                    </div>
+                    <Accordion type="multiple" className="space-y-3">
+                      <AccordionItem value="konsep" className="border-b border-stone-700">
+                        <AccordionTrigger className="text-stone-200">Prinsip Umum</AccordionTrigger>
+                        <AccordionContent className="p-3 rounded-xl border-2 border-stone-700 bg-stone-800/60">
+                          <p className="text-stone-300 italic">“{obfuscate(puzzle.expertView.rule || 'Jejak transformasi tersembunyi memandu arah tanpa menyebutkan runenya.')}”</p>
+                        </AccordionContent>
+                      </AccordionItem>
+
+                      <AccordionItem value="penalaran" className="border-b border-stone-700">
+                        <AccordionTrigger className="text-stone-200">Jejak Penalaran</AccordionTrigger>
+                        <AccordionContent className="p-3 rounded-xl border-2 border-indigo-700 bg-gradient-to-r from-indigo-950 to-stone-900">
+                          <ul className="text-sm text-indigo-100 space-y-1 list-disc pl-5">
+                            <li>Amati kerap munculnya simbol tertentu; frekuensi huruf membantu menebak substitusi, khususnya pada monoalfabetik seperti Caesar/substitusi tunggal [web:40][web:75].</li>
+                            <li>Uji hipotesis dengan pasangan huruf (digram) dan trigram umum seperti TH, HE, IN, THE, ING pada bahasa Inggris, atau pola lazim bahasa sasaran lain [web:66][web:69].</li>
+                            <li>Konfirmasi lokal: terapkan pemetaan pada cuplikan pendek; jika kata mulai masuk akal, perluas bertahap tanpa mengungkapkan pemetaan penuh [web:40].</li>
+                          </ul>
+                        </AccordionContent>
+                      </AccordionItem>
+
+                      {/* BARU: Deteksi Jenis Sandi */}
+                      <AccordionItem value="deteksi" className="border-b border-stone-700">
+                        <AccordionTrigger className="text-stone-200">Deteksi Jenis Sandi</AccordionTrigger>
+                        <AccordionContent className="p-3 rounded-xl border-2 border-emerald-700 bg-gradient-to-r from-emerald-950 to-stone-900">
+                          <ul className="text-sm text-emerald-100 space-y-1 list-disc pl-5">
+                            <li>Index of Coincidence (IoC): teks monoalfabetik cenderung mendekati IoC bahasa alami, sementara polialfabetik mendekati seragam; gunakan IoC untuk indikasi awal [web:46][web:49][web:55].</li>
+                            <li>Ulangi-ulang n-gram: temuan pengulangan segmen dan jarak antar pengulangan memberi petunjuk kunci Vigenère (panjang kunci) via Kasiski [web:48][web:51][web:54].</li>
+                            <li>Frekuensi global terpelihara pada transposisi; jika frekuensi mirip bahasa normal namun teks tak bermakna, pertimbangkan transposisi [web:61][web:63].</li>
+                          </ul>
+                        </AccordionContent>
+                      </AccordionItem>
+
+                      {/* BARU: Strategi Substitusi (Monoalphabetik) */}
+                      <AccordionItem value="mono" className="border-b border-stone-700">
+                        <AccordionTrigger className="text-stone-200">Strategi Substitusi (Monoalfabetik)</AccordionTrigger>
+                        <AccordionContent className="p-3 rounded-xl border-2 border-blue-700 bg-gradient-to-r from-blue-950 to-stone-900">
+                          <ul className="text-sm text-blue-100 space-y-1 list-disc pl-5">
+                            <li>Lakukan analisis frekuensi huruf tunggal; cocokkan pola ETAOIN… untuk Inggris atau distribusi bahasa target agar memulai pemetaan [web:40][web:72].</li>
+                            <li>Gunakan chi-squared untuk menguji semua pergeseran Caesar dan pilih skor terkecil sebagai kandidat terbaik tanpa menyebut nilai pergeserannya [web:65][web:68][web:71].</li>
+                            <li>Validasi dengan digram/trigram dan kata pendek umum; perbaiki pemetaan secara iteratif hingga koheren [web:66][web:40].</li>
+                          </ul>
+                        </AccordionContent>
+                      </AccordionItem>
+
+                      {/* BARU: Strategi Polialfabetik (Vigenère) */}
+                      <AccordionItem value="vigenere" className="border-b border-stone-700">
+                        <AccordionTrigger className="text-stone-200">Strategi Polialfabetik (Vigenère)</AccordionTrigger>
+                        <AccordionContent className="p-3 rounded-xl border-2 border-purple-700 bg-gradient-to-r from-purple-950 to-stone-900">
+                          <ul className="text-sm text-purple-100 space-y-1 list-disc pl-5">
+                            <li>Pakai Kasiski: cari pengulangan n-gram, ambil jarak antar kemunculan, faktorkan untuk menebak panjang kunci tanpa mengucap kuncinya [web:48][web:51][web:58].</li>
+                            <li>Estimasi panjang kunci juga bisa dibantu IoC: bagi teks menjadi kolom-kolom sesuai panjang kunci, IoC tiap kolom mendekati monoalfabetik [web:46][web:49].</li>
+                            <li>Analisis frekuensi per-kolom layaknya Caesar untuk merekonstruksi pola kunci, verifikasi secara bertahap pada cuplikan [web:51][web:68].</li>
+                          </ul>
+                        </AccordionContent>
+                      </AccordionItem>
+
+                      {/* BARU: Strategi Transposisi */}
+                      <AccordionItem value="transposisi" className="border-b border-stone-700">
+                        <AccordionTrigger className="text-stone-200">Strategi Transposisi</AccordionTrigger>
+                        <AccordionContent className="p-3 rounded-xl border-2 border-teal-700 bg-gradient-to-r from-teal-950 to-stone-900">
+                          <ul className="text-sm text-teal-100 space-y-1 list-disc pl-5">
+                            <li>Substitusi tidak terjadi; huruf-huruf hanya ditukar posisinya sehingga frekuensi global tetap, telusuri pola baris/kolom atau jalur rute [web:61][web:63].</li>
+                            <li>Uji grid/kolom sederhana (columnar, rail fence) pada panjang yang wajar; perhatikan kemunculan kata pendek sebagai sinyal benar [web:63][web:64].</li>
+                            <li>Jika teks mendadak bermakna setelah reordering, lanjutkan penyusunan tanpa menyebut urutan kolom yang tepat ke defuser [web:61][web:67].</li>
+                          </ul>
+                        </AccordionContent>
+                      </AccordionItem>
+
+                      <AccordionItem value="pantangan" className="border-b border-stone-700">
+                        <AccordionTrigger className="text-stone-200">Pantangan Mengungkap</AccordionTrigger>
+                        <AccordionContent className="p-3 rounded-xl border-2 border-amber-700 bg-gradient-to-r from-amber-900 to-stone-900">
+                          <ul className="text-sm text-amber-200 space-y-1 list-disc pl-5">
+                            <li>Jangan menyebut alfabet pemetaan, nilai pergeseran, panjang kunci spesifik, atau kata kunci Vigenère [web:48][web:68].</li>
+                            <li>Jangan mengucap hasil akhir; berikan arah verifikasi bertahap dan biarkan defuser menyimpulkan [web:40].</li>
+                            <li>Berikan hanya kerangka uji (frekuensi, Kasiski, IoC, chi-squared) dan cara memvalidasi parsial [web:46][web:65].</li>
+                          </ul>
+                        </AccordionContent>
+                      </AccordionItem>
+
+                      <AccordionItem value="kategori" className="border-b border-stone-700">
+                        <AccordionTrigger className="text-stone-200">Kategori Sandi</AccordionTrigger>
+                        <AccordionContent className="p-3">
+                          {puzzle.expertView.category && (
+                            <Badge className="bg-indigo-800 text-indigo-100 border-indigo-700">
+                              Kategori: {String(puzzle.expertView.category)}
+                            </Badge>
+                          )}
+                        </AccordionContent>
+                      </AccordionItem>
+                    </Accordion>
                   </div>
                 )}
 
-                {/* Input Defuser untuk cipher */}
+                {/* Input Defuser */}
                 {isDefuser && (
                   <div className="space-y-4">
                     <label className="block text-sm font-medium text-blue-200">Masukkan hasil dekripsi</label>
@@ -194,7 +261,6 @@ export default function CodeAnalysisView({ puzzle, role, onSubmitAttempt, submit
                       {submitting ? 'Mengirim...' : 'Kirim Jawaban'}
                     </Button>
 
-                    {/* Petunjuk Defuser (terselubung) */}
                     {defuserHintsCipher.length > 0 && (
                       <div className="mt-2 p-4 rounded-xl border-2 border-blue-700 bg-gradient-to-r from-blue-950 to-stone-900">
                         <h5 className="text-blue-200 font-medium mb-2">Petunjuk Terselubung</h5>
@@ -221,7 +287,6 @@ export default function CodeAnalysisView({ puzzle, role, onSubmitAttempt, submit
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
-                {/* Tampilan kode untuk Defuser memilih baris bermasalah */}
                 {Array.isArray(puzzle.defuserView?.codeLines) && (
                   <div className="space-y-3">
                     <h4 className="text-stone-200 font-semibold">Naskah Ditulis</h4>
@@ -252,23 +317,57 @@ export default function CodeAnalysisView({ puzzle, role, onSubmitAttempt, submit
                   </div>
                 )}
 
-                {/* Expert: bimbingan konseptual tanpa baris/solusi eksplisit */}
                 {(isExpert || role === 'host') && (
-                  <div className="space-y-4">
-                    <div className="p-4 rounded-xl border-2 border-stone-700 bg-stone-800/60">
-                      <h5 className="text-stone-200 font-semibold mb-2">Arah Penelusuran</h5>
-                      <ul className="text-sm text-stone-300 space-y-1 list-disc pl-5">
-                        <li>Jejakkan mata pada variabel yang berubah makna di lorong-lorong bercabang.</li>
-                        <li>Carilah ritus yang membuka sumber daya namun lupa menutup gerbangnya.</li>
-                        <li>Perhatikan mantra yang memanggil dirinya sendiri tanpa totem henti.</li>
-                        <li>Uji asumsi tipe dan batas; kutukan sering bersembunyi pada tepian.</li>
-                      </ul>
-                    </div>
-                    {/* Jangan tampilkan daftar bug dengan nomor baris atau jawaban final */}
-                  </div>
+                  <Accordion type="multiple" className="space-y-3">
+                    <AccordionItem value="arah">
+                      <AccordionTrigger className="text-stone-200">Arah Penelusuran</AccordionTrigger>
+                      <AccordionContent className="p-4 rounded-xl border-2 border-stone-700 bg-stone-800/60">
+                        <ul className="text-sm text-stone-300 space-y-1 list-disc pl-5">
+                          <li>Jejakkan mata pada variabel yang berubah makna di lorong-lorong bercabang.</li>
+                          <li>Carilah ritus yang membuka sumber daya namun lupa menutup gerbangnya.</li>
+                          <li>Perhatikan mantra yang memanggil dirinya sendiri tanpa totem henti.</li>
+                          <li>Uji asumsi tipe dan batas; kutukan sering bersembunyi pada tepian.</li>
+                        </ul>
+                      </AccordionContent>
+                    </AccordionItem>
+
+                    <AccordionItem value="cek">
+                      <AccordionTrigger className="text-stone-200">Daftar Cek Non-Spoiler</AccordionTrigger>
+                      <AccordionContent className="p-4 rounded-xl border-2 border-indigo-700 bg-gradient-to-r from-indigo-950 to-stone-900">
+                        <ul className="text-sm text-indigo-100 space-y-1 list-disc pl-5">
+                          <li>Null/undefined dan alur cabang kompleks yang menyamarkan niat. </li>
+                          <li>Penggunaan sumber daya tanpa penutupan (file/stream/timeout) yang bocor senyap. </li>
+                          <li>Duplikasi logika, penamaan gelap, dan ketergantungan tak terdokumentasi. </li>
+                          <li>Cek tepi: indeks, panjang, konversi tipe, dan efek samping tak diharapkan. </li>
+                        </ul>
+                      </AccordionContent>
+                    </AccordionItem>
+
+                    <AccordionItem value="sokratik">
+                      <AccordionTrigger className="text-stone-200">Pertanyaan Pemandu</AccordionTrigger>
+                      <AccordionContent className="p-4 rounded-xl border-2 border-amber-700 bg-gradient-to-r from-amber-900 to-stone-900">
+                        <ul className="text-sm text-amber-200 space-y-1 list-disc pl-5">
+                          <li>Jika cabang ini tidak berjalan, ritual apa yang tetap aktif di belakang layar. </li>
+                          <li>Bagian mana yang bergantung pada keadaan sebelumnya dan dapat tersesat. </li>
+                          <li>Apa yang terjadi bila masukan kosong, sangat panjang, atau di luar ranah. </li>
+                          <li>Apakah nama-nama mantra mencerminkan tujuan sejatinya. </li>
+                        </ul>
+                      </AccordionContent>
+                    </AccordionItem>
+
+                    <AccordionItem value="larangan">
+                      <AccordionTrigger className="text-stone-200">Pantangan Mengungkap</AccordionTrigger>
+                      <AccordionContent className="p-4 rounded-xl border-2 border-red-700 bg-gradient-to-r from-red-950 to-stone-900">
+                        <ul className="text-sm text-red-200 space-y-1 list-disc pl-5">
+                          <li>Jangan sebut nomor baris yang terkutuk. </li>
+                          <li>Jangan berikan patch akhir; fokuskan pada arah penyucian. </li>
+                          <li>Jangan bocorkan nilai antara, hanya bentuk logikanya. </li>
+                        </ul>
+                      </AccordionContent>
+                    </AccordionItem>
+                  </Accordion>
                 )}
 
-                {/* Kontrol Defuser untuk submit pilihan bug */}
                 {isDefuser && (
                   <div className="space-y-3">
                     <Button
@@ -279,7 +378,6 @@ export default function CodeAnalysisView({ puzzle, role, onSubmitAttempt, submit
                       {submitting ? 'Mengirim...' : `Kirim Laporan Bug (${foundBugs.length})`}
                     </Button>
 
-                    {/* Petunjuk Defuser (terselubung) */}
                     {defuserHintsBug.length > 0 && (
                       <div className="p-4 rounded-xl border-2 border-purple-700 bg-gradient-to-r from-purple-950 to-stone-900">
                         <h5 className="text-purple-200 font-medium mb-2">Bisik-bisik Lorong</h5>

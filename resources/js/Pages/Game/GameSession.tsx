@@ -1,14 +1,19 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Head, usePage } from '@inertiajs/react';
 import { GameState } from '@/types/game';
 import { gameApi } from '@/services/gameApi';
 import Authenticated from '@/Layouts/AuthenticatedLayout';
 
-// Import multi-stage components
+// Tetap gunakan komponen internal multi-stage
 import StageProgress from '@/Components/Game/StageProgress';
 import GamePlay from '@/Components/Game/GamePlay';
 import StageTransition from '@/Components/Game/StageTransition';
 import VoiceChat from '@/Components/Game/VoiceChat';
+
+// shadcn/ui
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/Components/ui/card';
+import { Button } from '@/Components/ui/button';
+import { Badge } from '@/Components/ui/badge';
 
 interface Props {
   sessionId: number;
@@ -25,7 +30,6 @@ interface StageResult {
   attemptsRemaining?: number;
 }
 
-// SOLUTION: Create completely separate interface instead of extending GameState
 interface MultiStageGameState {
   session: GameState['session'];
   puzzle: GameState['puzzle'];
@@ -57,55 +61,44 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
   const [showVoiceChat, setShowVoiceChat] = useState(true);
   const [isVoiceChatCollapsed, setIsVoiceChatCollapsed] = useState(false);
 
-  // ENHANCED: Better role detection with multiple sources
-  const getCurrentRole = (): 'defuser' | 'expert' | 'host' | 'observer' => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const urlRole = urlParams.get('role');
+  // CSS tema dungeon + animasi ringan
+  const DungeonCSS = () => (
+    <style>{`
+      @keyframes torchFlicker { 0%,100%{opacity:1;filter:brightness(1)} 25%{opacity:.86;filter:brightness(1.12)} 50%{opacity:.75;filter:brightness(.95)} 75%{opacity:.92;filter:brightness(1.05)} }
+      @keyframes crystalGlow { 0%,100%{box-shadow:0 0 20px rgba(180,83,9,.6),0 0 40px rgba(251,191,36,.25)} 50%{box-shadow:0 0 28px rgba(180,83,9,.8),0 0 60px rgba(251,191,36,.45)} }
+      @keyframes runeFloat { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-6px)} }
+      .torch-flicker { animation: torchFlicker 2.2s ease-in-out infinite; }
+      .crystal-glow { animation: crystalGlow 3s ease-in-out infinite; }
+      .rune-float { animation: runeFloat 3.2s ease-in-out infinite; }
+    `}</style>
+  );
 
-    // Priority: URL params > props > participant lookup > default
-    if (urlRole && ['defuser', 'expert', 'host'].includes(urlRole)) {
-      return urlRole as 'defuser' | 'expert' | 'host';
-    }
-
-    if (propRole && ['defuser', 'expert', 'host'].includes(propRole)) {
-      return propRole;
-    }
-
-    // Check if user is a participant with a specific role
-    const participants = gameState?.session?.participants || [];
-    const userParticipant = participants.find(p => p.user_id === auth?.user?.id);
-    if (userParticipant?.role) {
-      return userParticipant.role as 'defuser' | 'expert' | 'host';
-    }
-
-    return 'observer';
-  };
+  // Deteksi peran dengan prioritas URL > prop > peserta > observer
+  const getCurrentRole = useMemo(() => {
+    return (): 'defuser' | 'expert' | 'host' | 'observer' => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlRole = urlParams.get('role');
+      if (urlRole && ['defuser', 'expert', 'host'].includes(urlRole)) return urlRole as any;
+      if (propRole && ['defuser', 'expert', 'host'].includes(propRole)) return propRole;
+      const participants = gameState?.session?.participants || [];
+      const userParticipant = participants.find((p) => p.user_id === auth?.user?.id);
+      if (userParticipant?.role) return userParticipant.role as any;
+      return 'observer';
+    };
+  }, [auth?.user?.id, gameState?.session?.participants, propRole]);
 
   const currentRole = getCurrentRole();
 
-  // ENHANCED: Better logging and error handling
+  // Muat state permainan periodik
   useEffect(() => {
-    console.log('🔍 GameSession mounted:', {
-      sessionId,
-      propRole,
-      urlRole: new URLSearchParams(window.location.search).get('role'),
-      currentRole,
-      userId: auth?.user?.id
-    });
-
     if (!sessionId) {
-      setError('Session ID is required');
+      setError('ID sesi diperlukan');
       setLoading(false);
       return;
     }
-
     const loadGameState = async () => {
       try {
-        console.log('🔄 Loading game state for session:', sessionId);
         const state = await gameApi.getGameState(sessionId);
-
-        console.log('🔍 Raw API response:', state);
-
         if (state && state.session) {
           const safeState: MultiStageGameState = {
             session: {
@@ -115,39 +108,27 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
             },
             puzzle: state.puzzle,
             stage: state.stage,
-            serverTime: state.serverTime
+            serverTime: state.serverTime,
           };
-
-          console.log('🔍 Processed game state:', safeState);
-          console.log('🔍 Puzzle exists:', !!safeState.puzzle);
-          console.log('🔍 Expert view exists:', !!safeState.puzzle?.expertView);
-          console.log('🔍 Expert view data:', safeState.puzzle?.expertView);
-
           setGameState(safeState);
           setError('');
         } else {
-          console.warn('⚠️ Invalid game state response');
-          setError('Invalid game state received');
+          setError('Data sesi tidak valid');
         }
       } catch (err: any) {
-        console.error('❌ Error loading game state:', err);
-        setError(err.message || 'Failed to load game state');
+        setError(err?.message || 'Gagal memuat data permainan');
       } finally {
         setLoading(false);
       }
     };
-
     loadGameState();
     const interval = setInterval(loadGameState, 3000);
     return () => clearInterval(interval);
-  }, [sessionId, auth?.user?.id]);
+  }, [sessionId]);
 
   const handleStartSession = async () => {
     try {
-      console.log('🚀 Starting multi-stage session...');
       await gameApi.startSession(sessionId);
-
-      // Refresh game state after starting
       setTimeout(async () => {
         try {
           const state = await gameApi.getGameState(sessionId);
@@ -160,43 +141,29 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
               },
               puzzle: state.puzzle,
               stage: state.stage,
-              serverTime: state.serverTime
+              serverTime: state.serverTime,
             };
             setGameState(safeState);
           }
-        } catch (error) {
-          console.error('Error reloading state after start:', error);
+        } catch {
+          // diam
         }
       }, 1000);
-    } catch (error: any) {
-      console.error('Error starting session:', error);
-      alert(error.response?.data?.message || 'Failed to start session');
+    } catch (err: any) {
+      setError(err?.response?.data?.message || 'Gagal memulai sesi');
     }
   };
 
   const handleAttemptSubmit = async (inputValue: string) => {
     if (!gameState) return;
-
     try {
-      console.log('🎯 Submitting attempt:', inputValue);
-      const result = await gameApi.submitAttempt(
-        gameState.session.id,
-        gameState.puzzle.key,
-        inputValue
-      );
-
-      console.log('🔍 Submit result:', result);
-
-      // Check if stage or game completed
+      const result = await gameApi.submitAttempt(gameState.session.id, gameState.puzzle.key, inputValue);
       if (result.stageComplete || result.gameComplete) {
         setStageResult(result);
         setShowTransition(true);
-
-        // Auto-hide transition after 4 seconds and reload state
         setTimeout(async () => {
           setShowTransition(false);
           setStageResult(null);
-
           try {
             const state = await gameApi.getGameState(sessionId);
             if (state) {
@@ -208,42 +175,34 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
                 },
                 puzzle: state.puzzle,
                 stage: state.stage,
-                serverTime: state.serverTime
+                serverTime: state.serverTime,
               };
               setGameState(safeState);
             }
-          } catch (error) {
-            console.error('Error reloading state after completion:', error);
+          } catch {
+            // diam
           }
         }, 4000);
       } else {
-        // Update state for incorrect attempt or partial progress
         setGameState({
           ...gameState,
           session: {
             ...gameState.session,
-            attempts: result.session?.attempts || gameState.session.attempts
-          }
+            attempts: result.session?.attempts || gameState.session.attempts,
+          },
         });
-
-        if (result.attemptsRemaining !== undefined) {
-          console.log(`Attempts remaining: ${result.attemptsRemaining}`);
-        }
       }
-    } catch (error: any) {
-      console.error('Error submitting attempt:', error);
-      alert(error.response?.data?.message || 'Failed to submit attempt');
+    } catch (err: any) {
+      setError(err?.response?.data?.message || 'Gagal mengirim percobaan');
     }
   };
 
-  // Handle game state updates from GamePlay component
   const handleGameStateUpdate = (updatedState: GameState) => {
-    console.log('🔄 Game state update received:', updatedState);
     const convertedState: MultiStageGameState = {
       session: updatedState.session,
       puzzle: updatedState.puzzle,
       stage: updatedState.stage as any,
-      serverTime: updatedState.serverTime
+      serverTime: updatedState.serverTime,
     };
     setGameState(convertedState);
   };
@@ -251,14 +210,17 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
   if (loading) {
     return (
       <Authenticated>
-        <Head title="Loading Multi-Stage Challenge..." />
-        <div className="py-12">
-          <div className="max-w-7xl mx-auto sm:px-6 lg:px-8">
-            <div className="bg-white shadow-sm sm:rounded-lg p-6 text-center">
-              <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-500 mx-auto mb-4"></div>
-              <h3 className="text-lg font-semibold text-gray-700 mb-2">Loading Multi-Stage Challenge</h3>
-              <p className="text-gray-500">Preparing your adventure...</p>
-            </div>
+        <Head title="Memuat Tantangan Multi-Tahap..." />
+        <div className="min-h-screen bg-gradient-to-br from-stone-900 via-stone-800 to-amber-950 py-12">
+          <DungeonCSS />
+          <div className="max-w-4xl mx-auto px-4">
+            <Card className="border-4 border-amber-700 bg-gradient-to-b from-stone-900 to-stone-800">
+              <CardContent className="p-10 text-center">
+                <div className="rune-float text-6xl mb-6">🕯️</div>
+                <h3 className="text-2xl font-bold text-amber-300 mb-2">Menyiapkan Arena Dungeon</h3>
+                <p className="text-stone-300">Mohon tunggu, lantai-lantai ujian sedang dibangunkan...</p>
+              </CardContent>
+            </Card>
           </div>
         </div>
       </Authenticated>
@@ -268,28 +230,32 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
   if (error || !gameState) {
     return (
       <Authenticated>
-        <Head title="Error" />
-        <div className="py-12">
-          <div className="max-w-7xl mx-auto sm:px-6 lg:px-8">
-            <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
-              <div className="text-red-600 text-4xl mb-4">⚠️</div>
-              <h3 className="text-xl font-semibold text-red-800 mb-2">Connection Error</h3>
-              <p className="text-red-600 mb-6">{error || 'Unable to load game data'}</p>
-              <div className="space-x-4">
-                <button
-                  onClick={() => window.location.reload()}
-                  className="bg-red-500 text-white px-6 py-2 rounded-lg hover:bg-red-600 transition-colors"
-                >
-                  Retry Connection
-                </button>
-                <button
-                  onClick={() => window.location.href = '/game'}
-                  className="bg-gray-500 text-white px-6 py-2 rounded-lg hover:bg-gray-600 transition-colors"
-                >
-                  Back to Lobby
-                </button>
-              </div>
-            </div>
+        <Head title="Kesalahan" />
+        <div className="min-h-screen bg-gradient-to-br from-stone-900 via-stone-800 to-amber-950 py-12">
+          <DungeonCSS />
+          <div className="max-w-4xl mx-auto px-4">
+            <Card className="border-4 border-red-700 bg-gradient-to-b from-stone-900 to-red-950">
+              <CardContent className="p-10 text-center">
+                <div className="torch-flicker text-6xl mb-6">⚠️</div>
+                <h3 className="text-3xl font-bold text-red-200 mb-3">Ritual Terputus</h3>
+                <p className="text-red-200/90 mb-6">{error || 'Gagal memuat data permainan'}</p>
+                <div className="flex items-center justify-center gap-3">
+                  <Button
+                    onClick={() => window.location.reload()}
+                    className="bg-gradient-to-r from-amber-600 via-amber-700 to-red-600 hover:from-amber-500 hover:via-amber-600 hover:to-red-500 text-stone-900 font-bold"
+                  >
+                    Coba Muat Ulang
+                  </Button>
+                  <Button
+                    onClick={() => (window.location.href = '/game')}
+                    variant="outline"
+                    className="border-stone-600 text-stone-200 hover:bg-stone-800/60"
+                  >
+                    Kembali ke Lobi
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
           </div>
         </div>
       </Authenticated>
@@ -299,558 +265,489 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
   const { session, puzzle, stage } = gameState;
   const participants = session.participants || [];
 
-  // Show transition screen between stages
   if (showTransition && stageResult) {
     return (
       <Authenticated>
-        <Head title="Stage Transition" />
-        <StageTransition
-          result={stageResult}
-          currentStage={stage?.current}
-          totalStages={stage?.total}
-        />
+        <Head title="Peralihan Tahap" />
+        <StageTransition result={stageResult} currentStage={stage?.current} totalStages={stage?.total} />
       </Authenticated>
     );
   }
 
-  // SOLUTION 4: Switch Statement for Type-Safe Status Handling
-  const renderGameContent = () => {
-    switch (session.status) {
-      case 'waiting':
-        return (
-          <div className="grid lg:grid-cols-4 gap-6">
-            {/* Main waiting content */}
-            <div className="lg:col-span-3">
-              <div className="bg-white shadow-sm sm:rounded-lg p-8">
-                <div className="text-center">
-                  <div className="text-6xl mb-4">🚀</div>
-                  <h2 className="text-2xl font-semibold text-yellow-600 mb-6">
-                    Preparing Multi-Stage Challenge
-                  </h2>
-
-                  {participants.length < 2 ? (
-                    <div>
-                      <p className="text-gray-600 mb-8 text-lg">
-                        Waiting for more players to join... ({participants.length}/2)
-                      </p>
-                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 max-w-md mx-auto">
-                        <p className="text-blue-800 font-medium mb-3">
-                          🎮 Invite a teammate to join this epic challenge!
-                        </p>
-                        <div className="bg-white border border-blue-300 rounded p-3">
-                          <p className="text-sm text-blue-600 mb-1">Share this team code:</p>
-                          <p className="font-mono font-bold text-lg text-blue-800">{session.team_code}</p>
-                        </div>
+  const renderWaiting = () => (
+    <div className="grid lg:grid-cols-4 gap-6">
+      <div className="lg:col-span-3">
+        <Card className="border-4 border-amber-700 bg-gradient-to-b from-stone-900 to-stone-800">
+          <CardContent className="p-8">
+            <div className="text-center">
+              <div className="rune-float text-6xl mb-4">🗝️</div>
+              <h2 className="text-2xl font-semibold text-amber-300 mb-4">Persiapan Ujian Multi-Tahap</h2>
+              {participants.length < 2 ? (
+                <div>
+                  <p className="text-stone-300 mb-8 text-lg">
+                    Menunggu rekan seperjuangan bergabung... ({participants.length}/2)
+                  </p>
+                  <Card className="max-w-md mx-auto border-2 border-blue-700 bg-gradient-to-b from-stone-900 to-blue-950">
+                    <CardContent className="p-6">
+                      <p className="text-blue-200 font-medium mb-3">Ajak teman untuk menembus dungeon ini!</p>
+                      <div className="rounded-xl p-3 border border-blue-700 bg-stone-950 text-center">
+                        <p className="text-sm text-blue-300 mb-1">Kode guild:</p>
+                        <p className="font-mono font-bold text-lg text-blue-200">{session.team_code}</p>
                       </div>
-                    </div>
-                  ) : (
-                    <div>
-                      <p className="text-gray-600 mb-8 text-lg">
-                        All players ready! Time to begin the 3-stage challenge. ({participants.length}/2)
-                      </p>
-
-                      <div className="bg-green-50 border border-green-200 rounded-lg p-6 mb-6 max-w-2xl mx-auto">
-                        <h3 className="font-bold text-green-800 mb-3">🎯 Mission Overview</h3>
-                        <div className="grid md:grid-cols-3 gap-4 text-sm">
-                          <div className="text-center">
-                            <div className="bg-green-100 rounded-full w-12 h-12 flex items-center justify-center mx-auto mb-2">
-                              <span className="font-bold text-green-700">1</span>
-                            </div>
-                            <p className="font-medium text-green-700">Pattern Analysis</p>
-                          </div>
-                          <div className="text-center">
-                            <div className="bg-green-100 rounded-full w-12 h-12 flex items-center justify-center mx-auto mb-2">
-                              <span className="font-bold text-green-700">2</span>
-                            </div>
-                            <p className="font-medium text-green-700">Code Analysis</p>
-                          </div>
-                          <div className="text-center">
-                            <div className="bg-green-100 rounded-full w-12 h-12 flex items-center justify-center mx-auto mb-2">
-                              <span className="font-bold text-green-700">3</span>
-                            </div>
-                            <p className="font-medium text-green-700">Navigation Challenge</p>
-                          </div>
-                        </div>
-                      </div>
-
-                      <button
-                        onClick={handleStartSession}
-                        className="bg-gradient-to-r from-green-600 to-blue-600 hover:from-green-700 hover:to-blue-700 text-white font-bold py-4 px-12 rounded-lg text-xl transition-all duration-300 shadow-lg transform hover:scale-105"
-                      >
-                        🚀 Begin Multi-Stage Challenge
-                      </button>
-                    </div>
-                  )}
+                    </CardContent>
+                  </Card>
                 </div>
-              </div>
-            </div>
-
-            {/* Voice Chat Sidebar for Waiting */}
-            <div className="lg:col-span-1">
-              <div className="space-y-4">
-                {/* Voice Chat Toggle */}
-                <div className="bg-white shadow-sm sm:rounded-lg p-4">
-                  <button
-                    onClick={() => setShowVoiceChat(!showVoiceChat)}
-                    className={`w-full flex items-center justify-center px-4 py-3 rounded-lg font-medium transition-colors ${
-                      showVoiceChat
-                        ? 'bg-green-100 text-green-700 hover:bg-green-200'
-                        : 'bg-blue-500 text-white hover:bg-blue-600'
-                    }`}
+              ) : (
+                <div>
+                  <p className="text-stone-300 mb-8 text-lg">
+                    Tim lengkap! Saatnya memulai ujian 3 tahap. ({participants.length}/2)
+                  </p>
+                  <Card className="max-w-2xl mx-auto mb-6 border-2 border-emerald-700 bg-gradient-to-b from-stone-900 to-emerald-950">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-emerald-300">Gambaran Misi</CardTitle>
+                    </CardHeader>
+                    <CardContent className="grid md:grid-cols-3 gap-4 text-sm">
+                      <div className="text-center">
+                        <div className="bg-emerald-900/40 rounded-full w-12 h-12 flex items-center justify-center mx-auto mb-2 border border-emerald-700">
+                          <span className="font-bold text-emerald-300">1</span>
+                        </div>
+                        <p className="font-medium text-emerald-200">Analisis Pola</p>
+                      </div>
+                      <div className="text-center">
+                        <div className="bg-emerald-900/40 rounded-full w-12 h-12 flex items-center justify-center mx-auto mb-2 border border-emerald-700">
+                          <span className="font-bold text-emerald-300">2</span>
+                        </div>
+                        <p className="font-medium text-emerald-200">Analisis Kode</p>
+                      </div>
+                      <div className="text-center">
+                        <div className="bg-emerald-900/40 rounded-full w-12 h-12 flex items-center justify-center mx-auto mb-2 border border-emerald-700">
+                          <span className="font-bold text-emerald-300">3</span>
+                        </div>
+                        <p className="font-medium text-emerald-200">Navigasi Pohon</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                  <Button
+                    onClick={handleStartSession}
+                    className="bg-gradient-to-r from-amber-600 via-amber-700 to-red-600 hover:from-amber-500 hover:via-amber-600 hover:to-red-500 text-stone-900 font-bold py-4 px-12 text-lg crystal-glow"
                   >
-                    🎙️ {showVoiceChat ? 'Hide Voice Chat' : 'Show Voice Chat'}
-                  </button>
+                    ⚔️ Mulai Ujian Multi-Tahap
+                  </Button>
                 </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
-                {/* Voice Chat Component */}
-                {showVoiceChat && (
-                  <VoiceChat
-                    sessionId={sessionId}
-                    userId={auth?.user?.id}
-                    nickname={auth?.user?.name || 'Unknown'}
-                    role={currentRole as 'defuser' | 'expert' | 'host'}
-                    participants={participants.map(p => ({
-                      id: p.id,
-                      user_id: p.user_id ?? 0,
-                      nickname: p.nickname,
-                      role: p.role
-                    }))}
-                  />
-                )}
-              </div>
+      {/* Sidebar Voice Chat */}
+      <div className="lg:col-span-1">
+        <div className="space-y-4">
+          <Card className="border-2 border-stone-700 bg-gradient-to-b from-stone-900 to-stone-800">
+            <CardContent className="p-4">
+              <Button
+                onClick={() => setShowVoiceChat(!showVoiceChat)}
+                className={
+                  showVoiceChat
+                    ? 'w-full bg-emerald-700 hover:bg-emerald-600'
+                    : 'w-full bg-indigo-700 hover:bg-indigo-600'
+                }
+              >
+                🎙️ {showVoiceChat ? 'Sembunyikan Voice Chat' : 'Tampilkan Voice Chat'}
+              </Button>
+            </CardContent>
+          </Card>
+
+          {showVoiceChat && (
+            <VoiceChat
+              sessionId={sessionId}
+              userId={auth?.user?.id}
+              nickname={auth?.user?.name || 'Unknown'}
+              role={currentRole as 'defuser' | 'expert' | 'host'}
+              participants={participants.map((p: any) => ({
+                id: p.id,
+                user_id: p.user_id ?? 0,
+                nickname: p.nickname,
+                role: p.role,
+              }))}
+            />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderRunning = () => (
+    <div className="space-y-6">
+      {stage && (
+        <StageProgress
+          current={stage.current || 1}
+          total={stage.total || 3}
+          completed={stage.progress?.completed || []}
+          totalScore={stage.progress?.totalScore || 0}
+        />
+      )}
+
+      <Card className="border-4 border-amber-700 bg-gradient-to-r from-stone-900 via-stone-800 to-amber-950">
+        <CardContent className="p-6 text-center">
+          <h1 className="text-3xl font-bold text-amber-300 mb-3">
+            {stage?.config?.title || puzzle?.title || 'Tahap Saat Ini'}
+          </h1>
+          <div className="flex justify-center gap-6 text-sm text-stone-200">
+            <span className="flex items-center">
+              <span className="mr-2">⏱️</span>
+              Batas Waktu: {Math.floor((stage?.config?.timeLimit || 0) / 60)} menit
+            </span>
+            <span className="flex items-center">
+              <span className="mr-2">🎯</span>
+              Upaya Maks: {stage?.config?.maxAttempts || 'N/A'}
+            </span>
+            <span className="flex items-center">
+              <span className="mr-2">📊</span>
+              Tahap: {stage?.current || 1}/{stage?.total || 3}
+            </span>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid lg:grid-cols-4 gap-6">
+        <div className={`transition-all duration-300 ${showVoiceChat && !isVoiceChatCollapsed ? 'lg:col-span-3' : 'lg:col-span-4'}`}>
+          <Card className="border-2 border-stone-700 bg-gradient-to-b from-stone-900 to-stone-800">
+            <CardContent className="p-6">
+              <GamePlay
+                gameState={gameState as GameState}
+                role={['defuser', 'expert', 'host'].includes(currentRole) ? (currentRole as 'defuser' | 'expert' | 'host') : undefined}
+                onGameStateUpdate={handleGameStateUpdate}
+                onSubmitAttempt={handleAttemptSubmit}
+              />
+            </CardContent>
+          </Card>
+        </div>
+
+        {showVoiceChat && !isVoiceChatCollapsed && (
+          <div className="lg:col-span-1">
+            <div className="sticky top-4">
+              <VoiceChat
+                sessionId={sessionId}
+                userId={auth?.user?.id}
+                nickname={auth?.user?.name || 'Unknown'}
+                role={currentRole as 'defuser' | 'expert' | 'host'}
+                participants={participants.map((p: any) => ({
+                  id: p.id,
+                  user_id: p.user_id ?? 0,
+                  nickname: p.nickname,
+                  role: p.role,
+                }))}
+              />
             </div>
           </div>
-        );
+        )}
+      </div>
 
-      case 'running':
-        return (
-          <div className="space-y-6">
-            {/* DEBUG PANEL - TEMPORARY FOR TROUBLESHOOTING */}
-            {process.env.NODE_ENV === 'development' && (
-              <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                <h3 className="font-bold text-purple-800 mb-2">🐛 Debug Panel:</h3>
-                <div className="grid grid-cols-2 gap-4 text-sm text-purple-700">
-                  <div>
-                    <p><strong>Session ID:</strong> {sessionId}</p>
-                    <p><strong>Prop Role:</strong> {propRole || 'None'}</p>
-                    <p><strong>URL Role:</strong> {new URLSearchParams(window.location.search).get('role') || 'None'}</p>
-                    <p><strong>Current Role:</strong> {currentRole}</p>
-                    <p><strong>User ID:</strong> {auth?.user?.id}</p>
-                  </div>
-                  <div>
-                    <p><strong>Session Status:</strong> {session.status}</p>
-                    <p><strong>Has Puzzle:</strong> {!!puzzle ? 'Yes' : 'No'}</p>
-                    <p><strong>Puzzle Type:</strong> {puzzle?.type || 'None'}</p>
-                    <p><strong>Has Expert View:</strong> {!!puzzle?.expertView ? 'Yes' : 'No'}</p>
-                    <p><strong>Participants:</strong> {participants.length}</p>
-                  </div>
-                </div>
-                {puzzle?.expertView && (
-                  <details className="mt-2">
-                    <summary className="cursor-pointer font-medium text-purple-800">Expert View Data</summary>
-                    <pre className="text-xs mt-2 bg-white p-2 rounded overflow-auto max-h-40 border">
-                      {JSON.stringify(puzzle.expertView, null, 2)}
-                    </pre>
-                  </details>
-                )}
-              </div>
-            )}
+      {/* Kontrol mengambang Voice Chat */}
+      <div className="fixed bottom-4 right-4 z-50 flex flex-col space-y-2">
+        {!showVoiceChat && (
+          <Button
+            onClick={() => setShowVoiceChat(true)}
+            className="bg-indigo-700 hover:bg-indigo-600 rounded-full p-3 shadow-lg"
+            title="Tampilkan Voice Chat"
+          >
+            🎙️
+          </Button>
+        )}
+        {showVoiceChat && (
+          <>
+            <Button
+              onClick={() => setIsVoiceChatCollapsed(!isVoiceChatCollapsed)}
+              variant="outline"
+              className="border-stone-600 text-stone-200 hover:bg-stone-800/60 rounded-full p-2 shadow-lg"
+              title={isVoiceChatCollapsed ? 'Perluas Voice Chat' : 'Ciutkan Voice Chat'}
+            >
+              {isVoiceChatCollapsed ? '📱' : '📵'}
+            </Button>
+            <Button
+              onClick={() => setShowVoiceChat(false)}
+              className="bg-red-700 hover:bg-red-600 rounded-full p-2 shadow-lg"
+              title="Sembunyikan Voice Chat"
+            >
+              ✕
+            </Button>
+          </>
+        )}
+      </div>
+    </div>
+  );
 
-            {/* Stage Progress Header */}
-            {stage && (
+  const renderSuccess = () => (
+    <div className="py-6">
+      <Card className="border-4 border-emerald-700 bg-gradient-to-b from-stone-900 to-emerald-950">
+        <CardContent className="p-8 text-center">
+          <div className="rune-float text-6xl mb-4">🎉</div>
+          <h2 className="text-3xl font-bold text-emerald-200 mb-4">Misi Tuntas!</h2>
+          <p className="text-emerald-100 mb-6 text-lg">Selamat, seluruh tahap berhasil dilalui dengan gemilang.</p>
+          {stage && (
+            <div className="mb-6">
               <StageProgress
                 current={stage.current || 1}
                 total={stage.total || 3}
                 completed={stage.progress?.completed || []}
                 totalScore={stage.progress?.totalScore || 0}
               />
-            )}
-
-            {/* Current Stage Header */}
-            <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg p-6 text-center">
-              <h1 className="text-3xl font-bold mb-2">
-                {stage?.config?.title || puzzle?.title || 'Current Challenge'}
-              </h1>
-              <div className="flex justify-center space-x-8 text-sm">
-                <span className="flex items-center">
-                  <span className="mr-2">⏱️</span>
-                  Time Limit: {Math.floor((stage?.config?.timeLimit || 0) / 60)} min
-                </span>
-                <span className="flex items-center">
-                  <span className="mr-2">🎯</span>
-                  Max Attempts: {stage?.config?.maxAttempts || 'N/A'}
-                </span>
-                <span className="flex items-center">
-                  <span className="mr-2">📊</span>
-                  Stage: {stage?.current || 1}/{stage?.total || 3}
-                </span>
-              </div>
             </div>
-
-            {/* Main Game Interface with Voice Chat Integration */}
-            <div className="grid lg:grid-cols-4 gap-6">
-              {/* Game Content */}
-              <div className={`transition-all duration-300 ${
-                showVoiceChat && !isVoiceChatCollapsed ? 'lg:col-span-3' : 'lg:col-span-4'
-              }`}>
-                <div className="bg-white rounded-lg shadow-sm border p-6">
-                  <GamePlay
-                    gameState={gameState as GameState}
-                    role={['defuser', 'expert', 'host'].includes(currentRole) ? currentRole as 'defuser' | 'expert' | 'host' : undefined}
-                    onGameStateUpdate={handleGameStateUpdate}
-                    onSubmitAttempt={handleAttemptSubmit}
-                  />
+          )}
+          <Card className="bg-emerald-900/40 border border-emerald-700 max-w-md mx-auto mb-6">
+            <CardContent className="p-6">
+              <h3 className="text-xl font-bold text-emerald-200 mb-3">Hasil Akhir</h3>
+              <div className="grid grid-cols-2 gap-4 text-emerald-100">
+                <div>
+                  <div className="text-2xl font-bold">{stage?.progress?.totalScore || 0}</div>
+                  <div className="text-sm opacity-80">Skor Total</div>
+                </div>
+                <div>
+                  <div className="text-2xl font-bold">{stage?.progress?.completed?.length || 0}/{stage?.total || 3}</div>
+                  <div className="text-sm opacity-80">Tahap Tuntas</div>
                 </div>
               </div>
-
-              {/* Voice Chat Sidebar */}
-              {showVoiceChat && !isVoiceChatCollapsed && (
-                <div className="lg:col-span-1">
-                  <div className="sticky top-4">
-                    <VoiceChat
-                      sessionId={sessionId}
-                      userId={auth?.user?.id}
-                      nickname={auth?.user?.name || 'Unknown'}
-                      role={currentRole as 'defuser' | 'expert' | 'host'}
-                      participants={participants.map(p => ({
-                        id: p.id,
-                        user_id: p.user_id ?? 0,
-                        nickname: p.nickname,
-                        role: p.role
-                      }))}
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Floating Voice Chat Controls */}
-            <div className="fixed bottom-4 right-4 z-50 flex flex-col space-y-2">
-              {!showVoiceChat && (
-                <button
-                  onClick={() => setShowVoiceChat(true)}
-                  className="bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-full shadow-lg transition-all duration-200 hover:scale-110"
-                  title="Show Voice Chat"
-                >
-                  🎙️
-                </button>
-              )}
-
-              {showVoiceChat && (
-                <>
-                  <button
-                    onClick={() => setIsVoiceChatCollapsed(!isVoiceChatCollapsed)}
-                    className="bg-gray-600 hover:bg-gray-700 text-white p-2 rounded-full shadow-lg transition-all duration-200 hover:scale-110"
-                    title={isVoiceChatCollapsed ? "Expand Voice Chat" : "Collapse Voice Chat"}
-                  >
-                    {isVoiceChatCollapsed ? '📱' : '📵'}
-                  </button>
-
-                  <button
-                    onClick={() => setShowVoiceChat(false)}
-                    className="bg-red-600 hover:bg-red-700 text-white p-2 rounded-full shadow-lg transition-all duration-200 hover:scale-110"
-                    title="Hide Voice Chat"
-                  >
-                    ✕
-                  </button>
-                </>
-              )}
-            </div>
+            </CardContent>
+          </Card>
+          <div className="flex items-center justify-center gap-3">
+            <Button onClick={() => (window.location.href = '/game')} className="bg-indigo-700 hover:bg-indigo-600">
+              Main Lagi
+            </Button>
+            <Button onClick={() => (window.location.href = '/dashboard')} variant="outline" className="border-stone-600 text-stone-200 hover:bg-stone-800/60">
+              Kembali ke Dasbor
+            </Button>
           </div>
-        );
+        </CardContent>
+      </Card>
+    </div>
+  );
 
+  const renderFailed = () => (
+    <div className="py-6">
+      <Card className="border-4 border-red-700 bg-gradient-to-b from-stone-900 to-red-950">
+        <CardContent className="p-8 text-center">
+          <div className="torch-flicker text-6xl mb-4">💥</div>
+          <h2 className="text-3xl font-bold text-red-200 mb-4">Misi Gagal</h2>
+          <p className="text-red-100 mb-6 text-lg">Cobaan tak terselesaikan dalam syarat yang ditetapkan.</p>
+          {stage && (
+            <div className="mb-6">
+              <StageProgress
+                current={stage.current || 1}
+                total={stage.total || 3}
+                completed={stage.progress?.completed || []}
+                totalScore={stage.progress?.totalScore || 0}
+              />
+            </div>
+          )}
+          <Card className="bg-red-900/40 border border-red-700 max-w-md mx-auto mb-6">
+            <CardContent className="p-6">
+              <h3 className="text-xl font-bold text-red-200 mb-3">Jejak Pencapaian</h3>
+              <div className="grid grid-cols-2 gap-4 text-red-100">
+                <div>
+                  <div className="text-2xl font-bold">{stage?.progress?.totalScore || 0}</div>
+                  <div className="text-sm opacity-80">Skor Terkumpul</div>
+                </div>
+                <div>
+                  <div className="text-2xl font-bold">{stage?.progress?.completed?.length || 0}/{stage?.total || 3}</div>
+                  <div className="text-sm opacity-80">Tahap Tuntas</div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <div className="flex items-center justify-center gap-3">
+            <Button onClick={() => (window.location.href = '/game')} className="bg-indigo-700 hover:bg-indigo-600">
+              Coba Lagi
+            </Button>
+            <Button onClick={() => (window.location.href = '/dashboard')} variant="outline" className="border-stone-600 text-stone-200 hover:bg-stone-800/60">
+              Kembali ke Dasbor
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+
+  const renderPaused = () => (
+    <Card className="border-4 border-amber-700 bg-gradient-to-b from-stone-900 to-amber-950">
+      <CardContent className="p-8 text-center">
+        <div className="text-4xl mb-4">⏸️</div>
+        <h2 className="text-2xl font-bold text-amber-300 mb-4">Permainan Dijeda</h2>
+        <p className="text-stone-300 mb-6">Sesi dijeda sementara, tunggu hingga dilanjutkan kembali.</p>
+        <Button onClick={() => window.location.reload()} className="bg-amber-700 hover:bg-amber-600">
+          Segarkan Status
+        </Button>
+      </CardContent>
+    </Card>
+  );
+
+  const renderEnded = () => (
+    <Card className="border-4 border-stone-700 bg-gradient-to-b from-stone-900 to-stone-800">
+      <CardContent className="p-8 text-center">
+        <div className="text-4xl mb-4">🏁</div>
+        <h2 className="text-2xl font-bold text-stone-200 mb-4">Sesi Berakhir</h2>
+        <p className="text-stone-300 mb-6">Terima kasih telah berpartisipasi di ujian dungeon ini.</p>
+        <div className="flex items-center justify-center gap-3">
+          <Button onClick={() => (window.location.href = '/game')} className="bg-indigo-700 hover:bg-indigo-600">
+            Ujian Baru
+          </Button>
+          <Button onClick={() => (window.location.href = '/dashboard')} variant="outline" className="border-stone-600 text-stone-200 hover:bg-stone-800/60">
+            Dasbor
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+
+  const renderUnknown = () => (
+    <Card className="border-4 border-red-700 bg-gradient-to-b from-stone-900 to-red-950">
+      <CardContent className="p-8 text-center">
+        <div className="text-4xl mb-4">❓</div>
+        <h2 className="text-xl font-bold text-red-200 mb-4">Status Tidak Dikenal</h2>
+        <p className="text-red-100 mb-6">
+          Status: <code className="bg-red-900/40 px-2 py-1 rounded border border-red-700">{session.status}</code>
+        </p>
+        <div className="flex items-center justify-center gap-3">
+          <Button onClick={() => window.location.reload()} className="bg-red-700 hover:bg-red-600">
+            Muat Ulang
+          </Button>
+          <Button onClick={() => (window.location.href = '/game')} variant="outline" className="border-stone-600 text-stone-200 hover:bg-stone-800/60">
+            Kembali ke Lobi
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+
+  const renderGameContent = () => {
+    switch (session.status) {
+      case 'waiting':
+        return renderWaiting();
+      case 'running':
+        return renderRunning();
       case 'success':
-        return (
-          <div className="py-12">
-            <div className="max-w-4xl mx-auto sm:px-6 lg:px-8">
-              <div className="bg-green-50 border border-green-200 rounded-lg p-8 text-center">
-                <div className="text-6xl mb-4">🎉</div>
-                <h2 className="text-3xl font-bold text-green-800 mb-4">Mission Accomplished!</h2>
-                <p className="text-green-600 mb-6 text-lg">
-                  Congratulations! You have successfully completed all stages of the challenge.
-                </p>
-
-                {/* Show final stage progress */}
-                {stage && (
-                  <div className="mb-6">
-                    <StageProgress
-                      current={stage.current || 1}
-                      total={stage.total || 3}
-                      completed={stage.progress?.completed || []}
-                      totalScore={stage.progress?.totalScore || 0}
-                    />
-                  </div>
-                )}
-
-                {/* Final Score Display */}
-                <div className="bg-green-100 border border-green-300 rounded-lg p-6 mb-6 max-w-md mx-auto">
-                  <h3 className="text-xl font-bold text-green-800 mb-2">Final Results</h3>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <div className="text-2xl font-bold text-green-700">
-                        {stage?.progress?.totalScore || 0}
-                      </div>
-                      <div className="text-sm text-green-600">Total Score</div>
-                    </div>
-                    <div>
-                      <div className="text-2xl font-bold text-green-700">
-                        {stage?.progress?.completed?.length || 0}/{stage?.total || 3}
-                      </div>
-                      <div className="text-sm text-green-600">Stages Completed</div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-x-4">
-                  <button
-                    onClick={() => window.location.href = '/game'}
-                    className="bg-blue-500 hover:bg-blue-600 text-white px-8 py-3 rounded-lg text-lg font-medium transition-colors"
-                  >
-                    Play Again
-                  </button>
-                  <button
-                    onClick={() => window.location.href = '/dashboard'}
-                    className="bg-gray-500 hover:bg-gray-600 text-white px-8 py-3 rounded-lg text-lg font-medium transition-colors"
-                  >
-                    Back to Dashboard
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-
+        return renderSuccess();
       case 'failed':
-        return (
-          <div className="py-12">
-            <div className="max-w-4xl mx-auto sm:px-6 lg:px-8">
-              <div className="bg-red-50 border border-red-200 rounded-lg p-8 text-center">
-                <div className="text-6xl mb-4">💥</div>
-                <h2 className="text-3xl font-bold text-red-800 mb-4">Mission Failed</h2>
-                <p className="text-red-600 mb-6 text-lg">
-                  The challenge could not be completed within the given constraints.
-                </p>
-
-                {/* Show stage progress even in failure */}
-                {stage && (
-                  <div className="mb-6">
-                    <StageProgress
-                      current={stage.current || 1}
-                      total={stage.total || 3}
-                      completed={stage.progress?.completed || []}
-                      totalScore={stage.progress?.totalScore || 0}
-                    />
-                  </div>
-                )}
-
-                {/* Failure Score Display */}
-                <div className="bg-red-100 border border-red-300 rounded-lg p-6 mb-6 max-w-md mx-auto">
-                  <h3 className="text-xl font-bold text-red-800 mb-2">Progress Made</h3>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <div className="text-2xl font-bold text-red-700">
-                        {stage?.progress?.totalScore || 0}
-                      </div>
-                      <div className="text-sm text-red-600">Points Earned</div>
-                    </div>
-                    <div>
-                      <div className="text-2xl font-bold text-red-700">
-                        {stage?.progress?.completed?.length || 0}/{stage?.total || 3}
-                      </div>
-                      <div className="text-sm text-red-600">Stages Completed</div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-x-4">
-                  <button
-                    onClick={() => window.location.href = '/game'}
-                    className="bg-blue-500 hover:bg-blue-600 text-white px-8 py-3 rounded-lg text-lg font-medium transition-colors"
-                  >
-                    Try Again
-                  </button>
-                  <button
-                    onClick={() => window.location.href = '/dashboard'}
-                    className="bg-gray-500 hover:bg-gray-600 text-white px-8 py-3 rounded-lg text-lg font-medium transition-colors"
-                  >
-                    Back to Dashboard
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-
+        return renderFailed();
       case 'paused':
-        return (
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-8 text-center">
-            <div className="text-4xl mb-4">⏸️</div>
-            <h2 className="text-2xl font-bold text-yellow-800 mb-4">Game Paused</h2>
-            <p className="text-yellow-600 mb-6">
-              The game session has been paused. Please wait for it to resume.
-            </p>
-            <button
-              onClick={() => window.location.reload()}
-              className="bg-yellow-500 hover:bg-yellow-600 text-white px-6 py-2 rounded-lg transition-colors"
-            >
-              Refresh Status
-            </button>
-          </div>
-        );
-
+        return renderPaused();
       case 'ended':
-        return (
-          <div className="bg-gray-50 border border-gray-200 rounded-lg p-8 text-center">
-            <div className="text-4xl mb-4">🏁</div>
-            <h2 className="text-2xl font-bold text-gray-800 mb-4">Game Ended</h2>
-            <p className="text-gray-600 mb-6">
-              This game session has ended. Thank you for participating!
-            </p>
-            <div className="space-x-4">
-              <button
-                onClick={() => window.location.href = '/game'}
-                className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded-lg transition-colors"
-              >
-                New Game
-              </button>
-              <button
-                onClick={() => window.location.href = '/dashboard'}
-                className="bg-gray-500 hover:bg-gray-600 text-white px-6 py-2 rounded-lg transition-colors"
-              >
-                Dashboard
-              </button>
-            </div>
-          </div>
-        );
-
+        return renderEnded();
       default:
-        return (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-8 text-center">
-            <div className="text-4xl mb-4">❓</div>
-            <h2 className="text-xl font-bold text-red-800 mb-4">Unknown Game Status</h2>
-            <p className="text-red-600 mb-6">
-              Game status: <code className="bg-red-100 px-2 py-1 rounded">{session.status}</code>
-            </p>
-            <div className="space-x-4">
-              <button
-                onClick={() => window.location.reload()}
-                className="bg-red-500 hover:bg-red-600 text-white px-6 py-2 rounded-lg transition-colors"
-              >
-                Refresh Page
-              </button>
-              <button
-                onClick={() => window.location.href = '/game'}
-                className="bg-gray-500 hover:bg-gray-600 text-white px-6 py-2 rounded-lg transition-colors"
-              >
-                Back to Lobby
-              </button>
-            </div>
-          </div>
-        );
+        return renderUnknown();
     }
   };
 
   return (
     <Authenticated>
-      <Head title={`Multi-Stage Challenge - ${session.team_code}`} />
-      <div className="py-8">
-        <div className="max-w-7xl mx-auto sm:px-6 lg:px-8 space-y-6">
-
-          {/* Enhanced Session Header with Role Display */}
-          <div className="bg-white shadow-sm sm:rounded-lg p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-3xl font-bold text-gray-800">
-                  Session: {session.team_code}
-                </h1>
-                <p className="text-gray-600 mt-1">
-                  Status: <span className={`font-semibold ${
-                    session.status === 'waiting' ? 'text-yellow-600' :
-                    session.status === 'running' ? 'text-blue-600' :
-                    session.status === 'success' ? 'text-green-600' :
-                    session.status === 'failed' ? 'text-red-600' :
-                    session.status === 'paused' ? 'text-yellow-600' :
-                    session.status === 'ended' ? 'text-gray-600' :
-                    'text-gray-600'
-                  }`}>{session.status.toUpperCase()}</span>
-                </p>
-                <p className="text-sm text-gray-500">
-                  Your role: <span className="font-medium capitalize">{currentRole}</span>
-                  {currentRole === 'expert' && (
-                    <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded">
-                      📖 Manual Holder
-                    </span>
-                  )}
-                  {currentRole === 'defuser' && (
-                    <span className="ml-2 px-2 py-1 bg-red-100 text-red-700 text-xs rounded">
-                      💣 Bomb Handler
-                    </span>
-                  )}
-                </p>
+      <Head title={`Tantangan Multi-Tahap - ${session.team_code}`} />
+      <div className="min-h-screen bg-gradient-to-br from-stone-900 via-stone-800 to-amber-950 py-8">
+        <DungeonCSS />
+        <div className="max-w-7xl mx-auto px-4 space-y-6">
+          {/* Header Sesi */}
+          <Card className="border-4 border-amber-700 bg-gradient-to-r from-stone-900 via-stone-800 to-amber-950 relative overflow-hidden">
+            <CardHeader>
+              <div className="absolute top-3 left-3 text-2xl torch-flicker">🔥</div>
+              <div className="absolute top-3 right-3 text-2xl torch-flicker">🔥</div>
+              <CardTitle className="text-amber-300 text-3xl">Sesi: {session.team_code}</CardTitle>
+              <CardDescription className="text-stone-300">
+                Status:{' '}
+                <span
+                  className={[
+                    'font-semibold',
+                    session.status === 'waiting'
+                      ? 'text-amber-300'
+                      : session.status === 'running'
+                      ? 'text-indigo-300'
+                      : session.status === 'success'
+                      ? 'text-emerald-300'
+                      : session.status === 'failed'
+                      ? 'text-red-300'
+                      : session.status === 'paused'
+                      ? 'text-amber-300'
+                      : 'text-stone-300',
+                  ].join(' ')}
+                >
+                  {String(session.status).toUpperCase()}
+                </span>
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex items-center justify-between flex-wrap gap-4">
+              <div className="flex items-center gap-3">
+                <Badge className="bg-purple-800 text-purple-100 border-purple-700">
+                  🎭 Peran: {currentRole}
+                </Badge>
+                {currentRole === 'expert' && (
+                  <Badge className="bg-indigo-800 text-indigo-100 border-indigo-700">📖 Penjaga Manual</Badge>
+                )}
+                {currentRole === 'defuser' && (
+                  <Badge className="bg-red-800 text-red-100 border-red-700">💣 Penjinak Perangkat</Badge>
+                )}
               </div>
               <div className="text-right">
-                <div className="text-2xl font-bold text-blue-600">
+                <div className="text-2xl font-bold text-indigo-200">
                   {participants.length}/2
                 </div>
-                <div className="text-sm text-gray-500">Players Ready</div>
-
-                {/* Voice Chat Status Indicator */}
+                <div className="text-sm text-stone-300">Pemain Siap</div>
                 {showVoiceChat && (
-                  <div className="flex items-center mt-2">
-                    <div className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></div>
-                    <span className="text-xs text-green-600">Voice Chat Active</span>
+                  <div className="flex items-center mt-1">
+                    <div className="w-2 h-2 bg-emerald-500 rounded-full mr-2 animate-pulse"></div>
+                    <span className="text-xs text-emerald-300">Voice Chat Aktif</span>
                   </div>
                 )}
               </div>
-            </div>
-          </div>
+            </CardContent>
+          </Card>
 
-          {/* Main Game Content - Rendered by Switch Statement */}
+          {/* Konten utama */}
           {renderGameContent()}
 
-          {/* Enhanced Participants List - Always visible when not in terminal states */}
+          {/* Daftar peserta */}
           {!['success', 'failed', 'ended'].includes(session.status) && (
-            <div className="bg-white shadow-sm sm:rounded-lg p-6">
-              <h2 className="text-lg font-semibold mb-4 flex items-center">
-                <span className="mr-2">👥</span>
-                Team Members ({participants.length})
-                {showVoiceChat && (
-                  <span className="ml-auto text-sm text-green-600 flex items-center">
-                    <div className="w-2 h-2 bg-green-500 rounded-full mr-1 animate-pulse"></div>
-                    Voice Chat Enabled
-                  </span>
-                )}
-              </h2>
-              <div className="grid md:grid-cols-2 gap-3">
-                {participants.map((participant, index) => (
-                  <div
-                    key={participant.id || index}
-                    className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border"
-                  >
-                    <div className="flex items-center space-x-3">
-                      <div className={`w-4 h-4 rounded-full ${
-                        participant.role === 'defuser' ? 'bg-red-500' :
-                        participant.role === 'expert' ? 'bg-blue-500' : 'bg-green-500'
-                      }`}></div>
-                      <div>
-                        <span className="font-medium text-gray-800">{participant.nickname}</span>
-                        <div className="text-sm text-gray-500 capitalize">
-                          {participant.role === 'defuser' ? '💣 Bomb Defuser' :
-                           participant.role === 'expert' ? '📖 Expert Guide' : '👑 Host'}
+            <Card className="border-2 border-stone-700 bg-gradient-to-b from-stone-900 to-stone-800">
+              <CardHeader>
+                <CardTitle className="text-stone-200 text-lg flex items-center gap-2">
+                  👥 Anggota Tim ({participants.length})
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid md:grid-cols-2 gap-3">
+                  {participants.map((participant: any, index: number) => (
+                    <div
+                      key={participant.id || index}
+                      className="flex items-center justify-between p-4 bg-stone-900/60 rounded-lg border border-stone-700"
+                    >
+                      <div className="flex items-center space-x-3">
+                        <div
+                          className={[
+                            'w-3.5 h-3.5 rounded-full',
+                            participant.role === 'defuser'
+                              ? 'bg-red-500'
+                              : participant.role === 'expert'
+                              ? 'bg-indigo-500'
+                              : 'bg-emerald-500',
+                          ].join(' ')}
+                        />
+                        <div>
+                          <span className="font-medium text-stone-200">{participant.nickname}</span>
+                          <div className="text-sm text-stone-400 capitalize">
+                            {participant.role === 'defuser'
+                              ? '💣 Penjinak'
+                              : participant.role === 'expert'
+                              ? '📖 Pemandu'
+                              : '👑 Host'}
+                          </div>
                         </div>
                       </div>
+                      {participant.role === currentRole && (
+                        <Badge className="bg-emerald-800 text-emerald-100 border-emerald-700">Aktif</Badge>
+                      )}
                     </div>
-                    {participant.role === currentRole && (
-                      <span className="text-sm bg-green-100 text-green-700 px-3 py-1 rounded-full font-medium">
-                        You
-                      </span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
           )}
-
         </div>
       </div>
     </Authenticated>

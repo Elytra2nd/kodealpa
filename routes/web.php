@@ -7,6 +7,7 @@ use App\Http\Controllers\StageController;
 use App\Http\Controllers\SessionController;
 use App\Http\Controllers\VoiceChatController;
 use App\Http\Controllers\TournamentController;
+use App\Http\Controllers\GrimoireController;
 use Inertia\Inertia;
 
 /*
@@ -150,6 +151,35 @@ Route::get('/stage1', function () {
 
 /*
 |--------------------------------------------------------------------------
+| Grimoire Pedoman - Web Routes (Inertia)
+|--------------------------------------------------------------------------
+*/
+Route::middleware(['auth', 'verified'])->prefix('grimoire')->name('grimoire.')->group(function () {
+    // Panel utama Grimoire
+    Route::get('/', function () {
+        return Inertia::render('Grimoire/GrimoirePanel'); // resources/js/Pages/Grimoire/GrimoirePanel.tsx
+    })->name('panel');
+
+    // Editor (admin only)
+    Route::get('/editor', function () {
+        return Inertia::render('Grimoire/GrimoireEditor'); // resources/js/Pages/Grimoire/GrimoireEditor.tsx
+    })->middleware('can:admin')->name('editor');
+
+    // Viewer langsung per slug
+    Route::get('/view/{slug}', function ($slug) {
+        return Inertia::render('Grimoire/GrimoireView', [
+            'slug' => $slug,
+        ]);
+    })->name('view');
+});
+
+// Integrasi ke menu Game → Grimoire
+Route::middleware(['auth', 'verified'])->get('/game/grimoire', function () {
+    return Inertia::render('Grimoire/GrimoirePanel');
+})->name('game.grimoire');
+
+/*
+|--------------------------------------------------------------------------
 | API Routes untuk Game
 |--------------------------------------------------------------------------
 */
@@ -229,6 +259,26 @@ Route::prefix('api')->middleware(['auth', 'verified'])->group(function () {
         Route::get('/stats/global', [TournamentController::class, 'getGlobalStats'])->name('stats.global');
         Route::get('/stats/user/{userId}', [TournamentController::class, 'getUserStats'])->name('stats.user')->where('userId', '[0-9]+');
         Route::get('/history/user', [TournamentController::class, 'getUserHistory'])->name('history.user');
+    });
+
+    /*
+    |--------------------------------------------------------------------------
+    | Grimoire Pedoman - API Routes (JSON)
+    |--------------------------------------------------------------------------
+    */
+    Route::prefix('grimoire')->name('api.grimoire.')->group(function () {
+        // Publik (read-only) untuk user login (parent sudah auth+verified)
+        Route::get('/categories', [GrimoireController::class, 'categories'])->name('categories');
+        Route::get('/entries', [GrimoireController::class, 'index'])->name('entries.index'); // ?category=&q=&role=
+        Route::get('/entries/{slug}', [GrimoireController::class, 'show'])->name('entries.show');
+        Route::get('/search', [GrimoireController::class, 'search'])->name('search');
+
+        // Admin-only CRUD
+        Route::middleware('can:admin')->group(function () {
+            Route::post('/entries', [GrimoireController::class, 'store'])->name('entries.store');
+            Route::put('/entries/{id}', [GrimoireController::class, 'update'])->name('entries.update');
+            Route::delete('/entries/{id}', [GrimoireController::class, 'destroy'])->name('entries.destroy');
+        });
     });
 
     /*
@@ -387,83 +437,6 @@ Route::middleware(['auth', 'verified'])->prefix('game')->group(function () {
         Route::get('/analytics', function () {
             return Inertia::render('Game/VoiceAnalytics');
         })->name('analytics');
-    });
-});
-
-/*
-|--------------------------------------------------------------------------
-| Admin Routes (Enhanced)
-|--------------------------------------------------------------------------
-*/
-Route::middleware(['auth', 'verified', 'can:admin'])->prefix('admin')->group(function () {
-    // Admin dashboard
-    Route::get('/dashboard', function () {
-        return Inertia::render('Admin/Dashboard');
-    })->name('admin.dashboard');
-
-    // Stage management
-    Route::resource('stages', StageController::class)
-        ->names([
-            'index' => 'admin.stages.index',
-            'create' => 'admin.stages.create',
-            'store' => 'admin.stages.store',
-            'show' => 'admin.stages.show',
-            'edit' => 'admin.stages.edit',
-            'update' => 'admin.stages.update',
-            'destroy' => 'admin.stages.destroy',
-        ]);
-
-    // Game sessions monitoring
-    Route::get('/sessions', [SessionController::class, 'adminIndex'])->name('admin.sessions.index');
-    Route::get('/sessions/{id}', [SessionController::class, 'adminShow'])->name('admin.sessions.show');
-    Route::delete('/sessions/{id}', [SessionController::class, 'adminDestroy'])->name('admin.sessions.destroy');
-
-    // Tournament Admin Routes
-    Route::prefix('tournaments')->name('admin.tournaments.')->group(function () {
-        // Tournament management dashboard
-        Route::get('/', [TournamentController::class, 'adminIndex'])->name('index');
-        Route::get('/{id}', [TournamentController::class, 'adminShow'])->name('show');
-
-        // Tournament moderation
-        Route::post('/{id}/force-start', [TournamentController::class, 'adminForceStart'])->name('force-start');
-        Route::post('/{id}/force-complete', [TournamentController::class, 'adminForceComplete'])->name('force-complete');
-        Route::post('/{id}/disqualify/{groupId}', [TournamentController::class, 'adminDisqualifyGroup'])->name('disqualify');
-
-        // Tournament analytics
-        Route::get('/analytics/overview', [TournamentController::class, 'adminAnalyticsOverview'])->name('analytics.overview');
-        Route::get('/{id}/analytics', [TournamentController::class, 'adminAnalytics'])->name('analytics');
-
-        // Tournament settings
-        Route::get('/settings', [TournamentController::class, 'adminSettings'])->name('settings');
-        Route::post('/settings', [TournamentController::class, 'updateAdminSettings'])->name('settings.update');
-    });
-
-    // Voice Chat Admin Routes
-    Route::prefix('voice')->name('admin.voice.')->group(function () {
-        // Voice chat monitoring dashboard
-        Route::get('/dashboard', [VoiceChatController::class, 'adminDashboard'])->name('dashboard');
-
-        // Active voice sessions
-        Route::get('/sessions', [VoiceChatController::class, 'adminSessions'])->name('sessions');
-        Route::get('/sessions/{id}', [VoiceChatController::class, 'adminSessionDetail'])->name('sessions.detail');
-
-        // Voice chat analytics
-        Route::get('/analytics', [VoiceChatController::class, 'adminAnalytics'])->name('analytics');
-        Route::get('/reports', [VoiceChatController::class, 'adminReports'])->name('reports');
-
-        // Voice chat settings management
-        Route::get('/settings', [VoiceChatController::class, 'adminSettings'])->name('settings');
-        Route::post('/settings', [VoiceChatController::class, 'updateAdminSettings'])->name('settings.update');
-
-        // Voice server management
-        Route::get('/servers', [VoiceChatController::class, 'adminServers'])->name('servers');
-        Route::post('/servers', [VoiceChatController::class, 'addVoiceServer'])->name('servers.add');
-        Route::delete('/servers/{id}', [VoiceChatController::class, 'removeVoiceServer'])->name('servers.remove');
-
-        // Voice chat moderation
-        Route::get('/moderation', [VoiceChatController::class, 'adminModeration'])->name('moderation');
-        Route::post('/moderation/ban/{userId}', [VoiceChatController::class, 'banFromVoice'])->name('moderation.ban');
-        Route::post('/moderation/unban/{userId}', [VoiceChatController::class, 'unbanFromVoice'])->name('moderation.unban');
     });
 });
 
