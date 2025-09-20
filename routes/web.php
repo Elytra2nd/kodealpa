@@ -8,7 +8,8 @@ use App\Http\Controllers\SessionController;
 use App\Http\Controllers\VoiceChatController;
 use App\Http\Controllers\TournamentController;
 use App\Http\Controllers\GrimoireController;
-use App\Http\Controllers\Auth\GoogleAuthController; // <-- Tambahkan import ini
+use App\Http\Controllers\JournalController; // ✅ Explorer Journal
+use App\Http\Controllers\Auth\GoogleAuthController; // ✅ Google OAuth
 use Inertia\Inertia;
 
 /*
@@ -181,6 +182,25 @@ Route::middleware(['auth', 'verified'])->get('/game/grimoire', function () {
 
 /*
 |--------------------------------------------------------------------------
+| Catatan Penjelajah - Web Routes (Inertia)
+|--------------------------------------------------------------------------
+*/
+Route::middleware(['auth','verified'])->prefix('game')->group(function () {
+    // Halaman riwayat utama
+    Route::get('/journal', function () {
+        return Inertia::render('Game/ExplorerJournal'); // resources/js/Pages/Game/ExplorerJournal.tsx
+    })->name('game.journal');
+
+    // Halaman detail (opsional)
+    Route::get('/journal/{id}', function ($id) {
+        return Inertia::render('Game/ExplorerJournalDetail', [
+            'id' => (int) $id,
+        ]);
+    })->where('id','[0-9]+')->name('game.journal.detail');
+});
+
+/*
+|--------------------------------------------------------------------------
 | API Routes untuk Game
 |--------------------------------------------------------------------------
 */
@@ -280,6 +300,17 @@ Route::prefix('api')->middleware(['auth', 'verified'])->group(function () {
             Route::put('/entries/{id}', [GrimoireController::class, 'update'])->name('entries.update');
             Route::delete('/entries/{id}', [GrimoireController::class, 'destroy'])->name('entries.destroy');
         });
+    });
+
+    /*
+    |--------------------------------------------------------------------------
+    | Catatan Penjelajah (Explorer Journal) - API Routes
+    |--------------------------------------------------------------------------
+    */
+    Route::prefix('journal')->name('api.journal.')->group(function () {
+        Route::get('/', [JournalController::class, 'index'])->name('index'); // list + filter + paginate
+        Route::get('/stats', [JournalController::class, 'stats'])->name('stats'); // ringkasan
+        Route::get('/{id}', [JournalController::class, 'show'])->where('id','[0-9]+')->name('show'); // detail
     });
 
     /*
@@ -519,13 +550,13 @@ Route::prefix('docs')->name('docs.')->group(function () {
 Route::middleware(['auth', 'verified'])->prefix('stream')->group(function () {
     // Tournament live stream
     Route::get('/tournament/{id}', [TournamentController::class, 'streamTournament'])
-        ->name('stream.tournament')
-        ->where('id', '[0-9]+');
+         ->name('stream.tournament')
+         ->where('id', '[0-9]+');
 
     // Session live stream (untuk spectators)
     Route::get('/session/{id}', [SessionController::class, 'streamSession'])
-        ->name('stream.session')
-        ->where('id', '[0-9]+');
+         ->name('stream.session')
+         ->where('id', '[0-9]+');
 });
 
 /*
@@ -536,6 +567,4 @@ Route::middleware(['auth', 'verified'])->prefix('stream')->group(function () {
 Route::get('/auth/google/redirect', [GoogleAuthController::class, 'redirect'])->name('google.redirect');
 Route::get('/auth/google/callback', [GoogleAuthController::class, 'callback'])->name('google.callback');
 
-
 require __DIR__.'/auth.php';
-

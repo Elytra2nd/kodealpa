@@ -9,6 +9,8 @@ use App\Models\GameParticipant;
 use Carbon\Carbon;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
+use App\Services\JournalWriter;
 
 class SessionController extends Controller
 {
@@ -35,7 +37,6 @@ class SessionController extends Controller
 
     // Your existing puzzle databases remain the same...
     private $patternPuzzles = [
-        // ... your existing puzzle data ...
         ['sequence' => [2, 4, 6, 8], 'answer' => '10', 'type' => 'arithmetic', 'rule' => 'Add 2'],
         ['sequence' => [5, 10, 15, 20], 'answer' => '25', 'type' => 'arithmetic', 'rule' => 'Add 5'],
         ['sequence' => [3, 6, 9, 12], 'answer' => '15', 'type' => 'arithmetic', 'rule' => 'Add 3'],
@@ -51,7 +52,6 @@ class SessionController extends Controller
     ];
 
     private $codePuzzles = [
-        // Your existing code puzzles...
         ['cipher' => 'KHOOR', 'answer' => 'HELLO', 'shift' => 3, 'type' => 'caesar'],
         ['cipher' => 'ZRUOG', 'answer' => 'WORLD', 'shift' => 3, 'type' => 'caesar'],
         ['cipher' => 'FRGH', 'answer' => 'CODE', 'shift' => 3, 'type' => 'caesar'],
@@ -65,7 +65,6 @@ class SessionController extends Controller
     ];
 
     private $navigationPuzzles = [
-        // Your existing navigation puzzles...
         ['start' => 'A1', 'end' => 'C3', 'grid_size' => '3x3', 'answer' => 'C3', 'moves' => 4],
         ['start' => 'B2', 'end' => 'D4', 'grid_size' => '4x4', 'answer' => 'D4', 'moves' => 4],
         ['start' => 'A1', 'end' => 'E5', 'grid_size' => '5x5', 'answer' => 'E5', 'moves' => 8],
@@ -82,32 +81,25 @@ class SessionController extends Controller
     public function create(Request $request)
     {
         try {
-            // Validate input (stage_id is optional)
             $request->validate([
                 'stage_id' => 'nullable|integer|min:1|max:3'
             ]);
 
-            // Use provided stage_id or default to 1
             $stageId = $request->input('stage_id', 1);
-
-            // Validate stage exists in configuration
             if (!isset($this->stageConfigurations[$stageId])) {
-                $stageId = 1; // Fallback to stage 1
+                $stageId = 1;
             }
 
-        // Generate unique team code
             do {
                 $teamCode = strtoupper(Str::random(6));
             } while (GameSession::where('team_code', $teamCode)->exists());
 
-            // Generate unique seed for puzzles
             $seed = rand(10000, 99999);
 
-            // Create session - ADD stage_id HERE
             $session = GameSession::create([
                 'team_code' => $teamCode,
                 'status' => 'waiting',
-                'stage_id' => $stageId,        // ADD THIS LINE
+                'stage_id' => $stageId,
                 'current_stage' => $stageId,
                 'seed' => $seed,
                 'created_at' => now(),
@@ -127,7 +119,6 @@ class SessionController extends Controller
                 'team_code' => $teamCode,
                 'message' => 'Session created successfully'
             ], 201);
-
         } catch (\Exception $e) {
             Log::error('Session creation failed: ' . $e->getMessage(), [
                 'user_id' => auth()->id(),
@@ -155,7 +146,6 @@ class SessionController extends Controller
 
             $teamCode = strtoupper(trim($request->team_code));
 
-            // Find session by team code
             $session = GameSession::where('team_code', $teamCode)
                                  ->where('status', 'waiting')
                                  ->first();
@@ -167,7 +157,6 @@ class SessionController extends Controller
                 ], 404);
             }
 
-            // Check if role is already taken
             $existingParticipant = GameParticipant::where('game_session_id', $session->id)
                                                  ->where('role', $request->role)
                                                  ->first();
@@ -179,7 +168,6 @@ class SessionController extends Controller
                 ], 400);
             }
 
-            // Check if user already joined this session
             $userParticipant = GameParticipant::where('game_session_id', $session->id)
                                              ->where('user_id', auth()->id())
                                              ->first();
@@ -191,7 +179,6 @@ class SessionController extends Controller
                 ], 400);
             }
 
-            // Create participant
             $participant = GameParticipant::create([
                 'game_session_id' => $session->id,
                 'user_id' => auth()->id(),
@@ -213,7 +200,6 @@ class SessionController extends Controller
                 'participant' => $participant,
                 'message' => 'Successfully joined the session'
             ]);
-
         } catch (\Exception $e) {
             Log::error('Session join failed: ' . $e->getMessage(), [
                 'user_id' => auth()->id(),
@@ -244,7 +230,6 @@ class SessionController extends Controller
                 'participants' => $participants,
                 'total_participants' => $participants->count()
             ]);
-
         } catch (\Exception $e) {
             return response()->json([
                 'error' => 'Failed to get participants'
@@ -252,7 +237,6 @@ class SessionController extends Controller
         }
     }
 
-    // Your existing methods remain the same...
     public function state($sessionId)
     {
         $session = GameSession::with(['participants', 'attempts'])->findOrFail($sessionId);
@@ -308,8 +292,7 @@ class SessionController extends Controller
 
         $isCorrect = $this->validateAnswer($puzzle, $request->input);
 
-        // Record attempt
-        $attempt = GameAttempt::create([
+        GameAttempt::create([
             'game_session_id' => $sessionId,
             'stage' => $currentStage,
             'input' => $request->input,
@@ -321,7 +304,6 @@ class SessionController extends Controller
             return $this->handleStageCompletion($session, $currentStage);
         }
 
-        // Check max attempts for current stage
         $stageAttempts = $session->attempts()->where('stage', $currentStage)->count();
         $maxAttempts = $this->stageConfigurations[$currentStage]['maxAttempts'];
 
@@ -352,8 +334,17 @@ class SessionController extends Controller
             'started_at' => now(),
             'stage_started_at' => now(),
             'current_stage' => 1,
-            'ends_at' => now()->addMinutes(30) // 30 minutes total time limit
+            'ends_at' => now()->addMinutes(30)
         ]);
+
+        // Log activity: session_started
+        activity()
+            ->causedBy(auth()->id())
+            ->withProperties([
+                'scope' => 'session_start',
+                'session_id' => $session->id,
+            ])
+            ->log('session_started');
 
         return response()->json([
             'session' => $session->fresh(),
@@ -362,12 +353,89 @@ class SessionController extends Controller
     }
 
     /**
+     * Force end/close a session (align with DELETE /api/sessions/{id})
+     */
+    public function endSession($id)
+    {
+        $session = GameSession::with('attempts')->findOrFail($id);
+
+        if (in_array($session->status, ['success','failed','ended'])) {
+            return response()->json([
+                'session' => $session,
+                'message' => 'Session already finalized'
+            ]);
+        }
+
+        $session->update([
+            'status' => 'ended',
+            'completed_at' => now(),
+        ]);
+
+        $this->finalizeAndJournal($session, 'ended', $session->failed_stage);
+
+        return response()->json([
+            'session' => $session->fresh(),
+            'message' => 'Session ended'
+        ]);
+    }
+
+    /**
+     * Private: finalize and write journal + activity in a transaction
+     */
+    private function finalizeAndJournal(GameSession $session, string $status, ?int $failedStage = null): void
+    {
+        DB::transaction(function () use ($session, $status, $failedStage) {
+            $attempts = $session->attempts()->get();
+            $totalAttempts = $attempts->count();
+            $correctAttempts = $attempts->where('is_correct', true)->count();
+            $accuracy = $totalAttempts > 0 ? round(($correctAttempts / max(1, $totalAttempts)) * 100, 2) : null;
+
+            $started = $session->started_at ?? $session->created_at ?? now();
+            $completed = $session->completed_at ?? now();
+            $timeTaken = $started instanceof Carbon && $completed instanceof Carbon
+                ? $started->diffInSeconds($completed)
+                : null;
+
+            // Collaboration score already computed elsewhere; keep as-is
+            $meta = [
+                'stages_completed' => $session->stages_completed ?? [],
+                'failed_stage' => $failedStage,
+                'total_attempts' => $totalAttempts,
+                'correct_attempts' => $correctAttempts,
+                'ended_by' => auth()->id(),
+            ];
+
+            JournalWriter::logSessionComplete([
+                'user_id'    => auth()->id(),
+                'session_id' => $session->id,
+                'title'      => 'Dungeon Run #'.$session->id,
+                'status'     => $status,
+                'score'      => $session->total_score ?? null,
+                'time_taken' => $timeTaken,
+                'accuracy'   => $accuracy,
+                'hints_used' => null, // set jika ada kolom/atribut terkait hints
+                'meta'       => $meta,
+            ]);
+
+            activity()
+                ->causedBy(auth()->id())
+                ->withProperties([
+                    'scope' => 'session_finalize',
+                    'session_id' => $session->id,
+                    'status' => $status,
+                    'time_taken' => $timeTaken,
+                    'accuracy' => $accuracy,
+                    'failed_stage' => $failedStage,
+                ])
+                ->log('session_finalized');
+        });
+    }
+
+    /**
      * Generate puzzle data for a specific stage with randomization
      */
     private function generatePuzzleForStage($stage, $seed = null)
     {
-        // Use session seed + stage for consistent puzzles per session
-        // But different puzzles across different sessions
         $stageSeed = $seed ? ($seed + $stage * 1000) : time() + $stage;
         mt_srand($stageSeed);
 
@@ -379,15 +447,9 @@ class SessionController extends Controller
         };
     }
 
-    /**
-     * Generate randomized pattern analysis puzzle
-     */
     private function generatePatternAnalysisPuzzle()
     {
-        // Randomly select a pattern puzzle
         $selectedPuzzle = $this->patternPuzzles[array_rand($this->patternPuzzles)];
-
-        // Add question mark to sequence
         $pattern = $selectedPuzzle['sequence'];
         $pattern[] = '?';
 
@@ -416,12 +478,8 @@ class SessionController extends Controller
         ];
     }
 
-    /**
-     * Generate randomized code analysis puzzle
-     */
     private function generateCodeAnalysisPuzzle()
     {
-        // Randomly select a code puzzle
         $selectedPuzzle = $this->codePuzzles[array_rand($this->codePuzzles)];
 
         return [
@@ -495,20 +553,12 @@ class SessionController extends Controller
         ];
     }
 
-
-    /**
-     * Generate randomized navigation puzzle
-     */
     private function generateNavigationPuzzle()
     {
-        // Randomly select a navigation puzzle
         $selectedPuzzle = $this->navigationPuzzles[array_rand($this->navigationPuzzles)];
-
-        // Generate tree structure for navigation
         $targetValue = rand(1, 20);
-        $correctPath = ['ROOT', 'LEFT', 'RIGHT']; // Simple example path
+        $correctPath = ['ROOT', 'LEFT', 'RIGHT'];
 
-        // FIXED: Add complete data structure expected by frontend
         return [
             'key' => 'nav_' . md5(json_encode($selectedPuzzle) . time()),
             'title' => 'Navigasi Tantangan',
@@ -516,7 +566,7 @@ class SessionController extends Controller
             'type' => 'navigation_challenge',
             'defuserView' => [
                 'task' => "Navigate through the tree to find the target value: {$targetValue}",
-                'traversalOptions' => ['LEFT', 'RIGHT', 'UP', 'DOWN'], // PENTING: Ini yang hilang!
+                'traversalOptions' => ['LEFT', 'RIGHT', 'UP', 'DOWN'],
                 'startPosition' => 'ROOT',
                 'targetValue' => $targetValue,
                 'hints' => [
@@ -542,7 +592,7 @@ class SessionController extends Controller
                         ]
                     ]
                 ],
-                'answer' => $correctPath, // Array untuk expert view
+                'answer' => $correctPath,
                 'explanation' => "To find {$targetValue}, follow path: " . implode(' → ', $correctPath),
                 'traversalMethods' => [
                     'inorder' => [3, 5, 7, 10, 12, 15, 20],
@@ -560,11 +610,10 @@ class SessionController extends Controller
                 'Belajar navigasi binary search tree',
                 'Berkolaborasi dalam problem solving'
             ],
-            'answer' => implode(',', $correctPath) // String untuk validasi
+            'answer' => implode(',', $correctPath)
         ];
     }
 
-    // Helper methods untuk generate hints, explanations, dll
     private function generatePatternHints($puzzle)
     {
         $hints = [
@@ -670,6 +719,9 @@ class SessionController extends Controller
             'failed_stage' => $stage
         ]);
 
+        // Finalize + journal
+        $this->finalizeAndJournal($session->fresh('attempts'), 'failed', $stage);
+
         return response()->json([
             'session' => $session->fresh(),
             'stageFailed' => true,
@@ -695,6 +747,9 @@ class SessionController extends Controller
                 'total_score' => $totalScore,
                 'collaboration_score' => $this->calculateCollaborationScore($session)
             ]);
+
+            // Finalize + journal
+            $this->finalizeAndJournal($session->fresh('attempts'), 'success', null);
 
             return response()->json([
                 'session' => $session->fresh(),

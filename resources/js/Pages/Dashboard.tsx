@@ -128,7 +128,6 @@ export default function Dashboard() {
                 <p className="mb-4 leading-relaxed">
                   Buka rahasia komunikasi magis dan strategi bertahan hidup di dungeon yang berbahaya
                 </p>
-                {/* ✅ Tombol kini menjadi Link yang dapat ditekan */}
                 <Link href="/grimoire">
                   <Button
                     variant="outline"
@@ -160,9 +159,15 @@ export default function Dashboard() {
                 <p className="mb-4 leading-relaxed">
                   Telusuri riwayat ekspedisi, tingkat survival, dan analisis kemampuan dungeon crawling Anda
                 </p>
-                <Button variant="outline" className="w-full border-2 border-purple-500 text-purple-300 hover:bg-purple-900 bg-purple-950">
-                  🗒️ Buka Catatan →
-                </Button>
+                {/* ✅ Ubah tombol jadi Link ke halaman riwayat */}
+                <Link href="/game/journal">
+                  <Button
+                    variant="outline"
+                    className="w-full border-2 border-purple-500 text-purple-300 hover:bg-purple-900 bg-purple-950"
+                  >
+                    🗒️ Buka Catatan →
+                  </Button>
+                </Link>
               </CardContent>
             </Card>
           </div>
