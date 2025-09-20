@@ -79,7 +79,7 @@ export default function Dashboard() {
           </Card>
 
           {/* Mystical Quest Cards */}
-          <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-4">
             {/* Quest 1: Mulai Petualangan */}
             <Card className="group transition-all duration-500 hover:shadow-2xl hover:-translate-y-3 border-3 border-amber-600 bg-gradient-to-b from-stone-800 to-stone-900 shadow-dance hover:border-amber-400">
               <CardHeader className="pb-3 relative">
@@ -159,13 +159,43 @@ export default function Dashboard() {
                 <p className="mb-4 leading-relaxed">
                   Telusuri riwayat ekspedisi, tingkat survival, dan analisis kemampuan dungeon crawling Anda
                 </p>
-                {/* ✅ Ubah tombol jadi Link ke halaman riwayat */}
                 <Link href="/game/journal">
                   <Button
                     variant="outline"
                     className="w-full border-2 border-purple-500 text-purple-300 hover:bg-purple-900 bg-purple-950"
                   >
                     🗒️ Buka Catatan →
+                  </Button>
+                </Link>
+              </CardContent>
+            </Card>
+
+            {/* Quest 4: Achievements */}
+            <Card className="group transition-all duration-500 hover:shadow-2xl hover:-translate-y-3 border-3 border-amber-600 bg-gradient-to-b from-stone-800 to-amber-950 shadow-dance hover:border-amber-400">
+              <CardHeader className="pb-3 relative">
+                <div className="absolute -top-2 -right-2 text-2xl mystical-float">🏅</div>
+                <div className="flex items-center space-x-4">
+                  <div className="text-6xl group-hover:dungeon-pulse transition-transform">🏆</div>
+                  <div className="space-y-2">
+                    <CardTitle className="text-xl text-amber-300 group-hover:text-amber-200 transition-colors">
+                      Achievements
+                    </CardTitle>
+                    <CardDescription className="text-stone-300">
+                      Lihat lencana yang sudah didapat dan yang masih terkunci
+                    </CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="text-stone-200">
+                <p className="mb-4 leading-relaxed">
+                  Kumpulkan pencapaian eksklusif dari setiap ekspedisi dan tantangan turnamen
+                </p>
+                <Link href="/game/achievements">
+                  <Button
+                    variant="outline"
+                    className="w-full border-2 border-amber-500 text-amber-300 hover:bg-amber-900 bg-amber-950"
+                  >
+                    🏅 Buka Achievements →
                   </Button>
                 </Link>
               </CardContent>
