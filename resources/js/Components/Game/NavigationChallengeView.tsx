@@ -1,3 +1,4 @@
+// resources/js/Components/Game/NavigationChallengeView.tsx
 import React, { useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/Components/ui/card';
 import { Button } from '@/Components/ui/button';
@@ -20,19 +21,17 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
   const [path, setPath] = useState<string[]>([]);
   const [showNulls, setShowNulls] = useState(false);
   const [hoverNext, setHoverNext] = useState<'left' | 'right' | null>(null);
-  const [showSolveHints, setShowSolveHints] = useState(false); // NEW: toggle petunjuk pemecahan
+  const [showSolveHints, setShowSolveHints] = useState(false);
 
   const isDefuser = role === 'defuser';
   const isExpert = role === 'expert';
 
-  // Animasi & tema dungeon
+  // Animasi & tema dungeon (ringkas)
   const DungeonCSS = () => (
     <style>{`
-      @keyframes torchFlicker { 0%,100%{opacity:1;filter:brightness(1)} 25%{opacity:.86;filter:brightness(1.12)} 50%{opacity:.75;filter:brightness(.95)} 75%{opacity:.92;filter:brightness(1.05)} }
-      @keyframes crystalGlow { 0%,100%{box-shadow:0 0 20px rgba(180,83,9,.6),0 0 40px rgba(251,191,36,.25)} 50%{box-shadow:0 0 28px rgba(180,83,9,.8),0 0 60px rgba(251,191,36,.45)} }
-      @keyframes runeFloat { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-6px)} }
+      @keyframes torchFlicker { 0%,100%{opacity:1} 25%{opacity:.86} 50%{opacity:.75} 75%{opacity:.92} }
+      @keyframes runeFloat { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-4px)} }
       .torch-flicker { animation: torchFlicker 2.2s ease-in-out infinite; }
-      .crystal-glow { animation: crystalGlow 3s ease-in-out infinite; }
       .rune-float { animation: runeFloat 3.2s ease-in-out infinite; }
     `}</style>
   );
@@ -52,17 +51,20 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
       .replace(/\b(akar|root)\b/gi, 'altar')
       .replace(/\b(kiri|left)\b/gi, 'lorong barat')
       .replace(/\b(kanan|right)\b/gi, 'lorong timur')
+      .replace(/\b(atas|up|naik)\b/gi, 'tangga menuju puncak')
+      .replace(/\b(bawah|down|turun)\b/gi, 'tangga menuju palung')
       .replace(/\b(daun|leaf)\b/gi, 'ruang tak berujung')
       .replace(/\b(preorder|inorder|postorder)\b/gi, 'ritus penelusuran')
       .replace(/\b(jalur|path)\b/gi, 'jejak runik');
 
-  // Normalisasi langkah ke 'left'/'right'
+  // Normalisasi langkah ke 'left'/'right' (UP/DOWN dipakai sebagai aksi, bukan langkah)
   const normalizeStep = (s: string): 'left' | 'right' | null => {
     const x = s.trim().toLowerCase();
     const leftWords = ['left','kiri','lorong barat','l','west','barat'];
     const rightWords = ['right','kanan','lorong timur','r','east','timur'];
     if (leftWords.includes(x)) return 'left';
     if (rightWords.includes(x)) return 'right';
+    // 'up'/'down' tidak memetakan node anak, ditangani sebagai aksi (undo/auto descend)
     return null;
   };
 
@@ -82,7 +84,7 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
     return cur ?? null;
   }, [root, path]);
 
-  // Opsi yang tersedia pada node saat ini (sinkron dengan pohon)
+  // Arah yang tersedia pada node saat ini
   const availableDirections = useMemo(() => {
     const dirs: Array<'left' | 'right'> = [];
     if (currentNode && typeof currentNode === 'object') {
@@ -92,14 +94,19 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
     return dirs;
   }, [currentNode]);
 
-  // Label yang dipakai Defuser
+  // Label tombol sesuai opsi Defuser
   const traversalOptions = toArray(puzzle?.defuserView?.traversalOptions);
-  const pickLabel = (dir: 'left' | 'right') => {
-    const candidates = dir === 'left'
-      ? ['left','kiri','lorong barat','L','west','barat']
-      : ['right','kanan','lorong timur','R','east','timur'];
-    const picked = traversalOptions.find(o => candidates.includes(o.toLowerCase()));
-    return picked ?? (dir === 'left' ? 'kiri' : 'kanan');
+  const pickLabel = (dir: 'left' | 'right' | 'up' | 'down') => {
+    const maps: Record<typeof dir, string[]> = {
+      left: ['left','kiri','lorong barat','l','west','barat'],
+      right: ['right','kanan','lorong timur','r','east','timur'],
+      up: ['up','atas','naik','u','north','utara'],
+      down: ['down','bawah','turun','d','south','selatan'],
+    };
+    const picked = traversalOptions.find(o => maps[dir].includes(o.toLowerCase()));
+    if (picked) return picked;
+    // Default fallback label
+    return dir === 'left' ? 'Kiri' : dir === 'right' ? 'Kanan' : dir === 'up' ? 'Atas' : 'Bawah';
   };
 
   // Deteksi ketidaksinkronan
@@ -124,73 +131,55 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
     return [...base, ...extra].map(obfuscate);
   }, [puzzle]);
 
-  // Petunjuk Expert - bimbingan pedagogis
-  const expertGuidanceHints = useMemo(() => {
-    return [
-      'Bimbing dengan pertanyaan terbuka: "Apa yang kamu lihat di simpul ini?" atau "Bagaimana hubungan nilai ini dengan nilai sebelumnya?"',
-      'Jangan langsung memberikan jawaban, tapi arahkan dengan analogi: "Bayangkan seperti mencari buku di perpustakaan yang tersusun rapi"',
-      'Gunakan teknik Socratic: biarkan defuser menemukan pola sendiri dengan pertanyaan penuntun yang tepat',
-      'Fokus pada proses berpikir, bukan hasil akhir: "Ceritakan alasan di balik pilihan arahmu"',
-      'Berikan konfirmasi positif untuk pemikiran yang benar: "Betul, kamu sudah memahami konsep perbandingan"',
-      'Saat defuser bingung, kembalikan ke prinsip dasar BST: "Ingat aturan utama pohon pencarian biner"',
-      'Hindari memberikan urutan langkah konkret, tapi berikan kerangka berpikir umum',
-      'Gunakan visualisasi dengan gestur atau diagram sederhana jika memungkinkan'
-    ];
-  }, []);
+  // Petunjuk Expert (pembimbingan)
+  const expertGuidanceHints = useMemo(() => ([
+    'Bimbing dengan pertanyaan terbuka: "Apa yang kamu lihat di simpul ini?" atau "Bagaimana hubungan nilai ini dengan nilai sebelumnya?"',
+    'Jangan langsung memberikan jawaban; gunakan analogi agar defuser membangun intuisi mereka sendiri',
+    'Gunakan teknik Socratic: biarkan defuser menemukan pola melalui pertanyaan bertahap',
+    'Fokus pada proses berpikir, bukan hasil akhir: minta alasan di balik tiap pilihan',
+  ]), []);
 
-  const expertStrategies = useMemo(() => {
-    return [
-      {
-        title: 'Teknik Bertanya Efektif',
-        points: [
-          'Mulai dengan pertanyaan observasi: "Apa yang kamu amati di sini?"',
-          'Lanjutkan dengan analisis: "Mengapa kamu berpikir demikian?"',
-          'Akhiri dengan prediksi: "Apa yang akan terjadi jika kamu pilih arah ini?"'
-        ]
-      },
-      {
-        title: 'Strategi Pembimbingan',
-        points: [
-          'Beri waktu tunggu setelah mengajukan pertanyaan (minimal 3-5 detik)',
-          'Parafrase jawaban defuser untuk konfirmasi pemahaman',
-          'Berikan petunjuk bertingkat: dari umum ke spesifik'
-        ]
-      },
-      {
-        title: 'Respons Terhadap Kesalahan',
-        points: [
-          'Jangan langsung mengatakan "salah", tapi tanyakan: "Apakah kamu yakin?"',
-          'Bantu defuser menganalisis konsekuensi dari pilihan mereka',
-          'Arahkan kembali ke konsep fundamental tanpa memberikan jawaban'
-        ]
-      }
-    ];
-  }, []);
+  const expertStrategies = useMemo(() => ([
+    {
+      title: 'Teknik Bertanya Efektif',
+      points: [
+        'Mulai dengan observasi: "Apa yang kamu amati di sini?"',
+        'Lanjut analisis: "Mengapa kamu berpikir demikian?"',
+        'Tutup dengan prediksi: "Apa yang terjadi jika pilih arah ini?"',
+      ],
+    },
+    {
+      title: 'Strategi Pembimbingan',
+      points: [
+        'Berikan waktu jeda setelah pertanyaan (3–5 detik)',
+        'Parafrase jawaban untuk konfirmasi pemahaman',
+        'Berikan petunjuk bertingkat: umum → spesifik',
+      ],
+    },
+  ]), []);
 
-  // Petunjuk pemecahan Binary Tree/BST
   const solveHintsGeneral = useMemo(() => ([
-    'Identifikasi tipe pohon: apakah sekadar Binary Tree umum atau Binary Search Tree (BST). Binary Tree punya ≤2 anak per simpul, sedangkan BST menambahkan aturan urutan nilai.',
-    'Tentukan tujuan: cari nilai tertentu, validasi BST, hitung tinggi/daun, atau rekonstruksi dari traversal. Tujuan menentukan strategi penelusuran.'
+    'Identifikasi tipe pohon: Binary Tree (≤2 anak) atau Binary Search Tree (BST) dengan aturan urutan nilai.',
+    'Tentukan tujuan: mencari nilai, validasi BST, menghitung tinggi/daun, atau rekonstruksi dari traversal.',
   ]), []);
 
   const solveHintsBST = useMemo(() => ([
-    'Aturan BST: semua nilai di kiri < nilai akar < semua nilai di kanan pada setiap simpul.',
-    'Gunakan inorder (Left-Root-Right) untuk memeriksa apakah barisan nilai terurut naik; jika tidak terurut, struktur bukan BST yang valid.',
-    'Mencari nilai X pada BST: bandingkan di setiap simpul; jika X < nilai simpul, pergi ke kiri; jika X > nilai simpul, pergi ke kanan; jika sama, temuan selesai.',
-    'Tetapkan kebijakan duplikat secara konsisten (mis. duplikat ke kiri atau kanan) sebelum menelusur agar keputusan selalu deterministik.'
+    'Aturan BST: semua nilai di kiri < akar < semua nilai di kanan pada setiap simpul.',
+    'Gunakan inorder (Left–Root–Right) untuk mengecek urutan naik; jika tidak terurut, struktur bukan BST valid.',
+    'Mencari nilai X: jika X < simpul ⇒ kiri; jika X > simpul ⇒ kanan; jika sama ⇒ selesai.',
   ]), []);
 
   const solveHintsTraversal = useMemo(() => ([
-    'DFS Inorder: Left-Root-Right, ideal untuk cek urutan/ekstraksi urut pada BST.',
-    'DFS Preorder: Root-Left-Right, berguna untuk menyalin/rekonstruksi struktur dan ekspresi.',
-    'DFS Postorder: Left-Right-Root, berguna untuk operasi destruktif (hapus) atau evaluasi pohon ekspresi.',
-    'BFS (Level-order): telusuri per level memakai antrian; cocok untuk pertanyaan level terdekat/terpendek dan properti per level.'
+    'Inorder: Left–Root–Right, cocok untuk urutan menaik pada BST.',
+    'Preorder: Root–Left–Right, cocok untuk rekonstruksi/penyalinan struktur.',
+    'Postorder: Left–Right–Root, cocok untuk evaluasi/pelepasan struktur.',
+    'Level-order (BFS): telusuri per level untuk jarak/level terdekat.',
   ]), []);
 
   const solveHintsChecks = useMemo(() => ([
-    'Validasi BST berbasis rentang: saat turun ke kiri, perbarui batas atas menjadi nilai simpul; saat turun ke kanan, perbarui batas bawah menjadi nilai simpul; pastikan setiap nilai berada dalam rentangnya.',
-    'Untuk tugas “terurut atau tidak”, buat daftar hasil inorder dan cek apakah nondecreasing (atau strictly increasing sesuai kebijakan duplikat).',
-    'Estimasi kompleksitas: operasi pada BST seimbang cenderung O(log n); pada pohon tidak seimbang bisa mendekati O(n).'
+    'Validasi BST berbasis rentang: perbarui batas saat turun kiri/kanan dan pastikan nilai berada dalam rentangnya.',
+    'Untuk cek "terurut atau tidak": hasil inorder harus nondecreasing (atau strictly increasing sesuai kebijakan duplikat).',
+    'Estimasi kompleksitas: BST seimbang ~ O(log n); tidak seimbang bisa mendekati O(n).',
   ]), []);
 
   const addDir = (dir: 'left' | 'right') => {
@@ -200,13 +189,20 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
   const removeLastStep = () => setPath(prev => prev.slice(0, -1));
   const clearPath = () => setPath([]);
 
+  // Aksi "turun" otomatis: bila hanya satu cabang tersedia, pilih cabang itu; jika dua, biarkan user memilih
+  const descendOne = () => {
+    if (availableDirections.length === 1) {
+      addDir(availableDirections[0]);
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (path.length === 0) return;
     onSubmitAttempt(path.join(','));
   };
 
-  // Kumpulan node yang dilalui
+  // Node yang dilalui (highlight)
   const visitedNodes = useMemo(() => {
     const set = new WeakSet<object>();
     if (!root) return set;
@@ -243,7 +239,7 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
         <div
           className={[
             'whitespace-pre',
-            isNull ? 'text-stone-500' : (isVisited ? `font-bold rune-float ${depthColor(depth)}` : 'text-stone-300')
+            isNull ? 'text-stone-500' : (isVisited ? `font-bold rune-float ${depthColor(depth)}` : 'text-stone-300'),
           ].join(' ')}
         >
           {prefix}{lineConnector}{isNull ? '∅' : String((node as TreeNode).value)}
@@ -264,7 +260,7 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
 
   if (!puzzle) {
     return (
-      <div className="min-h-[180px] flex items-center justify-center bg-gradient-to-br from-stone-900 to-red-950 border-2 border-red-700 rounded-xl">
+      <div className="min-h-[180px] flex items-center justify-center bg-gradient-to-br from-stone-900 to-red-950 border border-red-700/60 rounded-xl">
         <p className="text-red-200 font-medium">Data teka-teki tidak tersedia</p>
       </div>
     );
@@ -274,7 +270,7 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
     <div className="space-y-6 relative">
       <DungeonCSS />
 
-      <Card className="overflow-hidden border-4 border-amber-700 bg-gradient-to-br from-stone-900 via-stone-800 to-amber-950">
+      <Card className="overflow-hidden border border-amber-700/40 bg-gradient-to-br from-stone-900 via-stone-800 to-amber-950">
         <CardHeader className="relative">
           <div className="absolute top-3 left-3 text-2xl torch-flicker">🔥</div>
           <div className="absolute top-3 right-3 text-2xl torch-flicker">🔥</div>
@@ -283,16 +279,26 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
             {puzzle.description || 'Menelusuri struktur pohon di lorong CodeAlpha Dungeon.'}
           </CardDescription>
           <div className="pt-2 flex flex-wrap gap-2">
-            <Badge className="bg-amber-800 text-amber-100 border-amber-600">🏰 Mode Dungeon</Badge>
-            <Badge className="bg-stone-700 text-stone-200 border-stone-600">🧭 Navigasi Pohon</Badge>
-            {role && <Badge className="bg-purple-800 text-purple-100 border-purple-700">🎭 Peran: {role}</Badge>}
+            <Badge className="bg-amber-800 text-amber-100 border border-amber-700/50">🏰 Mode Dungeon</Badge>
+            <Badge className="bg-stone-700 text-stone-200 border border-stone-600/50">🧭 Navigasi Pohon</Badge>
+            {role && <Badge className="bg-purple-800 text-purple-100 border border-purple-700/50">🎭 Peran: {role}</Badge>}
+            {puzzle?.defuserView?.targetValue != null && (
+              <Badge className="bg-indigo-800 text-indigo-100 border border-indigo-700/50">
+                Target: {obfuscate(String(puzzle.defuserView.targetValue))}
+              </Badge>
+            )}
+            {puzzle?.defuserView?.grid_size && (
+              <Badge className="bg-stone-800 text-stone-200 border border-stone-700/50">
+                Grid: {String(puzzle.defuserView.grid_size)}
+              </Badge>
+            )}
           </div>
         </CardHeader>
 
         <CardContent className="space-y-6">
           {/* Sinkronisasi Defuser ↔ Expert */}
           {(isDefuser || isExpert) && syncIssue && (
-            <Card className="border-2 border-amber-700 bg-gradient-to-r from-amber-900 to-stone-900">
+            <Card className="border border-amber-700/40 bg-gradient-to-r from-amber-900/40 to-stone-900/40">
               <CardContent className="p-4">
                 <p className="text-amber-200">
                   ⚠️ Ketidaksinkronan terdeteksi antara petunjuk Defuser dan cabang pohon saat ini; tombol arah kini menyesuaikan otomatis dengan cabang yang tersedia untuk mencegah kebuntuan.
@@ -304,23 +310,46 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
           <div className="grid lg:grid-cols-2 gap-6">
             {/* Defuser */}
             {(isDefuser || role === 'host') && (
-              <Card className="border-4 border-amber-600 bg-gradient-to-b from-stone-900 to-stone-800">
+              <Card className="border border-amber-600/40 bg-gradient-to-b from-stone-900/60 to-stone-800/40">
                 <CardHeader>
-                  <CardTitle className="text-lg text-amber-300 text-center">🗺️ Misi Navigasi</CardTitle>
+                  <CardTitle className="text-base text-amber-300 text-center">🗺️ Arahan Misi</CardTitle>
                   <CardDescription className="text-center text-stone-300">Susun jejak runik langkah demi langkah</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-5">
-                  <div className="rounded-xl p-4 border-2 border-stone-700 bg-stone-800/60">
-                    <h5 className="text-stone-200 font-semibold mb-2">Instruksi Misi</h5>
+                  <div className="rounded-xl p-4 border border-stone-700/40 bg-stone-800/40">
+                    <h5 className="text-stone-200 font-semibold mb-2">Arahan Misi</h5>
                     <p className="text-stone-300">
-                      {obfuscate(puzzle.defuserView?.task || 'Bangun urutan langkah dari altar menuju ruang tujuan tanpa menyingkap mantra tersembunyi.')}
+                      {obfuscate(puzzle.defuserView?.task || 'Susun urutan langkah dari altar menuju ruang tujuan tanpa menyingkap mantra tersembunyi.')}
                     </p>
                   </div>
 
-                  {/* Opsi traversal */}
+                  {/* Rangkai Jejak */}
                   <div>
-                    <h5 className="text-stone-200 font-semibold mb-2">Bangun Jejak</h5>
+                    <h5 className="text-stone-200 font-semibold mb-2">Rangkai Jejak</h5>
                     <div className="flex flex-wrap gap-2">
+                      {/* Atas (naik tingkat = undo) */}
+                      <Button
+                        onClick={removeLastStep}
+                        disabled={path.length === 0 || submitting}
+                        variant="outline"
+                        className="border-stone-600/60 text-stone-200 hover:bg-stone-800/60"
+                        title="Naik satu tingkat (undo langkah terakhir)"
+                      >
+                        {pickLabel('up')}
+                      </Button>
+
+                      {/* Bawah (turun otomatis bila hanya satu cabang tersedia) */}
+                      <Button
+                        onClick={descendOne}
+                        disabled={submitting || availableDirections.length !== 1}
+                        variant="outline"
+                        className="border-stone-600/60 text-stone-200 hover:bg-stone-800/60 disabled:opacity-60"
+                        title="Turun satu tingkat bila hanya satu cabang tersedia"
+                      >
+                        {pickLabel('down')}
+                      </Button>
+
+                      {/* Kiri */}
                       {availableDirections.includes('left') && (
                         <Button
                           onMouseEnter={() => setHoverNext('left')}
@@ -328,11 +357,13 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
                           onClick={() => addDir('left')}
                           disabled={submitting}
                           variant="secondary"
-                          className="bg-indigo-800 text-indigo-100 hover:bg-indigo-700 border border-indigo-600"
+                          className="bg-indigo-800 text-indigo-100 hover:bg-indigo-700 border border-indigo-600/60"
                         >
                           {pickLabel('left')}
                         </Button>
                       )}
+
+                      {/* Kanan */}
                       {availableDirections.includes('right') && (
                         <Button
                           onMouseEnter={() => setHoverNext('right')}
@@ -340,13 +371,14 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
                           onClick={() => addDir('right')}
                           disabled={submitting}
                           variant="secondary"
-                          className="bg-indigo-800 text-indigo-100 hover:bg-indigo-700 border border-indigo-600"
+                          className="bg-indigo-800 text-indigo-100 hover:bg-indigo-700 border border-indigo-600/60"
                         >
                           {pickLabel('right')}
                         </Button>
                       )}
+
                       {availableDirections.length === 0 && (
-                        <Badge className="bg-red-800 text-red-100 border-red-700">Tidak ada cabang di simpul ini</Badge>
+                        <Badge className="bg-red-800 text-red-100 border border-red-700/60">Tidak ada cabang di simpul ini</Badge>
                       )}
                     </div>
                   </div>
@@ -354,7 +386,7 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
                   {/* Jejak saat ini */}
                   <div>
                     <h5 className="text-stone-200 font-semibold mb-2">Jejak Saat Ini</h5>
-                    <div className="min-h-[44px] rounded-xl p-3 border-2 border-amber-700 bg-stone-900/70 flex items-center">
+                    <div className="min-h-[44px] rounded-xl p-3 border border-amber-700/50 bg-stone-900/70 flex items-center">
                       {path.length > 0 ? (
                         <span className="font-mono text-amber-300 rune-float">{path.join(' → ')}</span>
                       ) : (
@@ -362,10 +394,10 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
                       )}
                     </div>
                     <div className="flex gap-2 mt-2">
-                      <Button onClick={removeLastStep} disabled={path.length === 0 || submitting} variant="outline" className="border-amber-600 text-amber-300 hover:bg-amber-900/30">
+                      <Button onClick={removeLastStep} disabled={path.length === 0 || submitting} variant="outline" className="border-amber-600/60 text-amber-300 hover:bg-amber-900/30">
                         Hapus Terakhir
                       </Button>
-                      <Button onClick={clearPath} disabled={path.length === 0 || submitting} variant="outline" className="border-red-600 text-red-300 hover:bg-red-900/30">
+                      <Button onClick={clearPath} disabled={path.length === 0 || submitting} variant="outline" className="border-red-600/60 text-red-300 hover:bg-red-900/30">
                         Bersihkan
                       </Button>
                     </div>
@@ -375,7 +407,7 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
                     <Button
                       type="submit"
                       disabled={path.length === 0 || submitting}
-                      className="w-full bg-gradient-to-r from-amber-600 via-amber-700 to-red-600 hover:from-amber-500 hover:via-amber-600 hover:to-red-500 text-stone-900 font-bold py-3 rounded-xl crystal-glow"
+                      className="w-full bg-gradient-to-r from-amber-600 via-amber-700 to-red-600 hover:from-amber-500 hover:via-amber-600 hover:to-red-500 text-stone-900 font-semibold py-3 rounded-xl"
                     >
                       {submitting ? 'Mengirim...' : 'Kirim Jejak'}
                     </Button>
@@ -383,7 +415,7 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
 
                   {/* Petunjuk Defuser */}
                   {defuserHints.length > 0 && (
-                    <div className="p-4 rounded-xl border-2 border-blue-700 bg-gradient-to-r from-blue-950 to-stone-900">
+                    <div className="p-4 rounded-xl border border-blue-700/40 bg-gradient-to-r from-blue-950/40 to-stone-900/30">
                       <h5 className="text-blue-200 font-medium mb-2">Bisik-bisik Lorong</h5>
                       <ul className="text-sm text-blue-200/90 space-y-1 list-disc pl-5">
                         {defuserHints.map((h, i) => <li key={i}>{h}</li>)}
@@ -396,23 +428,23 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
 
             {/* Expert */}
             {(isExpert || role === 'host') && (
-              <Card className="border-4 border-emerald-700 bg-gradient-to-b from-stone-900 to-emerald-950">
+              <Card className="border border-emerald-700/40 bg-gradient-to-b from-stone-900/60 to-emerald-950/40">
                 <CardHeader>
-                  <CardTitle className="text-lg text-emerald-300 text-center">🌳 Struktur Pohon</CardTitle>
+                  <CardTitle className="text-base text-emerald-300 text-center">🌳 Struktur Pohon</CardTitle>
                   <CardDescription className="text-center text-stone-300">Bimbingan konseptual tanpa membuka solusi</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-5">
                   <div className="flex items-center gap-3 flex-wrap">
-                    <Button type="button" variant="outline" onClick={() => setShowNulls(x => !x)} className="border-stone-600 text-stone-200 hover:bg-stone-800/60">
+                    <Button type="button" variant="outline" onClick={() => setShowNulls(x => !x)} className="border-stone-600/60 text-stone-200 hover:bg-stone-800/60">
                       {showNulls ? 'Sembunyikan Ruang Tak Berujung (∅)' : 'Tampilkan Ruang Tak Berujung (∅)'}
                     </Button>
-                    <Badge className="bg-stone-700 text-stone-200 border-stone-600">Jejak Defuser disorot</Badge>
-                    <Badge className="bg-emerald-800 text-emerald-100 border-emerald-700">Warna ≈ Kedalaman</Badge>
+                    <Badge className="bg-stone-700 text-stone-200 border border-stone-600/50">Jejak Defuser disorot</Badge>
+                    <Badge className="bg-emerald-800 text-emerald-100 border border-emerald-700/50">Warna ≈ Kedalaman</Badge>
                     <Button
                       type="button"
                       variant="outline"
                       onClick={() => setShowSolveHints(x => !x)}
-                      className="border-emerald-600 text-emerald-200 hover:bg-stone-800/60"
+                      className="border-emerald-600/60 text-emerald-200 hover:bg-stone-800/60"
                     >
                       {showSolveHints ? 'Sembunyikan Petunjuk Pemecahan' : 'Tampilkan Petunjuk Pemecahan'}
                     </Button>
@@ -420,19 +452,19 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
 
                   {/* Pohon */}
                   {root ? (
-                    <div className="rounded-xl p-4 border-2 border-stone-700 bg-stone-900">
-                      <div className="bg-stone-950 rounded-lg p-3 overflow-x-auto border border-stone-700">
+                    <div className="rounded-xl p-4 border border-stone-700/50 bg-stone-900">
+                      <div className="bg-stone-950 rounded-lg p-3 overflow-x-auto border border-stone-700/50">
                         {renderNode(root as TreeNode, '', true, 'root', 0)}
                       </div>
                     </div>
                   ) : (
-                    <div className="rounded-xl p-4 border-2 border-amber-700 bg-gradient-to-r from-amber-900 to-stone-900">
+                    <div className="rounded-xl p-4 border border-amber-700/50 bg-gradient-to-r from-amber-900/40 to-stone-900/30">
                       <p className="text-amber-200">Pengetahuan Expert sedang dimuat...</p>
                     </div>
                   )}
 
                   {/* Petunjuk Pembimbingan Expert */}
-                  <div className="rounded-xl p-4 border-2 border-emerald-700 bg-gradient-to-r from-emerald-950 to-stone-900">
+                  <div className="rounded-xl p-4 border border-emerald-700/50 bg-gradient-to-r from-emerald-950/40 to-stone-900/30">
                     <h5 className="text-emerald-200 font-medium mb-3">🧭 Panduan Pembimbingan Expert</h5>
                     <div className="text-sm text-emerald-200/90 space-y-2">
                       {expertGuidanceHints.map((hint, i) => (
@@ -444,10 +476,10 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
                     </div>
                   </div>
 
-                  {/* Strategi Pembimbingan Detail */}
+                  {/* Strategi Pembimbingan */}
                   <div className="space-y-4">
                     {expertStrategies.map((strategy, idx) => (
-                      <div key={idx} className="rounded-xl p-4 border-2 border-teal-700 bg-gradient-to-r from-teal-950 to-stone-900">
+                      <div key={idx} className="rounded-xl p-4 border border-teal-700/50 bg-gradient-to-r from-teal-950/40 to-stone-900/30">
                         <h6 className="text-teal-200 font-semibold mb-2">{strategy.title}</h6>
                         <ul className="text-sm text-teal-200/90 space-y-1">
                           {strategy.points.map((point, pointIdx) => (
@@ -461,31 +493,31 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
                     ))}
                   </div>
 
-                  {/* Petunjuk Pemecahan Binary Tree/BST */}
+                  {/* Petunjuk Pemecahan (opsional) */}
                   {showSolveHints && (
                     <div className="grid md:grid-cols-2 gap-4">
-                      <div className="rounded-xl p-4 border-2 border-emerald-700 bg-gradient-to-r from-emerald-950 to-stone-900">
+                      <div className="rounded-xl p-4 border border-emerald-700/50 bg-gradient-to-r from-emerald-950/40 to-stone-900/30">
                         <h6 className="text-emerald-200 font-semibold mb-2">Identifikasi & Tujuan</h6>
                         <ul className="text-sm text-emerald-200/90 space-y-1 list-disc pl-5">
                           {solveHintsGeneral.map((h, i) => <li key={i}>{h}</li>)}
                         </ul>
                       </div>
 
-                      <div className="rounded-xl p-4 border-2 border-teal-700 bg-gradient-to-r from-teal-950 to-stone-900">
+                      <div className="rounded-xl p-4 border border-teal-700/50 bg-gradient-to-r from-teal-950/40 to-stone-900/30">
                         <h6 className="text-teal-200 font-semibold mb-2">Aturan & Navigasi BST</h6>
                         <ul className="text-sm text-teal-200/90 space-y-1 list-disc pl-5">
                           {solveHintsBST.map((h, i) => <li key={i}>{h}</li>)}
                         </ul>
                       </div>
 
-                      <div className="rounded-xl p-4 border-2 border-blue-700 bg-gradient-to-r from-blue-950 to-stone-900">
+                      <div className="rounded-xl p-4 border border-blue-700/50 bg-gradient-to-r from-blue-950/40 to-stone-900/30">
                         <h6 className="text-blue-200 font-semibold mb-2">Strategi Traversal</h6>
                         <ul className="text-sm text-blue-200/90 space-y-1 list-disc pl-5">
                           {solveHintsTraversal.map((h, i) => <li key={i}>{h}</li>)}
                         </ul>
                       </div>
 
-                      <div className="rounded-xl p-4 border-2 border-purple-700 bg-gradient-to-r from-purple-950 to-stone-900">
+                      <div className="rounded-xl p-4 border border-purple-700/50 bg-gradient-to-r from-purple-950/40 to-stone-900/30">
                         <h6 className="text-purple-200 font-semibold mb-2">Validasi & Edge Case</h6>
                         <ul className="text-sm text-purple-200/90 space-y-1 list-disc pl-5">
                           {solveHintsChecks.map((h, i) => <li key={i}>{h}</li>)}
@@ -495,7 +527,7 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
                   )}
 
                   {/* Prinsip penelusuran */}
-                  <div className="rounded-xl p-4 border-2 border-stone-700 bg-stone-800/60">
+                  <div className="rounded-xl p-4 border border-stone-700/50 bg-stone-800/40">
                     <h5 className="text-stone-200 font-semibold mb-2">Ritus Penelusuran</h5>
                     <ul className="text-sm text-stone-300 space-y-1 list-disc pl-5">
                       <li>Di hadapan altar, timbang nilai sang penjaga; barat bila tamu lebih ringan, timur bila lebih berat, tanpa menyebut angka sakralnya.</li>
@@ -506,11 +538,11 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
 
                   {/* Label ritus */}
                   {puzzle.expertView?.traversalMethods && (
-                    <div className="rounded-xl p-4 border-2 border-purple-700 bg-gradient-to-r from-purple-950 to-stone-900">
+                    <div className="rounded-xl p-4 border border-purple-700/50 bg-gradient-to-r from-purple-950/40 to-stone-900/30">
                       <h5 className="text-purple-200 font-medium mb-2">Bentuk Ritus</h5>
                       <div className="flex flex-wrap gap-2">
                         {Object.keys(puzzle.expertView.traversalMethods).map((name) => (
-                          <Badge key={name} className="bg-purple-800 text-purple-100 border-purple-700">{name}</Badge>
+                          <Badge key={name} className="bg-purple-800 text-purple-100 border border-purple-700/60">{name}</Badge>
                         ))}
                       </div>
                     </div>
@@ -521,29 +553,28 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
           </div>
 
           {/* Lore BST */}
-          <Card className="border-4 border-purple-700 bg-gradient-to-br from-stone-900 to-purple-950">
+          <Card className="border border-purple-700/40 bg-gradient-to-br from-stone-900/60 to-purple-950/30">
             <CardHeader>
-              <CardTitle className="text-purple-300 text-lg">📜 Gulungan Ritus BST</CardTitle>
+              <CardTitle className="text-purple-300 text-base">📜 Gulungan Ritus BST</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="grid md:grid-cols-2 gap-4 text-sm">
-                <div className="p-4 rounded-xl border-2 border-amber-700 bg-stone-800/60">
+                <div className="p-4 rounded-xl border border-amber-700/40 bg-stone-800/40">
                   <h6 className="text-amber-300 font-semibold mb-2">Hukum Altar</h6>
                   <ul className="text-stone-200 space-y-1 list-disc pl-5">
-                    <li>Tiap simpul hanya boleh menurunkan dua lorong, satu ke barat dan satu ke timur.</li>
-                    <li>Pada BST: kiri {'<'} induk {'<'} kanan, dalam pengurutan nilai yang dijaga para penjaga gerbang.</li>
-                    <li>Altar adalah simpul pertama; ruang tak berujung adalah ujung lorong tanpa cabang lagi.</li>
+                    <li>Tiap simpul ≤ 2 lorong: satu ke barat, satu ke timur.</li>
+                    <li>Pada BST: kiri {'<'} induk {'<'} kanan, menjaga urutan nilai.</li>
+                    <li>Altar = simpul pertama; ruang tak berujung = ujung lorong tanpa cabang.</li>
                   </ul>
                 </div>
-                <div className="p-4 rounded-xl border-2 border-blue-700 bg-stone-800/60">
+                <div className="p-4 rounded-xl border border-blue-700/40 bg-stone-800/40">
                   <h6 className="text-blue-300 font-semibold mb-2">Teka-teki Penelusuran</h6>
-                  {/* FIX: Hapus <ul> duplikat/terpotong, gunakan satu <ul> yang valid */}
                   <ul className="text-stone-200 space-y-1 list-disc pl-5">
-                    <li>Jika nilai tamu lebih kecil dari penjaga, melangkahlah ke barat; jika lebih besar, menujulah ke timur.</li>
-                    <li>Jejak yang kau tulis adalah sumpah perjalanan; hapus langkah yang ragu dan jagalah ritmemu.</li>
-                    <li>Bila dua lorong menyamar, dengarkan bisik selisih—ia tak pernah berbohong.</li>
-                    <li>Jangan terpikat satu ritus; terkadang bentuk kunjungan berbeda menyingkap kisi makna yang tersembunyi.</li>
-                    <li>Uji pemahaman di tiap simpul sebelum bergerak; biarkan jejak membuktikan arah, bukan firasat semata.</li>
+                    <li>Jika tamu {'<'} penjaga ⇒ barat; jika {'>'} penjaga ⇒ timur.</li>
+                    <li>Jejak adalah sumpah perjalanan; rapikan langkah ragu dan jaga ritme.</li>
+                    <li>Bila dua lorong menyamar, dengarkan bisik selisih—ia tak berbohong.</li>
+                    <li>Coba beragam ritus; masing-masing menyingkap kisi makna berbeda.</li>
+                    <li>Uji pemahaman di tiap simpul; biarkan jejak membuktikan arah.</li>
                   </ul>
                 </div>
               </div>
