@@ -1,4 +1,3 @@
-// resources/js/Pages/Game/Achievements.tsx
 import React, { useEffect, useMemo, useState } from 'react';
 import { Head, Link } from '@inertiajs/react';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
@@ -7,6 +6,7 @@ import { Badge } from '@/Components/ui/badge';
 import { Button } from '@/Components/ui/button';
 import { Input } from '@/Components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/Components/ui/select';
+import { CheckCircle2, Clock3, Target } from 'lucide-react';
 
 type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
 
@@ -32,6 +32,61 @@ function rarityBadge(r: Rarity) {
     legendary: 'bg-amber-700 text-amber-100',
   };
   return <Badge className={map[r]}>{r.toUpperCase()}</Badge>;
+}
+
+// Ringkas criteria menjadi poin-poin manusiawi (tanpa JSON)
+function summarizeCriteria(criteria: any): string[] {
+  if (!criteria) return [];
+  if (typeof criteria === 'string') return [criteria];
+  if (Array.isArray(criteria)) return criteria.map(String);
+
+  // Object dengan pola umum
+  const c: Record<string, any> = criteria;
+  const out: string[] = [];
+
+  const asNum = (v: any) => (typeof v === 'number' ? v : Number(v));
+  const asStr = (v: any) => String(v);
+
+  // Pola umum yang sering dipakai
+  if (c.min_score ?? c.score ?? c.target_score) out.push(`Skor ≥ ${asNum(c.min_score ?? c.score ?? c.target_score)}`);
+  if (c.max_time ?? c.time_under ?? c.time_sec) out.push(`Waktu ≤ ${asNum(c.max_time ?? c.time_under ?? c.time_sec)} dtk`);
+  if (c.wins) out.push(`Menang ${asNum(c.wins)}x`);
+  if (c.streak) out.push(`Streak ${asNum(c.streak)}`);
+  if (c.puzzles ?? c.sessions ?? c.matches) {
+    const n = asNum(c.puzzles ?? c.sessions ?? c.matches);
+    out.push(`Selesaikan ${n} tantangan`);
+  }
+  if (c.difficulty) out.push(`Kesulitan: ${asStr(c.difficulty)}`);
+  if (c.mode) out.push(`Mode: ${asStr(c.mode)}`);
+  if (c.category) out.push(`Kategori: ${asStr(c.category)}`);
+  if (c.level ?? c.stage) out.push(`Level: ${asStr(c.level ?? c.stage)}`);
+
+  // Jika masih kosong, ambil sebagian kunci sebagai fallback ringkas
+  if (out.length === 0) {
+    const keys = Object.keys(c).slice(0, 4);
+    for (const k of keys) out.push(`${k}: ${asStr(c[k])}`);
+  }
+  return out;
+}
+
+// Ringkas progres agar tidak menampilkan JSON
+function summarizeProgress(progress: any): string | null {
+  if (!progress) return null;
+  if (typeof progress === 'number') return `Progres: ${progress}%`;
+  if (typeof progress === 'string') return progress;
+
+  const p: Record<string, any> = progress;
+  const pct = p.percent ?? p.percentage;
+  if (pct != null) return `Progres: ${Number(pct).toFixed(0)}%`;
+
+  if (p.current != null && p.target != null) {
+    const cur = Number(p.current);
+    const tgt = Number(p.target);
+    const est = tgt > 0 ? Math.min(100, Math.round((cur / tgt) * 100)) : undefined;
+    return est != null ? `Progres: ${cur}/${tgt} (${est}%)` : `Progres: ${cur}/${tgt}`;
+  }
+  // Tidak menampilkan JSON mentah
+  return null;
 }
 
 export default function AchievementsPage() {
@@ -108,31 +163,55 @@ export default function AchievementsPage() {
                   <CardContent className="p-6 text-stone-300">Belum ada pencapaian yang terbuka.</CardContent>
                 </Card>
               )}
-              {!loading && unlocked.map((a) => (
-                <Card key={a.id} className="border-2 border-amber-600 bg-stone-900/50">
-                  <CardHeader className="flex items-start justify-between">
-                    <div>
-                      <CardTitle className="text-amber-300">{a.icon ?? '🏅'} {a.title}</CardTitle>
-                      <CardDescription className="text-stone-400">
-                        Unlocked: {a.unlocked_at ? new Date(a.unlocked_at).toLocaleString() : '-'}
-                      </CardDescription>
-                    </div>
-                    {rarityBadge(a.rarity)}
-                  </CardHeader>
-                  <CardContent className="text-stone-200">
-                    <div className="text-stone-300">{a.description}</div>
-                    {a.progress && (
-                      <pre className="mt-3 max-h-28 overflow-auto rounded bg-stone-800/70 p-2 text-xs text-stone-300">
-                        {JSON.stringify(a.progress, null, 2)}
-                      </pre>
-                    )}
-                  </CardContent>
-                </Card>
-              ))}
+              {!loading && unlocked.map((a) => {
+                const criteriaList = summarizeCriteria(a.criteria);
+                const progText = summarizeProgress(a.progress);
+                return (
+                  <Card key={a.id} className="border-2 border-amber-600 bg-stone-900/50">
+                    <CardHeader className="flex items-start justify-between">
+                      <div>
+                        <CardTitle className="text-amber-300">{a.icon ?? '🏅'} {a.title}</CardTitle>
+                        <CardDescription className="text-stone-400">
+                          Unlocked: {a.unlocked_at ? new Date(a.unlocked_at).toLocaleString() : '-'}
+                        </CardDescription>
+                      </div>
+                      {rarityBadge(a.rarity)}
+                    </CardHeader>
+                    <CardContent className="text-stone-200 space-y-3">
+                      {a.description && <div className="text-stone-300">{a.description}</div>}
+
+                      {/* Syarat ringkas (jika ada), tanpa JSON */}
+                      {criteriaList.length > 0 ? (
+                        <div className="flex flex-wrap gap-2">
+                          {criteriaList.map((c, i) => (
+                            <Badge key={i} className="bg-stone-800 text-stone-200 border border-stone-700 inline-flex items-center gap-1">
+                              <Target className="size-3 text-amber-400" />
+                              {c}
+                            </Badge>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-emerald-300 inline-flex items-center gap-2">
+                          <CheckCircle2 className="size-4" />
+                          Syarat terpenuhi
+                        </div>
+                      )}
+
+                      {/* Progres ringkas (opsional), tanpa JSON */}
+                      {progText && (
+                        <div className="text-sm text-stone-300 inline-flex items-center gap-2">
+                          <Clock3 className="size-4 text-amber-400" />
+                          {progText}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </CardContent>
           </Card>
 
-          {/* Locked */}
+          {/* Locked (tetap boleh tampil ringkasan/JSON sesuai kebutuhan) */}
           <Card className="border-3 border-stone-700 bg-stone-900/30">
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="text-stone-300">Locked</CardTitle>
@@ -149,22 +228,36 @@ export default function AchievementsPage() {
                   <CardContent className="p-6 text-stone-300">Tidak ada pencapaian terkunci.</CardContent>
                 </Card>
               )}
-              {!loading && locked.map((a) => (
-                <Card key={a.id} className="border border-stone-700 bg-stone-900/40 opacity-75">
-                  <CardHeader className="flex items-start justify-between">
-                    <div>
-                      <CardTitle className="text-stone-300">{a.icon ?? '🔒'} {a.title}</CardTitle>
-                      <CardDescription className="text-stone-500">
-                        Syarat: {a.criteria ? JSON.stringify(a.criteria) : '—'}
-                      </CardDescription>
-                    </div>
-                    {rarityBadge(a.rarity)}
-                  </CardHeader>
-                  <CardContent className="text-stone-400">
-                    <div>{a.description}</div>
-                  </CardContent>
-                </Card>
-              ))}
+              {!loading && locked.map((a) => {
+                const criteriaList = summarizeCriteria(a.criteria);
+                return (
+                  <Card key={a.id} className="border border-stone-700 bg-stone-900/40 opacity-75">
+                    <CardHeader className="flex items-start justify-between">
+                      <div>
+                        <CardTitle className="text-stone-300">{a.icon ?? '🔒'} {a.title}</CardTitle>
+                        <CardDescription className="text-stone-500">
+                          {criteriaList.length > 0 ? (
+                            <span className="inline-flex flex-wrap gap-2">
+                              {criteriaList.map((c, i) => (
+                                <Badge key={i} className="bg-stone-800 text-stone-200 border border-stone-700 inline-flex items-center gap-1">
+                                  <Target className="size-3 text-amber-400" />
+                                  {c}
+                                </Badge>
+                              ))}
+                            </span>
+                          ) : (
+                            'Syarat: —'
+                          )}
+                        </CardDescription>
+                      </div>
+                      {rarityBadge(a.rarity)}
+                    </CardHeader>
+                    <CardContent className="text-stone-400">
+                      <div>{a.description}</div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </CardContent>
           </Card>
 
