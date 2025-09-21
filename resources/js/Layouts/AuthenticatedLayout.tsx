@@ -1,4 +1,3 @@
-import ApplicationLogo from '@/Components/ApplicationLogo';
 import { Link, usePage } from '@inertiajs/react';
 import { PropsWithChildren, ReactNode, useMemo, useState } from 'react';
 
@@ -47,11 +46,13 @@ export default function Authenticated({
 
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="flex h-16 items-center justify-between">
-            {/* Kiri: Logo + Nav Desktop */}
+            {/* Kiri: Brand + Nav Desktop */}
             <div className="flex items-center gap-6">
               <Link href="/" className="flex items-center gap-2">
-                <ApplicationLogo className="block h-9 w-auto fill-current text-amber-300 crystal-glow" />
-                <span className="hidden sm:inline text-amber-300 font-semibold rune-float">CodeAlpha Dungeon</span>
+                {/* Hilangkan ApplicationLogo, gunakan teks brand */}
+                <span className="text-xl sm:text-2xl font-semibold text-amber-300 crystal-glow rune-float">
+                  CodeAlpha Dungeon
+                </span>
               </Link>
 
               <div className="hidden sm:flex items-center gap-4">
@@ -103,6 +104,7 @@ export default function Authenticated({
                   </DropdownMenuItem>
                   <DropdownMenuSeparator className="bg-stone-700" />
                   <DropdownMenuItem asChild>
+                    {/* Logout Inertia method POST */}
                     <Link href={route('logout')} method="post" as="button" className="w-full cursor-pointer text-red-300">
                       Keluar
                     </Link>
@@ -110,7 +112,7 @@ export default function Authenticated({
                 </DropdownMenuContent>
               </DropdownMenu>
 
-              {/* Toggle Mobile untuk konsistensi aksesibilitas (tersembunyi di desktop) */}
+              {/* Toggle Mobile (hidden di desktop) */}
               <Button
                 variant="outline"
                 onClick={() => setMobileOpen(v => !v)}
@@ -191,7 +193,7 @@ export default function Authenticated({
         </div>
       </nav>
 
-      {/* Header halaman opsional */}
+      {/* Header halaman opsional (tidak ganda, hanya tampil jika prop header di-passing) */}
       {header && (
         <header className="border-b-4 border-amber-700 bg-gradient-to-r from-stone-900 via-stone-800 to-amber-950">
           <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">

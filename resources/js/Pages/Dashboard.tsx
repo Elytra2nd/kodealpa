@@ -11,14 +11,26 @@ export default function Dashboard() {
   return (
     <AuthenticatedLayout
       header={
-        <h2 className="text-xl font-semibold leading-tight text-amber-300">
-          Ruang Komando Dungeon
-        </h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-semibold leading-tight text-amber-300">
+            Ruang Komando Dungeon
+          </h2>
+          {/* Tombol Logout cepat (Inertia POST) */}
+          <Link href={route('logout')} method="post" as="button">
+            <Button
+              variant="outline"
+              className="border-2 border-red-600 text-red-300 hover:bg-red-950 hover:text-red-200"
+              title="Keluar dari CodeAlpha Dungeon"
+            >
+              ⎋ Keluar
+            </Button>
+          </Link>
+        </div>
       }
     >
       <Head title="Ruang Komando - CodeAlpha Dungeon" />
 
-      {/* Custom Styles for Animations */}
+      {/* Enchanted Animations */}
       <style>{`
         @keyframes flicker { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
         @keyframes glow { 0%, 100% { box-shadow: 0 0 20px rgba(251, 191, 36, 0.5); } 50% { box-shadow: 0 0 30px rgba(251, 191, 36, 0.8), 0 0 40px rgba(251, 191, 36, 0.3); } }
@@ -34,7 +46,7 @@ export default function Dashboard() {
         .shadow-dance { animation: shadowDance 2.5s ease-in-out infinite; }
       `}</style>
 
-      <div className="min-h-screen bg-gradient-to-br from-stone-900 via-stone-800 to-amber-900 py-12">
+      <div className="min-h-screen bg-gradient-to-br from-stone-950 via-stone-900 to-amber-950 py-12">
         {/* Dungeon Background Pattern */}
         <div
           className="absolute inset-0 opacity-10 bg-repeat"
@@ -47,7 +59,7 @@ export default function Dashboard() {
           {/* Mystical Welcome Section */}
           <Card className="overflow-hidden border-4 border-amber-700 shadow-dance bg-gradient-to-br from-stone-800 via-amber-900 to-stone-900">
             <div className="relative p-8 text-amber-100">
-              {/* Animated Torches */}
+              {/* Torches */}
               <div className="absolute top-4 left-4 torch-flame text-4xl">🔥</div>
               <div className="absolute top-4 right-4 torch-flame text-4xl">🔥</div>
 
