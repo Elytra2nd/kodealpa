@@ -48,7 +48,7 @@ composer install
 Install dependensi JS:
 
 ```bash
-pnpm install   # atau: npm install / yarn install
+npm install   # atau: npm install / yarn install
 ```
 
 Salin file `.env` & generate key:
