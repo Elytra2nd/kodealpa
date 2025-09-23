@@ -1,3 +1,4 @@
+
 # 🏰 CodeAlpha Dungeon — Laravel + Inertia + DM AI (Sprint 1)
 
 Proyek **monolit Laravel + Inertia (React)** dengan fitur utama:
@@ -36,55 +37,71 @@ Clone repo & masuk ke folder:
 ```bash
 git clone <repo-url> codealpha-dungeon
 cd codealpha-dungeon
+````
+
 Install dependensi PHP:
 
-bash
-Copy code
+```bash
 composer install
+```
+
 Install dependensi JS:
 
-bash
-Copy code
+```bash
 pnpm install   # atau: npm install / yarn install
-Salin file .env & generate key:
+```
 
-bash
-Copy code
+Salin file `.env` & generate key:
+
+```bash
 cp .env.example .env
 php artisan key:generate
-⚙️ 3) Konfigurasi Inertia (Laravel + React)
+```
+
+---
+
+## ⚙️ 3) Konfigurasi Inertia (Laravel + React)
+
 Pasang adapter Inertia untuk Laravel:
 
-bash
-Copy code
+```bash
 composer require inertiajs/inertia-laravel
 php artisan inertia:middleware
-Tambahkan middleware HandleInertiaRequests ke web middleware stack
-(Laravel 11/12: edit bootstrap/app.php).
+```
 
-📚 Referensi: Inertia Server-side setup
+Tambahkan middleware `HandleInertiaRequests` ke **web middleware stack**
+(Laravel 11/12: edit `bootstrap/app.php`).
 
-🗄️ 4) Konfigurasi Database & Migrasi
-Edit konfigurasi .env:
+📚 Referensi: [Inertia Server-side setup][web:1112]
 
-ini
-Copy code
+---
+
+## 🗄️ 4) Konfigurasi Database & Migrasi
+
+Edit konfigurasi `.env`:
+
+```
 DB_CONNECTION=mysql
 DB_HOST=127.0.0.1
 DB_PORT=3306
 DB_DATABASE=codealpha_dungeon
 DB_USERNAME=root
 DB_PASSWORD=secret
+```
+
 Jalankan migrasi:
 
-bash
-Copy code
+```bash
 php artisan migrate
-🌱 5) Seeding Data Inti
-Pastikan DatabaseSeeder memanggil seeder terkait, contoh:
+```
 
-php
-Copy code
+---
+
+## 🌱 5) Seeding Data Inti
+
+Pastikan `DatabaseSeeder` memanggil seeder terkait, contoh:
+
+```php
 // database/seeders/DatabaseSeeder.php
 public function run(): void {
     $this->call([
@@ -98,23 +115,41 @@ public function run(): void {
         'email' => 'test@example.com',
     ]);
 }
+```
+
 Jalankan seeder:
 
-bash
-Copy code
+```bash
 php artisan db:seed
-🚀 6) Menjalankan Aplikasi
+```
+
+---
+
+## 🚀 6) Menjalankan Aplikasi
+
 Jalankan build frontend (development):
 
-bash
-Copy code
+```bash
 pnpm run dev   # atau: npm run dev / yarn dev
+```
+
 Jalankan server Laravel:
 
-bash
-Copy code
+```bash
 php artisan serve
-📌 Catatan
-Gunakan Redis jika butuh queue atau broadcast event.
+```
 
-OpenAI API diperlukan agar DM AI berfungsi.
+---
+
+## 📌 Catatan
+
+* Gunakan Redis jika butuh **queue** atau **broadcast event**.
+* OpenAI API diperlukan agar **DM AI** berfungsi.
+
+---
+
+[web:1117]: https://laravel.com/docs/11.x/installation
+[web:1112]: https://inertiajs.com/server-side-setup
+[web:1039]: https://github.com/openai-php/laravel
+[web:1037]: https://openai.com/api
+
