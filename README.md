@@ -1,61 +1,75 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# CodeAlpha Dungeon — Laravel + Inertia + DM AI (Sprint 1)
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Monolit Laravel + Inertia (React) dengan fitur:
+- Game lobby/sessions, Tournament, Voice, Grimoire (knowledge), Explorer Journal, Achievements (locked/unlocked).
+- Dungeon Master (DM) fasilitator berbasis teks (Sprint 1), streaming via SSE.
+- Siap ditingkatkan ke Voice Realtime (Sprint 2).
 
-## About Laravel
+## 1) Prasyarat
+- PHP 8.2+, Composer, Node 18+, pnpm/npm/yarn (pilih salah satu). [Laravel Install] [web:1117]
+- Database MySQL/PGSQL, Redis (opsional untuk queue/broadcast).
+- OpenAI API Key (untuk DM AI teks). [OpenAI PHP Laravel] [web:1039][web:1037]
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+## 2) Instalasi Proyek
+Clone & masuk folder
+git clone <repo-url> codealpha-dungeon
+cd codealpha-dungeon
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+Install PHP deps
+composer install
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+Install JS deps
+pnpm install # atau npm install / yarn
 
-## Learning Laravel
+Copy env dan generate key
+cp .env.example .env
+php artisan key:generate
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+text
+[web:1117]
 
-You may also try the [Laravel Bootcamp](https://bootcamp.laravel.com), where you will be guided through building a modern Laravel application from scratch.
+## 3) Konfigurasi Inertia (Laravel adapter + React)
+- Pastikan adapter Inertia Laravel terpasang dan middleware diaktifkan. [Inertia Server-side setup] [web:1112]
+composer require inertiajs/inertia-laravel
+php artisan inertia:middleware
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+text
+- Tambahkan middleware HandleInertiaRequests ke web middleware stack (Laravel 11/12 via bootstrap/app.php). [web:1112]
 
-## Laravel Sponsors
+## 4) Konfigurasi Database & Migrasi
+Edit .env: DB_CONNECTION, DB_HOST, DB_DATABASE, DB_USERNAME, DB_PASSWORD
+Migrasi
+php artisan migrate
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+text
+[web:1117]
 
-### Premium Partners
+## 5) Seeding Data Inti (Stages, Journal, Game, Achievements)
+- Pastikan DatabaseSeeder memanggil seeder terkait:
+// database/seeders/DatabaseSeeder.php (contoh)
+public function run(): void {
+$this->call([
+GameSeeder::class,
+ExplorerJournalSeeder::class,
+AchievementsSeeder::class, // master achievements
+]);
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+\App\Models\User::factory()->create([
+'name' => 'Test User',
+'email' => 'test@example.com',
+]);
+}
 
-## Contributing
+text
+- Jalankan:
+php artisan db:seed
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+text
+[web:1117]
 
-## Code of Conduct
+## 6) Menjalankan Aplikasi
+Build frontend dev
+pnpm run dev # atau npm run dev / yarn dev
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
-
-## Security Vulnerabilities
-
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
-
-## License
-
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+Jalankan server
+php artisan serve
