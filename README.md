@@ -1,75 +1,120 @@
-# CodeAlpha Dungeon — Laravel + Inertia + DM AI (Sprint 1)
+# 🏰 CodeAlpha Dungeon — Laravel + Inertia + DM AI (Sprint 1)
 
-Monolit Laravel + Inertia (React) dengan fitur:
-- Game lobby/sessions, Tournament, Voice, Grimoire (knowledge), Explorer Journal, Achievements (locked/unlocked).
-- Dungeon Master (DM) fasilitator berbasis teks (Sprint 1), streaming via SSE.
-- Siap ditingkatkan ke Voice Realtime (Sprint 2).
+Proyek **monolit Laravel + Inertia (React)** dengan fitur utama:
 
-## 1) Prasyarat
-- PHP 8.2+, Composer, Node 18+, pnpm/npm/yarn (pilih salah satu). [Laravel Install] [web:1117]
-- Database MySQL/PGSQL, Redis (opsional untuk queue/broadcast).
-- OpenAI API Key (untuk DM AI teks). [OpenAI PHP Laravel] [web:1039][web:1037]
+- 🎮 Game Lobby / Sessions  
+- 🏆 Tournament  
+- 🎙️ Voice (planned Sprint 2)  
+- 📜 Grimoire (Knowledge Base)  
+- 🗒️ Explorer Journal  
+- 🏅 Achievements (Locked/Unlocked)  
+- 🤖 Dungeon Master (DM) AI berbasis teks — streaming via **SSE** (Sprint 1)  
+- 🚀 Siap ditingkatkan ke **Voice Realtime** pada Sprint 2  
 
-## 2) Instalasi Proyek
-Clone & masuk folder
+---
+
+## ⚡ 1) Prasyarat
+Pastikan sudah terpasang:
+
+- PHP `8.2+`  
+- Composer  
+- Node.js `18+`  
+- Package manager: `pnpm` / `npm` / `yarn`  
+- Database: **MySQL** / **PostgreSQL**  
+- Redis *(opsional, untuk queue & broadcast)*  
+- OpenAI API Key *(untuk DM AI berbasis teks)*  
+
+📚 Referensi:  
+- [Laravel Install][web:1117]  
+- [OpenAI PHP Laravel][web:1039][web:1037]  
+
+---
+
+## 🛠️ 2) Instalasi Proyek
+
+Clone repo & masuk ke folder:
+```bash
 git clone <repo-url> codealpha-dungeon
 cd codealpha-dungeon
+Install dependensi PHP:
 
-Install PHP deps
+bash
+Copy code
 composer install
+Install dependensi JS:
 
-Install JS deps
-pnpm install # atau npm install / yarn
+bash
+Copy code
+pnpm install   # atau: npm install / yarn install
+Salin file .env & generate key:
 
-Copy env dan generate key
+bash
+Copy code
 cp .env.example .env
 php artisan key:generate
+⚙️ 3) Konfigurasi Inertia (Laravel + React)
+Pasang adapter Inertia untuk Laravel:
 
-text
-[web:1117]
-
-## 3) Konfigurasi Inertia (Laravel adapter + React)
-- Pastikan adapter Inertia Laravel terpasang dan middleware diaktifkan. [Inertia Server-side setup] [web:1112]
+bash
+Copy code
 composer require inertiajs/inertia-laravel
 php artisan inertia:middleware
+Tambahkan middleware HandleInertiaRequests ke web middleware stack
+(Laravel 11/12: edit bootstrap/app.php).
 
-text
-- Tambahkan middleware HandleInertiaRequests ke web middleware stack (Laravel 11/12 via bootstrap/app.php). [web:1112]
+📚 Referensi: Inertia Server-side setup
 
-## 4) Konfigurasi Database & Migrasi
-Edit .env: DB_CONNECTION, DB_HOST, DB_DATABASE, DB_USERNAME, DB_PASSWORD
-Migrasi
+🗄️ 4) Konfigurasi Database & Migrasi
+Edit konfigurasi .env:
+
+ini
+Copy code
+DB_CONNECTION=mysql
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_DATABASE=codealpha_dungeon
+DB_USERNAME=root
+DB_PASSWORD=secret
+Jalankan migrasi:
+
+bash
+Copy code
 php artisan migrate
+🌱 5) Seeding Data Inti
+Pastikan DatabaseSeeder memanggil seeder terkait, contoh:
 
-text
-[web:1117]
-
-## 5) Seeding Data Inti (Stages, Journal, Game, Achievements)
-- Pastikan DatabaseSeeder memanggil seeder terkait:
-// database/seeders/DatabaseSeeder.php (contoh)
+php
+Copy code
+// database/seeders/DatabaseSeeder.php
 public function run(): void {
-$this->call([
-GameSeeder::class,
-ExplorerJournalSeeder::class,
-AchievementsSeeder::class, // master achievements
-]);
+    $this->call([
+        GameSeeder::class,
+        ExplorerJournalSeeder::class,
+        AchievementsSeeder::class, // Master achievements
+    ]);
 
-\App\Models\User::factory()->create([
-'name' => 'Test User',
-'email' => 'test@example.com',
-]);
+    \App\Models\User::factory()->create([
+        'name'  => 'Test User',
+        'email' => 'test@example.com',
+    ]);
 }
+Jalankan seeder:
 
-text
-- Jalankan:
+bash
+Copy code
 php artisan db:seed
+🚀 6) Menjalankan Aplikasi
+Jalankan build frontend (development):
 
-text
-[web:1117]
+bash
+Copy code
+pnpm run dev   # atau: npm run dev / yarn dev
+Jalankan server Laravel:
 
-## 6) Menjalankan Aplikasi
-Build frontend dev
-pnpm run dev # atau npm run dev / yarn dev
-
-Jalankan server
+bash
+Copy code
 php artisan serve
+📌 Catatan
+Gunakan Redis jika butuh queue atau broadcast event.
+
+OpenAI API diperlukan agar DM AI berfungsi.
