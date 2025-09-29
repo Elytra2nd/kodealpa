@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Models\GrimoireCategory;
 use App\Models\User;
 use Illuminate\Database\Seeder;
 
@@ -18,7 +19,8 @@ class DatabaseSeeder extends Seeder
             GameSeeder::class,
             ExplorerJournalSeeder::class,
             AchievementsSeeder::class,
-            GrimoireSeeder::class,
+            GrimoireCategorySeeder::class,
+            GrimoireEntrySeeder::class,
         ]);
 
     }
