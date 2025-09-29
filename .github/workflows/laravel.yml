@@ -1,0 +1,42 @@
+name: CI/CD — Deploy to Server
+
+on:
+  push:
+    branches:
+      - main   # deploy setiap kali push ke main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
+      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || '/var/www/kodealpa' }}
+
+    steps:
+      # Checkout code
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Start ssh-agent dan tambahkan private key dari GitHub Secrets
+      - name: Start ssh-agent and add key
+        uses: webfactory/ssh-agent@v0.5.4
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_KEY }}
+
+      # Tambahkan server ke known_hosts agar SSH lebih aman
+      - name: Add server to known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -p $DEPLOY_PORT -H $DEPLOY_HOST > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      # Jalankan script deploy di server
+      - name: Run remote deploy script
+        run: |
+          ssh -o StrictHostKeyChecking=yes \
+              -p $DEPLOY_PORT \
+              $DEPLOY_USER@$DEPLOY_HOST \
+              "bash $DEPLOY_PATH/deploy.sh"
