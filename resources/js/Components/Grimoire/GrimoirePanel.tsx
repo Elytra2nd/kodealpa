@@ -1,4 +1,3 @@
-// resources/js/Pages/Grimoire/GrimoirePanel.tsx
 import React, { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/Components/ui/card';
 import { Input } from '@/Components/ui/input';
@@ -6,6 +5,12 @@ import { Badge } from '@/Components/ui/badge';
 import { grimoireApi } from '@/services/grimoireApi';
 import type { GrimoireCategory, GrimoireEntry } from '@/types/grimoire';
 import GrimoireSidebar from './GrimoireSidebar';
+import { Document, Page, pdfjs } from 'react-pdf';
+import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
+import 'react-pdf/dist/esm/Page/TextLayer.css';
+
+// Agar worker PDF.js bisa jalan di semua environment
+pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
 function isPdf(entry: Partial<GrimoireEntry>): boolean {
   const ct = String((entry as any)?.content_type || '').toLowerCase();
@@ -16,17 +21,12 @@ function isPdf(entry: Partial<GrimoireEntry>): boolean {
 function toAbsoluteUrl(u?: string | null): string | null {
   if (!u) return null;
   let s = u.trim().replace(/\\/g, '/'); // normalisasi backslash → slash
-  // absolute / protocol-relative / data/blob
   if (/^https?:\/\//i.test(s)) return s;
   if (/^\/\//.test(s)) return `${window.location.protocol}${s}`;
   if (/^(data:|blob:)/i.test(s)) return s;
-
   const base = window.location.origin.replace(/\/+$/, '');
-  // root-relative sudah benar ("/files/...")
   if (s.startsWith('/')) return `${base}${s}`;
-  // relative path dengan folder ("files/grimoire/pdfs/aturan.pdf")
-  if (s.includes('/')) return `${base}/${s.replace(/^\/+/, '')}`;
-  // hanya nama file → fallback ke folder default
+  if (s.includes('/')) return `${base}/${s.replace(/^\/+/,'')}`;
   return `${base}/files/grimoire/pdfs/${encodeURIComponent(s)}`;
 }
 
@@ -38,6 +38,8 @@ export default function GrimoirePanel({ role }: { role: 'defuser'|'expert'|'all'
   const [selected, setSelected] = useState<GrimoireEntry | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+  const [numPages, setNumPages] = useState<number | null>(null);
+  const [pageNumber, setPageNumber] = useState(1);
 
   // Debounce query untuk mengurangi jumlah request
   const [debouncedQuery, setDebouncedQuery] = useState('');
@@ -52,7 +54,6 @@ export default function GrimoirePanel({ role }: { role: 'defuser'|'expert'|'all'
     try {
       const cats = await grimoireApi.getCategories(signal);
       setCategories(cats?.categories || []);
-
       const list = await grimoireApi.listEntries({
         category: activeCategory,
         q: debouncedQuery,
@@ -60,10 +61,8 @@ export default function GrimoirePanel({ role }: { role: 'defuser'|'expert'|'all'
         format: 'pdf',
         per_page: 50,
       }, signal);
-
       const data = list?.entries?.data || [];
       setEntries(data);
-
       if (data.length && (!selected || !data.find(d => d.id === selected?.id))) {
         setSelected(data[0]);
       }
@@ -88,9 +87,12 @@ export default function GrimoirePanel({ role }: { role: 'defuser'|'expert'|'all'
   const isSelectedPdf = selected ? isPdf(selected as any) : false;
   const rawUrl = selected ? ((selected as any).file_url_web || (selected as any).file_url || null) : null;
   const pdfUrlAbs = selected ? toAbsoluteUrl(rawUrl) : null;
-  const iframeSrc = pdfUrlAbs
-    ? (pdfUrlAbs.includes('#') ? pdfUrlAbs : `${pdfUrlAbs}#view=FitH`)
-    : null;
+
+  // Reset page number saat dokumen berubah
+  useEffect(() => {
+    setPageNumber(1);
+    setNumPages(null);
+  }, [pdfUrlAbs]);
 
   // Debug opsional
   useEffect(() => {
@@ -159,7 +161,7 @@ export default function GrimoirePanel({ role }: { role: 'defuser'|'expert'|'all'
 
           <div className="col-span-12">
             {selected ? (
-              isSelectedPdf && iframeSrc ? (
+              isSelectedPdf && pdfUrlAbs ? (
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="text-stone-200 font-medium">{(selected as any).title}</div>
@@ -172,13 +174,35 @@ export default function GrimoirePanel({ role }: { role: 'defuser'|'expert'|'all'
                       </a>
                     </div>
                   </div>
-
-                  <iframe
-                    key={iframeSrc}
-                    src={iframeSrc}
-                    className="w-full h-[80vh] rounded-lg border border-stone-700"
-                    title={(selected as any).title || 'PDF'}
-                  />
+                  <div className="bg-stone-900 rounded-lg border border-stone-700 p-2">
+                    <Document
+                      file={pdfUrlAbs}
+                      onLoadSuccess={({ numPages }) => setNumPages(numPages)}
+                      loading={<div className="text-stone-400">Memuat PDF...</div>}
+                      error={<div className="text-rose-400">Gagal memuat PDF.</div>}
+                    >
+                      <Page pageNumber={pageNumber} width={800} />
+                    </Document>
+                    {numPages && numPages > 1 && (
+                      <div className="flex items-center justify-center gap-2 mt-2">
+                        <button
+                          className="px-2 py-1 bg-stone-800 text-stone-200 rounded disabled:opacity-50"
+                          onClick={() => setPageNumber(p => Math.max(1, p - 1))}
+                          disabled={pageNumber <= 1}
+                        >
+                          Prev
+                        </button>
+                        <span className="text-stone-300">Halaman {pageNumber} dari {numPages}</span>
+                        <button
+                          className="px-2 py-1 bg-stone-800 text-stone-200 rounded disabled:opacity-50"
+                          onClick={() => setPageNumber(p => Math.min(numPages, p + 1))}
+                          disabled={pageNumber >= numPages}
+                        >
+                          Next
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               ) : (
                 <div className="text-stone-400">
