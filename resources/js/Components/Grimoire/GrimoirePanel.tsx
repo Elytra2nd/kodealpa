@@ -15,20 +15,23 @@ function isPdf(entry: Partial<GrimoireEntry>): boolean {
 
 function toAbsoluteUrl(u?: string | null): string | null {
   if (!u) return null;
-  const s = u.trim();
+  // normalisasi: backslash → slash
+  let s = u.trim().replace(/\\/g, '/');
 
-  // absolute dengan protokol
+  // absolute / protocol-relative / data/blob
   if (/^https?:\/\//i.test(s)) return s;
-  // protocol-relative
   if (/^\/\//.test(s)) return `${window.location.protocol}${s}`;
-  // data/blob
   if (/^(data:|blob:)/i.test(s)) return s;
 
-  // build dari origin
   const base = window.location.origin.replace(/\/+$/, '');
+
+  // root-relative sudah benar ("/files/...")
   if (s.startsWith('/')) return `${base}${s}`;
 
-  // nama file → fallback folder default
+  // relative path dengan folder ("files/grimoire/pdfs/aturan.pdf")
+  if (s.includes('/')) return `${base}/${s.replace(/^\/+/, '')}`;
+
+  // hanya nama file → fallback ke folder default
   return `${base}/files/grimoire/pdfs/${encodeURIComponent(s)}`;
 }
 
@@ -41,7 +44,7 @@ export default function GrimoirePanel({ role }: { role: 'defuser'|'expert'|'all'
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
-  // Debounce query untuk kurangi request saat mengetik
+  // Debounce query untuk mengurangi jumlah request
   const [debouncedQuery, setDebouncedQuery] = useState('');
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQuery(query), 300);
@@ -71,7 +74,6 @@ export default function GrimoirePanel({ role }: { role: 'defuser'|'expert'|'all'
       }
       if (!data.length) setSelected(null);
     } catch (e: any) {
-      // Axios v0.22+ membungkus abort jadi CanceledError
       if (e?.name === 'CanceledError' || e?.code === 'ERR_CANCELED') return;
       setErr('Gagal memuat pedoman.');
     } finally {
@@ -94,7 +96,7 @@ export default function GrimoirePanel({ role }: { role: 'defuser'|'expert'|'all'
     ? (pdfUrlAbs.includes('#') ? pdfUrlAbs : `${pdfUrlAbs}#view=FitH`)
     : null;
 
-  // Debug log (opsional)
+  // Debug opsional
   useEffect(() => {
     if (selected) {
       console.log('DEBUG selected:', selected);
