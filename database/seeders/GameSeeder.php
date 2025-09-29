@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use Illuminate\Support\Facades\DB;
 use Illuminate\Database\Seeder;
 use App\Models\{Mission, Stage};
 
@@ -9,6 +10,7 @@ class GameSeeder extends Seeder
 {
     public function run(): void
     {
+        DB::table('missions')->truncate();
         // ===============================
         // Mission 1 - Basic Training
         // ===============================
