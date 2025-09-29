@@ -16,10 +16,18 @@ function isPdf(entry: any): boolean {
 function toAbsoluteUrl(u?: string | null): string | null {
   if (!u) return null;
   try {
+    // Case 1: absolute URL
     if (/^https?:\/\//i.test(u)) return u;
+
     const base = window.location.origin.replace(/\/+$/, '');
-    const path = u.startsWith('/') ? u : `/${u}`;
-    return `${base}${path}`;
+
+    // Case 2: relative path dengan slash
+    if (u.startsWith('/')) {
+      return `${base}${u}`;
+    }
+
+    // Case 3: cuma nama file → fallback folder default
+    return `${base}/files/grimoire/pdfs/${u}`;
   } catch {
     return u || null;
   }
@@ -41,7 +49,6 @@ export default function GrimoirePanel({ role }: { role: 'defuser'|'expert'|'all'
       const cats = await grimoireApi.getCategories();
       setCategories(cats.categories);
 
-      // Server-side filter: hanya PDF + dukung pagination
       const list = await grimoireApi.listEntries({
         category: activeCategory,
         q: query,
@@ -53,11 +60,9 @@ export default function GrimoirePanel({ role }: { role: 'defuser'|'expert'|'all'
       const data = list.entries.data || [];
       setEntries(data);
 
-      // Auto-select pertama kali atau jika yang dipilih tidak ada
       if (data.length && (!selected || !data.find(d => d.id === selected?.id))) {
         setSelected(data[0]);
       }
-      // Reset pilihan jika kosong
       if (!data.length) setSelected(null);
     } catch (e: any) {
       setErr('Gagal memuat pedoman.');
@@ -70,9 +75,17 @@ export default function GrimoirePanel({ role }: { role: 'defuser'|'expert'|'all'
 
   const filtered = useMemo(() => entries, [entries]);
 
-  // Data untuk viewer
   const isSelectedPdf = selected ? isPdf(selected as any) : false;
   const pdfUrlAbs = selected ? toAbsoluteUrl((selected as any).file_url || null) : null;
+
+  // Debug log
+  useEffect(() => {
+    if (selected) {
+      console.log("DEBUG selected:", selected);
+      console.log("DEBUG file_url:", (selected as any).file_url);
+      console.log("DEBUG absolute:", pdfUrlAbs);
+    }
+  }, [selected, pdfUrlAbs]);
 
   return (
     <Card className="bg-stone-900/40 border-stone-700">
