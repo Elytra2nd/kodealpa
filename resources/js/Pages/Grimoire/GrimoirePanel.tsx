@@ -1,4 +1,3 @@
-// resources/js/Pages/Grimoire/GrimoirePanel.tsx
 import React from 'react';
 import { Head, Link } from '@inertiajs/react';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
@@ -30,7 +29,7 @@ export default function GrimoirePanelPage() {
               </div>
             </CardHeader>
             <CardContent>
-              {/* Panel utama yang sudah menangani iframe PDF dan filter */}
+              {/* Panel utama yang sudah menangani preview PDF dengan react-pdf */}
               <GrimoirePanelBody role="all" />
             </CardContent>
           </Card>
