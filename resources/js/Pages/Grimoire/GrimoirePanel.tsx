@@ -30,6 +30,7 @@ export default function GrimoirePanelPage() {
               </div>
             </CardHeader>
             <CardContent>
+              {/* Panel utama yang sudah menangani iframe PDF dan filter */}
               <GrimoirePanelBody role="all" />
             </CardContent>
           </Card>
