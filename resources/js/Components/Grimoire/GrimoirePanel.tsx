@@ -9,28 +9,23 @@ import GrimoireSidebar from './GrimoireSidebar';
 
 function isPdf(entry: Partial<GrimoireEntry>): boolean {
   const ct = String((entry as any)?.content_type || '').toLowerCase();
-  const url = String((entry as any)?.file_url || '');
+  const url = String((entry as any)?.file_url_web || (entry as any)?.file_url || '');
   return ct.includes('pdf') || /\.pdf($|\?)/i.test(url);
 }
 
 function toAbsoluteUrl(u?: string | null): string | null {
   if (!u) return null;
-  // normalisasi: backslash → slash
-  let s = u.trim().replace(/\\/g, '/');
-
+  let s = u.trim().replace(/\\/g, '/'); // normalisasi backslash → slash
   // absolute / protocol-relative / data/blob
   if (/^https?:\/\//i.test(s)) return s;
   if (/^\/\//.test(s)) return `${window.location.protocol}${s}`;
   if (/^(data:|blob:)/i.test(s)) return s;
 
   const base = window.location.origin.replace(/\/+$/, '');
-
   // root-relative sudah benar ("/files/...")
   if (s.startsWith('/')) return `${base}${s}`;
-
   // relative path dengan folder ("files/grimoire/pdfs/aturan.pdf")
   if (s.includes('/')) return `${base}/${s.replace(/^\/+/, '')}`;
-
   // hanya nama file → fallback ke folder default
   return `${base}/files/grimoire/pdfs/${encodeURIComponent(s)}`;
 }
@@ -91,7 +86,8 @@ export default function GrimoirePanel({ role }: { role: 'defuser'|'expert'|'all'
   const filtered = useMemo(() => entries, [entries]);
 
   const isSelectedPdf = selected ? isPdf(selected as any) : false;
-  const pdfUrlAbs = selected ? toAbsoluteUrl((selected as any).file_url || null) : null;
+  const rawUrl = selected ? ((selected as any).file_url_web || (selected as any).file_url || null) : null;
+  const pdfUrlAbs = selected ? toAbsoluteUrl(rawUrl) : null;
   const iframeSrc = pdfUrlAbs
     ? (pdfUrlAbs.includes('#') ? pdfUrlAbs : `${pdfUrlAbs}#view=FitH`)
     : null;
@@ -100,6 +96,7 @@ export default function GrimoirePanel({ role }: { role: 'defuser'|'expert'|'all'
   useEffect(() => {
     if (selected) {
       console.log('DEBUG selected:', selected);
+      console.log('DEBUG file_url_web:', (selected as any).file_url_web);
       console.log('DEBUG file_url:', (selected as any).file_url);
       console.log('DEBUG absolute:', pdfUrlAbs);
     }
@@ -185,7 +182,7 @@ export default function GrimoirePanel({ role }: { role: 'defuser'|'expert'|'all'
                 </div>
               ) : (
                 <div className="text-stone-400">
-                  Entri tidak memiliki file PDF yang valid.
+                  {rawUrl ? 'Tidak dapat menampilkan PDF dari URL tersebut.' : 'Entri tidak memiliki file PDF yang valid.'}
                 </div>
               )
             ) : (

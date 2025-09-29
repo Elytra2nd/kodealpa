@@ -12,6 +12,8 @@ use App\Http\Controllers\JournalController;
 use App\Http\Controllers\AchievementsController;
 use App\Http\Controllers\Auth\GoogleAuthController;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Response;
+use Illuminate\Support\Str;
 use Inertia\Inertia;
 
 /*
@@ -23,22 +25,72 @@ use Inertia\Inertia;
 // Halaman Welcome default
 Route::get('/', function () {
     return Inertia::render('Welcome', [
-        'canLogin' => Route::has('login'),
-        'canRegister' => Route::has('register'),
-        'laravelVersion' => Application::VERSION,
-        'phpVersion' => PHP_VERSION,
+        'canLogin'      => Route::has('login'),
+        'canRegister'   => Route::has('register'),
+        'laravelVersion'=> Application::VERSION,
+        'phpVersion'    => PHP_VERSION,
     ]);
 });
 
+// REKOMENDASI: layani file publik via web server (public/, public/storage) setelah `php artisan storage:link`.
+// Gunakan URL seperti "/storage/files/grimoire/pdfs/aturan.pdf" atau "/files/..." yang langsung tersedia di public/ tanpa PHP. [web:39]
+
+// OPSIONAL: fallback route terproteksi untuk menyajikan file dari public/files atau storage/app/public secara inline
 Route::get('/files/{path}', function ($path) {
-    if (!Storage::disk('public')->exists($path)) {
-        abort(404);
+    $path = str_replace('\\', '/', $path);
+    $path = ltrim($path, '/');
+    if (Str::contains($path, ['..'])) {
+        abort(400, 'Invalid path');
     }
-    return response()->file(storage_path('app/public/' . $path));
-});
 
+    // Coba dari public/files terlebih dahulu (jika menyimpan di public/files/...)
+    $publicFile = public_path('files/'.$path);
+    if (is_file($publicFile)) {
+        $mime = 'application/octet-stream';
+        if (preg_match('/\.pdf($|\?)/i', $publicFile)) {
+            $mime = 'application/pdf';
+        } else {
+            $det = @mime_content_type($publicFile);
+            if ($det) $mime = $det;
+        }
+        $headers = [
+            'Content-Type'     => $mime,
+            'X-Frame-Options'  => 'SAMEORIGIN',
+        ];
+        if (strtolower($mime) === 'application/pdf') {
+            $headers['Content-Disposition'] = 'inline; filename="'.basename($publicFile).'"';
+        }
+        return Response::file($publicFile, $headers);
+    }
 
-// Halaman Dashboard
+    // Fallback ke storage/app/public (setelah storage:link, sebaiknya akses via "/storage/...") [web:39]
+    $storageFile = storage_path('app/public/'.$path);
+    if (is_file($storageFile)) {
+        $mime = 'application/octet-stream';
+        if (preg_match('/\.pdf($|\?)/i', $storageFile)) {
+            $mime = 'application/pdf';
+        } else {
+            $det = @mime_content_type($storageFile);
+            if ($det) $mime = $det;
+        }
+        $headers = [
+            'Content-Type'     => $mime,
+            'X-Frame-Options'  => 'SAMEORIGIN',
+        ];
+        if (strtolower($mime) === 'application/pdf') {
+            $headers['Content-Disposition'] = 'inline; filename="'.basename($storageFile).'"';
+        }
+        return Response::file($storageFile, $headers);
+    }
+
+    abort(404);
+})->where('path', '.*');
+
+/*
+|--------------------------------------------------------------------------
+| Halaman Dashboard
+|--------------------------------------------------------------------------
+*/
 Route::get('/dashboard', function () {
     return Inertia::render('Dashboard');
 })->middleware(['auth', 'verified'])->name('dashboard');
@@ -49,8 +101,6 @@ Route::middleware('auth')->group(function () {
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 });
-
-
 
 /*
 |--------------------------------------------------------------------------
@@ -66,8 +116,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // Game session
     Route::get('/game/session/{id}', function ($id) {
         return Inertia::render('Game/GameSession', [
-            'sessionId' => (int) $id,
-            'role' => request('role'),
+            'sessionId'     => (int) $id,
+            'role'          => request('role'),
             'participantId' => request('participantId'),
         ]);
     })->name('game.session');
@@ -99,7 +149,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/{id}', function ($id) {
             return Inertia::render('Game/TournamentSession', [
                 'tournamentId' => (int) $id,
-                'groupId' => request('groupId'),
+                'groupId'      => request('groupId'),
             ]);
         })->name('session')->where('id', '[0-9]+');
 
@@ -385,7 +435,7 @@ Route::middleware(['auth', 'verified'])->prefix('ws')->group(function () {
 | Additional Game Features Routes (Enhanced)
 |--------------------------------------------------------------------------
 */
-Route::middleware(['auth', 'verified'])->prefix('game')->group(function () {
+Route::middleware(['auth, verified'])->prefix('game')->group(function () {
     Route::get('/leaderboard', function () {
         return Inertia::render('Game/Leaderboard');
     })->name('game.leaderboard');
@@ -446,22 +496,19 @@ Route::middleware(['auth', 'verified'])->prefix('game')->group(function () {
 */
 Route::prefix('health')->name('health.')->group(function () {
     Route::get('/voice', [VoiceChatController::class, 'healthCheck'])->name('voice');
-
     Route::get('/signaling', [VoiceChatController::class, 'signalingHealthCheck'])->name('signaling');
-
     Route::get('/voice/servers', [VoiceChatController::class, 'serversHealthCheck'])->name('voice.servers');
-
     Route::get('/tournaments', [TournamentController::class, 'healthCheck'])->name('tournaments');
 
     Route::get('/system', function () {
         return response()->json([
-            'status' => 'healthy',
+            'status'    => 'healthy',
             'timestamp' => now()->toISOString(),
-            'services' => [
-                'database' => 'online',
-                'voice_chat' => 'online',
-                'tournaments' => 'online',
-                'signaling' => 'online',
+            'services'  => [
+                'database'      => 'online',
+                'voice_chat'    => 'online',
+                'tournaments'   => 'online',
+                'signaling'     => 'online',
             ]
         ]);
     })->name('system');
