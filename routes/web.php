@@ -11,6 +11,7 @@ use App\Http\Controllers\GrimoireController;
 use App\Http\Controllers\JournalController;
 use App\Http\Controllers\AchievementsController;
 use App\Http\Controllers\Auth\GoogleAuthController;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 
 /*
@@ -29,6 +30,14 @@ Route::get('/', function () {
     ]);
 });
 
+Route::get('/files/{path}', function ($path) {
+    if (!Storage::disk('public')->exists($path)) {
+        abort(404);
+    }
+    return response()->file(storage_path('app/public/' . $path));
+});
+
+
 // Halaman Dashboard
 Route::get('/dashboard', function () {
     return Inertia::render('Dashboard');
@@ -40,6 +49,8 @@ Route::middleware('auth')->group(function () {
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 });
+
+
 
 /*
 |--------------------------------------------------------------------------

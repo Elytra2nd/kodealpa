@@ -43,6 +43,7 @@
         "@tiptap/starter-kit": "^3.4.4",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
+        "framer-motion": "^12.23.22",
         "gsap": "^3.13.0",
         "lucide-react": "^0.544.0",
         "tailwind-merge": "^3.3.1",

@@ -10,7 +10,7 @@ class GameSeeder extends Seeder
     public function run(): void
     {
         // Create Mission 1 - Basic Training (Stage 1 - tetap seperti sebelumnya)
-        $mission1 = Mission::create([
+        $mission1 = Mission::updateOrCreate([
             'code' => 'BASIC_01',
             'title' => 'Basic Training',
             'description' => 'Learn the basics of bomb defusing with simple symbol puzzles.'
