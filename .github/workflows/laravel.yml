@@ -9,6 +9,12 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
 
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
+      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || '/var/www/kodealpa' }}
+
     steps:
       # Checkout code
       - name: Checkout repository
@@ -21,15 +27,16 @@ jobs:
           ssh-private-key: ${{ secrets.DEPLOY_KEY }}
 
       # Tambahkan server ke known_hosts agar SSH lebih aman
-      - name: Ensure known host
+      - name: Add server to known_hosts
         run: |
           mkdir -p ~/.ssh
-          ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts
+          ssh-keyscan -p $DEPLOY_PORT -H $DEPLOY_HOST > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
 
       # Jalankan script deploy di server
       - name: Run remote deploy script
         run: |
           ssh -o StrictHostKeyChecking=yes \
-              -p ${{ secrets.DEPLOY_PORT || '22' }} \
-              ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
-              "bash ${{ secrets.DEPLOY_PATH || '/var/www/kodealpa' }}/deploy.sh"
+              -p $DEPLOY_PORT \
+              $DEPLOY_USER@$DEPLOY_HOST \
+              "bash $DEPLOY_PATH/deploy.sh"
