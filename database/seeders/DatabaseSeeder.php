@@ -15,6 +15,7 @@ class DatabaseSeeder extends Seeder
     {
         // Panggil seeder inti proyek
         $this->call([
+            UserSeeder::class,
             GameSeeder::class,
             ExplorerJournalSeeder::class,
             AchievementsSeeder::class,
