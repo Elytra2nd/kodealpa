@@ -7,30 +7,29 @@ import { grimoireApi } from '@/services/grimoireApi';
 import type { GrimoireCategory, GrimoireEntry } from '@/types/grimoire';
 import GrimoireSidebar from './GrimoireSidebar';
 
-function isPdf(entry: any): boolean {
-  const ct = (entry?.content_type || '').toLowerCase();
-  const url = entry?.file_url || '';
-  return ct === 'application/pdf' || /\.pdf($|\?)/i.test(url);
+function isPdf(entry: Partial<GrimoireEntry>): boolean {
+  const ct = String((entry as any)?.content_type || '').toLowerCase();
+  const url = String((entry as any)?.file_url || '');
+  return ct.includes('pdf') || /\.pdf($|\?)/i.test(url);
 }
 
 function toAbsoluteUrl(u?: string | null): string | null {
   if (!u) return null;
-  try {
-    // Case 1: absolute URL
-    if (/^https?:\/\//i.test(u)) return u;
+  const s = u.trim();
 
-    const base = window.location.origin.replace(/\/+$/, '');
+  // absolute dengan protokol
+  if (/^https?:\/\//i.test(s)) return s;
+  // protocol-relative
+  if (/^\/\//.test(s)) return `${window.location.protocol}${s}`;
+  // data/blob
+  if (/^(data:|blob:)/i.test(s)) return s;
 
-    // Case 2: relative path dengan slash
-    if (u.startsWith('/')) {
-      return `${base}${u}`;
-    }
+  // build dari origin
+  const base = window.location.origin.replace(/\/+$/, '');
+  if (s.startsWith('/')) return `${base}${s}`;
 
-    // Case 3: cuma nama file → fallback folder default
-    return `${base}/files/grimoire/pdfs/${u}`;
-  } catch {
-    return u || null;
-  }
+  // nama file → fallback folder default
+  return `${base}/files/grimoire/pdfs/${encodeURIComponent(s)}`;
 }
 
 export default function GrimoirePanel({ role }: { role: 'defuser'|'expert'|'all' }) {
@@ -42,22 +41,29 @@ export default function GrimoirePanel({ role }: { role: 'defuser'|'expert'|'all'
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
-  const load = async () => {
+  // Debounce query untuk kurangi request saat mengetik
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 300);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  const load = async (signal: AbortSignal) => {
     setLoading(true);
     setErr(null);
     try {
-      const cats = await grimoireApi.getCategories();
-      setCategories(cats.categories);
+      const cats = await grimoireApi.getCategories(signal);
+      setCategories(cats?.categories || []);
 
       const list = await grimoireApi.listEntries({
         category: activeCategory,
-        q: query,
+        q: debouncedQuery,
         role: role === 'all' ? undefined : role,
         format: 'pdf',
         per_page: 50,
-      });
+      }, signal);
 
-      const data = list.entries.data || [];
+      const data = list?.entries?.data || [];
       setEntries(data);
 
       if (data.length && (!selected || !data.find(d => d.id === selected?.id))) {
@@ -65,25 +71,35 @@ export default function GrimoirePanel({ role }: { role: 'defuser'|'expert'|'all'
       }
       if (!data.length) setSelected(null);
     } catch (e: any) {
+      // Axios v0.22+ membungkus abort jadi CanceledError
+      if (e?.name === 'CanceledError' || e?.code === 'ERR_CANCELED') return;
       setErr('Gagal memuat pedoman.');
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [activeCategory, query, role]);
+  useEffect(() => {
+    const ctrl = new AbortController();
+    load(ctrl.signal);
+    return () => ctrl.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeCategory, debouncedQuery, role]);
 
   const filtered = useMemo(() => entries, [entries]);
 
   const isSelectedPdf = selected ? isPdf(selected as any) : false;
   const pdfUrlAbs = selected ? toAbsoluteUrl((selected as any).file_url || null) : null;
+  const iframeSrc = pdfUrlAbs
+    ? (pdfUrlAbs.includes('#') ? pdfUrlAbs : `${pdfUrlAbs}#view=FitH`)
+    : null;
 
-  // Debug log
+  // Debug log (opsional)
   useEffect(() => {
     if (selected) {
-      console.log("DEBUG selected:", selected);
-      console.log("DEBUG file_url:", (selected as any).file_url);
-      console.log("DEBUG absolute:", pdfUrlAbs);
+      console.log('DEBUG selected:', selected);
+      console.log('DEBUG file_url:', (selected as any).file_url);
+      console.log('DEBUG absolute:', pdfUrlAbs);
     }
   }, [selected, pdfUrlAbs]);
 
@@ -110,7 +126,7 @@ export default function GrimoirePanel({ role }: { role: 'defuser'|'expert'|'all'
             <Input
               placeholder="Cari pedoman (PDF)..."
               value={query}
-              onChange={(e)=>setQuery(e.target.value)}
+              onChange={(e) => setQuery(e.target.value)}
             />
             <Badge className="bg-stone-700 text-stone-200">{filtered.length} entries</Badge>
           </div>
@@ -124,14 +140,16 @@ export default function GrimoirePanel({ role }: { role: 'defuser'|'expert'|'all'
               <div className="text-stone-400">
                 Tidak ada pedoman PDF untuk filter saat ini.
               </div>
-            ) : filtered.map((e)=>(
+            ) : filtered.map((e) => (
               <button
                 key={e.id}
-                onClick={()=>setSelected(e)}
+                onClick={() => setSelected(e)}
                 className={`text-left p-3 rounded-lg border bg-stone-900/50 hover:border-amber-600 ${selected?.id === e.id ? 'border-amber-600' : 'border-stone-700'}`}
               >
                 <div className="font-semibold text-stone-100">{e.title}</div>
-                {(e as any).summary && <div className="text-stone-400 text-sm">{(e as any).summary}</div>}
+                {(e as any).summary && (
+                  <div className="text-stone-400 text-sm">{(e as any).summary}</div>
+                )}
                 <div className="mt-2 flex gap-2">
                   <Badge className="bg-stone-700 text-stone-200">{(e as any).role_access}</Badge>
                   <Badge className="bg-stone-700 text-stone-200">PDF</Badge>
@@ -142,20 +160,23 @@ export default function GrimoirePanel({ role }: { role: 'defuser'|'expert'|'all'
 
           <div className="col-span-12">
             {selected ? (
-              isSelectedPdf && pdfUrlAbs ? (
+              isSelectedPdf && iframeSrc ? (
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="text-stone-200 font-medium">{(selected as any).title}</div>
                     <div className="flex gap-4">
-                      <a href={pdfUrlAbs} target="_blank" rel="noreferrer" className="text-amber-300 hover:underline">Buka di tab baru →</a>
-                      <a href={pdfUrlAbs} download className="text-amber-300 hover:underline">⬇ Unduh PDF</a>
+                      <a href={pdfUrlAbs || undefined} target="_blank" rel="noreferrer" className="text-amber-300 hover:underline">
+                        Buka di tab baru →
+                      </a>
+                      <a href={pdfUrlAbs || undefined} download className="text-amber-300 hover:underline">
+                        ⬇ Unduh PDF
+                      </a>
                     </div>
                   </div>
 
-                  {/* Viewer PDF */}
                   <iframe
-                    key={selected.id}
-                    src={`${pdfUrlAbs}#view=FitH`}
+                    key={iframeSrc}
+                    src={iframeSrc}
                     className="w-full h-[80vh] rounded-lg border border-stone-700"
                     title={(selected as any).title || 'PDF'}
                   />
