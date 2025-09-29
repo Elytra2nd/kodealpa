@@ -18,6 +18,7 @@ class DatabaseSeeder extends Seeder
             GameSeeder::class,
             ExplorerJournalSeeder::class,
             AchievementsSeeder::class,
+            GrimoireSeeder::class,
         ]);
 
     }
