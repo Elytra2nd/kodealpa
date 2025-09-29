@@ -8,21 +8,20 @@ use Illuminate\Support\Facades\Hash;
 
 class UserSeeder extends Seeder
 {
-    public function run()
+    public function run(): void
     {
-        // hapus dulu user lama agar tidak dobel
         User::truncate();
 
         User::create([
             'name' => 'Admin User',
             'email' => 'admin@example.com',
-            'password' => Hash::make('password'), // default password
+            'password' => Hash::make('password'),
         ]);
 
         User::create([
             'name' => 'Test User',
             'email' => 'user@example.com',
-            'password' => Hash::make('password'), // default password
+            'password' => Hash::make('password'),
         ]);
     }
 }
