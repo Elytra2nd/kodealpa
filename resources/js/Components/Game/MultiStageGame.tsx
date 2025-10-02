@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { GameState, StageConfig } from '@/types/game';
 import { gameApi } from '@/services/gameApi';
 import StageProgress from './StageProgress';
@@ -20,12 +20,11 @@ interface StageResult {
   attemptsRemaining?: number;
 }
 
-// FIXED: Properly extend GameState by omitting conflicting properties and redefining them
 interface ExtendedGameState extends Omit<GameState, 'stage'> {
   stage?: {
     current?: number;
     total?: number;
-    config?: Partial<StageConfig>; // Use Partial to make all properties optional
+    config?: Partial<StageConfig>;
     progress?: {
       completed?: number[];
       totalScore?: number;
@@ -33,47 +32,96 @@ interface ExtendedGameState extends Omit<GameState, 'stage'> {
   };
 }
 
+// Konstanta
+const POLLING_INTERVAL = 3000;
+const TRANSITION_DURATION = 4000;
+const MAX_RETRIES = 3;
+
 export default function MultiStageGame({ sessionId, role }: Props) {
   const [gameState, setGameState] = useState<ExtendedGameState | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showTransition, setShowTransition] = useState(false);
   const [stageResult, setStageResult] = useState<StageResult | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
 
-  // Helper function to convert ExtendedGameState to GameState for compatibility
-  const toGameState = (extendedState: ExtendedGameState): GameState => {
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const transitionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isMountedRef = useRef(true);
+
+  // Cleanup pada unmount
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+      }
+      if (transitionTimeoutRef.current) {
+        clearTimeout(transitionTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Fungsi konversi state
+  const toGameState = useCallback((extendedState: ExtendedGameState): GameState => {
     const { stage, ...rest } = extendedState;
     return {
       ...rest,
       stage: stage ? {
         current: stage.current,
         total: stage.total,
-        config: stage.config as StageConfig, // Type assertion for compatibility
+        config: stage.config as StageConfig,
         progress: stage.progress
       } : undefined
     } as GameState;
-  };
+  }, []);
 
-  useEffect(() => {
-    loadGameState();
-    const interval = setInterval(loadGameState, 3000);
-    return () => clearInterval(interval);
-  }, [sessionId]);
-
-  const loadGameState = async () => {
+  // Load game state dengan error handling
+  const loadGameState = useCallback(async () => {
     try {
       const state = await gameApi.getGameState(sessionId);
-      setGameState(state as ExtendedGameState); // Type assertion for compatibility
-      setError('');
+      if (isMountedRef.current) {
+        setGameState(state as ExtendedGameState);
+        setError('');
+        setRetryCount(0);
+      }
     } catch (err: any) {
-      console.error('Error loading game state:', err);
-      setError(err.message || 'Failed to load game state');
-    } finally {
-      setLoading(false);
-    }
-  };
+      console.error('Kesalahan memuat state game:', err);
+      if (isMountedRef.current) {
+        const errorMsg = err.message || 'Gagal memuat state game';
+        setError(errorMsg);
 
-  const handleAttemptSubmit = async (input: string) => {
+        // Auto retry dengan exponential backoff
+        if (retryCount < MAX_RETRIES) {
+          const backoffDelay = Math.min(1000 * Math.pow(2, retryCount), 10000);
+          setTimeout(() => {
+            setRetryCount(prev => prev + 1);
+            loadGameState();
+          }, backoffDelay);
+        }
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
+    }
+  }, [sessionId, retryCount]);
+
+  // Setup polling
+  useEffect(() => {
+    loadGameState();
+
+    pollingIntervalRef.current = setInterval(loadGameState, POLLING_INTERVAL);
+
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+      }
+    };
+  }, [loadGameState]);
+
+  // Handle submit attempt
+  const handleAttemptSubmit = useCallback(async (input: string) => {
     if (!gameState) return;
 
     try {
@@ -83,75 +131,93 @@ export default function MultiStageGame({ sessionId, role }: Props) {
         input
       );
 
+      if (!isMountedRef.current) return;
+
       if (result.stageComplete || result.gameComplete) {
         setStageResult(result);
         setShowTransition(true);
 
-        // Auto-hide transition after 4 seconds and load new state
-        setTimeout(() => {
-          setShowTransition(false);
-          setStageResult(null);
-          loadGameState();
-        }, 4000);
+        // Auto-hide transisi dan reload state
+        transitionTimeoutRef.current = setTimeout(() => {
+          if (isMountedRef.current) {
+            setShowTransition(false);
+            setStageResult(null);
+            loadGameState();
+          }
+        }, TRANSITION_DURATION);
       } else {
-        // Update state for incorrect attempt
+        // Update state untuk percobaan yang salah
         if (result.session?.attempts) {
-          setGameState({
-            ...gameState,
+          setGameState(prev => prev ? {
+            ...prev,
             session: {
-              ...gameState.session,
+              ...prev.session,
               attempts: result.session.attempts
             }
-          });
+          } : prev);
         }
       }
     } catch (error: any) {
-      console.error('Error submitting attempt:', error);
-      alert(error.response?.data?.message || 'Failed to submit attempt');
+      console.error('Kesalahan mengirim jawaban:', error);
+      const errorMessage = error.response?.data?.message || 'Gagal mengirim jawaban';
+      alert(errorMessage);
     }
-  };
+  }, [gameState, loadGameState]);
 
-  const handleGameStateUpdate = (updatedState: ExtendedGameState) => {
+  // Handle game state update
+  const handleGameStateUpdate = useCallback((updatedState: ExtendedGameState) => {
     setGameState(updatedState);
-  };
+  }, []);
 
+  // Loading state
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-64">
-        <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-500"></div>
-        <div className="ml-4">
-          <h3 className="text-lg font-semibold text-gray-700">Loading Multi-Stage Challenge</h3>
-          <p className="text-gray-500">Preparing your adventure...</p>
+      <div className="flex items-center justify-center min-h-96 animate-fade-in">
+        <div className="text-center">
+          <div className="relative inline-block">
+            <div className="animate-spin rounded-full h-20 w-20 border-4 border-blue-200"></div>
+            <div className="animate-spin rounded-full h-20 w-20 border-t-4 border-blue-600 absolute top-0 left-0"></div>
+          </div>
+          <h3 className="text-xl font-bold text-gray-800 mt-6 animate-pulse">
+            Memuat Tantangan Multi-Tahap
+          </h3>
+          <p className="text-gray-600 mt-2">Mempersiapkan petualangan Anda...</p>
         </div>
       </div>
     );
   }
 
+  // Error state
   if (error || !gameState) {
     return (
-      <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
-        <div className="text-red-600 text-4xl mb-4">⚠️</div>
-        <h3 className="text-xl font-semibold text-red-800 mb-2">Connection Error</h3>
-        <p className="text-red-600 mb-6">{error || 'Unable to load game data'}</p>
-        <div className="space-x-4">
+      <div className="bg-gradient-to-br from-red-50 to-red-100 border-2 border-red-300 rounded-2xl p-8 text-center shadow-xl animate-fade-in">
+        <div className="text-6xl mb-4 animate-bounce">⚠️</div>
+        <h3 className="text-2xl font-bold text-red-800 mb-3">Kesalahan Koneksi</h3>
+        <p className="text-red-700 mb-6 text-lg">{error || 'Tidak dapat memuat data game'}</p>
+        {retryCount > 0 && retryCount < MAX_RETRIES && (
+          <p className="text-red-600 mb-4 text-sm">
+            Mencoba lagi... ({retryCount}/{MAX_RETRIES})
+          </p>
+        )}
+        <div className="flex gap-4 justify-center">
           <button
             onClick={loadGameState}
-            className="bg-red-500 text-white px-6 py-2 rounded-lg hover:bg-red-600 transition-colors"
+            className="bg-gradient-to-r from-red-500 to-red-600 text-white px-8 py-3 rounded-xl hover:from-red-600 hover:to-red-700 transition-all duration-300 transform hover:scale-105 shadow-lg font-semibold"
           >
-            Retry Connection
+            🔄 Coba Lagi
           </button>
           <button
             onClick={() => window.location.href = '/game'}
-            className="bg-gray-500 text-white px-6 py-2 rounded-lg hover:bg-gray-600 transition-colors"
+            className="bg-gradient-to-r from-gray-500 to-gray-600 text-white px-8 py-3 rounded-xl hover:from-gray-600 hover:to-gray-700 transition-all duration-300 transform hover:scale-105 shadow-lg font-semibold"
           >
-            Back to Lobby
+            🏠 Kembali ke Lobi
           </button>
         </div>
       </div>
     );
   }
 
-  // Show transition screen between stages
+  // Transition screen
   if (showTransition && stageResult) {
     return (
       <StageTransition
@@ -162,19 +228,20 @@ export default function MultiStageGame({ sessionId, role }: Props) {
     );
   }
 
-  // Show game completion screen
+  // Success screen
   if (gameState.session.status === 'success') {
     return (
-      <div className="bg-green-50 border border-green-200 rounded-lg p-8 text-center">
-        <div className="text-6xl mb-4">🎉</div>
-        <h2 className="text-3xl font-bold text-green-800 mb-4">Mission Accomplished!</h2>
-        <p className="text-green-600 mb-6 text-lg">
-          Congratulations! You have successfully completed all stages of the challenge.
+      <div className="bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50 border-2 border-green-300 rounded-2xl p-10 text-center shadow-2xl animate-fade-in">
+        <div className="text-8xl mb-6 animate-bounce">🎉</div>
+        <h2 className="text-4xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent mb-4">
+          Misi Selesai!
+        </h2>
+        <p className="text-green-700 mb-8 text-xl font-medium">
+          Selamat! Anda telah berhasil menyelesaikan semua tahap tantangan.
         </p>
 
-        {/* Show final stage progress */}
         {gameState.stage && (
-          <div className="mb-6">
+          <div className="mb-8 animate-slide-up">
             <StageProgress
               current={gameState.stage.current || 1}
               total={gameState.stage.total || 3}
@@ -184,56 +251,56 @@ export default function MultiStageGame({ sessionId, role }: Props) {
           </div>
         )}
 
-        {/* Final Score Display */}
-        <div className="bg-green-100 border border-green-300 rounded-lg p-6 mb-6 max-w-md mx-auto">
-          <h3 className="text-xl font-bold text-green-800 mb-2">Final Results</h3>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <div className="text-2xl font-bold text-green-700">
+        <div className="bg-gradient-to-br from-green-100 to-emerald-100 border-2 border-green-400 rounded-2xl p-8 mb-8 max-w-md mx-auto shadow-lg animate-scale-in">
+          <h3 className="text-2xl font-bold text-green-800 mb-4">📊 Hasil Akhir</h3>
+          <div className="grid grid-cols-2 gap-6">
+            <div className="bg-white rounded-xl p-4 shadow-md transform hover:scale-105 transition-transform">
+              <div className="text-4xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent">
                 {gameState.stage?.progress?.totalScore || 0}
               </div>
-              <div className="text-sm text-green-600">Total Score</div>
+              <div className="text-sm text-green-700 font-medium mt-2">Total Skor</div>
             </div>
-            <div>
-              <div className="text-2xl font-bold text-green-700">
+            <div className="bg-white rounded-xl p-4 shadow-md transform hover:scale-105 transition-transform">
+              <div className="text-4xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent">
                 {gameState.stage?.progress?.completed?.length || 0}/{gameState.stage?.total || 3}
               </div>
-              <div className="text-sm text-green-600">Stages Completed</div>
+              <div className="text-sm text-green-700 font-medium mt-2">Tahap Selesai</div>
             </div>
           </div>
         </div>
 
-        <div className="space-x-4">
+        <div className="flex gap-4 justify-center">
           <button
             onClick={() => window.location.href = '/game'}
-            className="bg-blue-500 hover:bg-blue-600 text-white px-8 py-3 rounded-lg text-lg font-medium transition-colors"
+            className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white px-10 py-4 rounded-xl text-lg font-bold transition-all duration-300 transform hover:scale-105 shadow-xl"
           >
-            Play Again
+            🎮 Main Lagi
           </button>
           <button
             onClick={() => window.location.href = '/dashboard'}
-            className="bg-gray-500 hover:bg-gray-600 text-white px-8 py-3 rounded-lg text-lg font-medium transition-colors"
+            className="bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700 text-white px-10 py-4 rounded-xl text-lg font-bold transition-all duration-300 transform hover:scale-105 shadow-xl"
           >
-            Back to Dashboard
+            📋 Ke Dashboard
           </button>
         </div>
       </div>
     );
   }
 
-  // Show game failure screen
+  // Failure screen
   if (gameState.session.status === 'failed') {
     return (
-      <div className="bg-red-50 border border-red-200 rounded-lg p-8 text-center">
-        <div className="text-6xl mb-4">💥</div>
-        <h2 className="text-3xl font-bold text-red-800 mb-4">Mission Failed</h2>
-        <p className="text-red-600 mb-6 text-lg">
-          The challenge could not be completed within the given constraints.
+      <div className="bg-gradient-to-br from-red-50 via-orange-50 to-red-50 border-2 border-red-300 rounded-2xl p-10 text-center shadow-2xl animate-fade-in">
+        <div className="text-8xl mb-6 animate-shake">💥</div>
+        <h2 className="text-4xl font-bold bg-gradient-to-r from-red-600 to-orange-600 bg-clip-text text-transparent mb-4">
+          Misi Gagal
+        </h2>
+        <p className="text-red-700 mb-8 text-xl font-medium">
+          Tantangan tidak dapat diselesaikan dalam batasan yang diberikan.
         </p>
 
-        {/* Show stage progress even in failure */}
         {gameState.stage && (
-          <div className="mb-6">
+          <div className="mb-8 animate-slide-up">
             <StageProgress
               current={gameState.stage.current || 1}
               total={gameState.stage.total || 3}
@@ -243,77 +310,75 @@ export default function MultiStageGame({ sessionId, role }: Props) {
           </div>
         )}
 
-        {/* Failure Score Display */}
-        <div className="bg-red-100 border border-red-300 rounded-lg p-6 mb-6 max-w-md mx-auto">
-          <h3 className="text-xl font-bold text-red-800 mb-2">Progress Made</h3>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <div className="text-2xl font-bold text-red-700">
+        <div className="bg-gradient-to-br from-red-100 to-orange-100 border-2 border-red-400 rounded-2xl p-8 mb-8 max-w-md mx-auto shadow-lg animate-scale-in">
+          <h3 className="text-2xl font-bold text-red-800 mb-4">📈 Progress yang Dicapai</h3>
+          <div className="grid grid-cols-2 gap-6">
+            <div className="bg-white rounded-xl p-4 shadow-md transform hover:scale-105 transition-transform">
+              <div className="text-4xl font-bold bg-gradient-to-r from-red-600 to-orange-600 bg-clip-text text-transparent">
                 {gameState.stage?.progress?.totalScore || 0}
               </div>
-              <div className="text-sm text-red-600">Points Earned</div>
+              <div className="text-sm text-red-700 font-medium mt-2">Poin Diperoleh</div>
             </div>
-            <div>
-              <div className="text-2xl font-bold text-red-700">
+            <div className="bg-white rounded-xl p-4 shadow-md transform hover:scale-105 transition-transform">
+              <div className="text-4xl font-bold bg-gradient-to-r from-red-600 to-orange-600 bg-clip-text text-transparent">
                 {gameState.stage?.progress?.completed?.length || 0}/{gameState.stage?.total || 3}
               </div>
-              <div className="text-sm text-red-600">Stages Completed</div>
+              <div className="text-sm text-red-700 font-medium mt-2">Tahap Selesai</div>
             </div>
           </div>
         </div>
 
-        <div className="space-x-4">
+        <div className="flex gap-4 justify-center">
           <button
             onClick={() => window.location.href = '/game'}
-            className="bg-blue-500 hover:bg-blue-600 text-white px-8 py-3 rounded-lg text-lg font-medium transition-colors"
+            className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white px-10 py-4 rounded-xl text-lg font-bold transition-all duration-300 transform hover:scale-105 shadow-xl"
           >
-            Try Again
+            🔄 Coba Lagi
           </button>
           <button
             onClick={() => window.location.href = '/dashboard'}
-            className="bg-gray-500 hover:bg-gray-600 text-white px-8 py-3 rounded-lg text-lg font-medium transition-colors"
+            className="bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700 text-white px-10 py-4 rounded-xl text-lg font-bold transition-all duration-300 transform hover:scale-105 shadow-xl"
           >
-            Back to Dashboard
+            📋 Ke Dashboard
           </button>
         </div>
       </div>
     );
   }
 
-  // Main game interface for running state
+  // Main game interface
   return (
-    <div className="space-y-6">
-      {/* Stage Progress Header */}
-      <StageProgress
-        current={gameState.stage?.current || 1}
-        total={gameState.stage?.total || 3}
-        completed={gameState.stage?.progress?.completed || []}
-        totalScore={gameState.stage?.progress?.totalScore || 0}
-      />
+    <div className="space-y-6 animate-fade-in">
+      <div className="animate-slide-down">
+        <StageProgress
+          current={gameState.stage?.current || 1}
+          total={gameState.stage?.total || 3}
+          completed={gameState.stage?.progress?.completed || []}
+          totalScore={gameState.stage?.progress?.totalScore || 0}
+        />
+      </div>
 
-      {/* Current Stage Title */}
-      <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg p-6 text-center">
-        <h1 className="text-2xl font-bold mb-2">
-          {gameState.stage?.config?.title || gameState.puzzle?.title || 'Current Challenge'}
+      <div className="bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 text-white rounded-2xl p-8 text-center shadow-xl animate-slide-up">
+        <h1 className="text-3xl font-bold mb-4 drop-shadow-lg">
+          {gameState.stage?.config?.title || gameState.puzzle?.title || 'Tantangan Saat Ini'}
         </h1>
-        <div className="flex justify-center space-x-6 text-sm">
-          <span className="flex items-center">
-            <span className="mr-2">⏱️</span>
-            Time Limit: {Math.floor((gameState.stage?.config?.timeLimit || 0) / 60)} min
+        <div className="flex justify-center flex-wrap gap-6 text-sm font-medium">
+          <span className="flex items-center bg-white/20 backdrop-blur-sm px-4 py-2 rounded-lg">
+            <span className="mr-2 text-xl">⏱️</span>
+            Batas Waktu: {Math.floor((gameState.stage?.config?.timeLimit || 0) / 60)} menit
           </span>
-          <span className="flex items-center">
-            <span className="mr-2">🎯</span>
-            Max Attempts: {gameState.stage?.config?.maxAttempts || 'N/A'}
+          <span className="flex items-center bg-white/20 backdrop-blur-sm px-4 py-2 rounded-lg">
+            <span className="mr-2 text-xl">🎯</span>
+            Maks Percobaan: {gameState.stage?.config?.maxAttempts || 'N/A'}
           </span>
-          <span className="flex items-center">
-            <span className="mr-2">📊</span>
-            Stage: {gameState.stage?.current || 1}/{gameState.stage?.total || 3}
+          <span className="flex items-center bg-white/20 backdrop-blur-sm px-4 py-2 rounded-lg">
+            <span className="mr-2 text-xl">📊</span>
+            Tahap: {gameState.stage?.current || 1}/{gameState.stage?.total || 3}
           </span>
         </div>
       </div>
 
-      {/* Main Game Interface */}
-      <div className="bg-white rounded-lg shadow-sm border p-6">
+      <div className="bg-white rounded-2xl shadow-xl border-2 border-gray-200 p-8 animate-scale-in">
         <GamePlay
           gameState={toGameState(gameState)}
           role={role}
