@@ -1,10 +1,31 @@
-// resources/js/Components/Game/NavigationChallengeView.tsx
-import React, { useMemo, useState, useCallback } from 'react';
+import React, { useMemo, useState, useCallback, useRef, useEffect, memo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/Components/ui/card';
 import { Button } from '@/Components/ui/button';
 import { Badge } from '@/Components/ui/badge';
 import { Alert, AlertDescription } from '@/Components/ui/alert';
+import { gsap } from 'gsap';
 
+// ============================================
+// CONSTANTS & CONFIGURATIONS
+// ============================================
+const CONFIG = {
+  TORCH_FLICKER_INTERVAL: 2200,
+  RUNE_FLOAT_DURATION: 3200,
+  MAX_TREE_HEIGHT: 500,
+} as const;
+
+const DEPTH_COLORS = [
+  'text-emerald-300',
+  'text-amber-300',
+  'text-purple-300',
+  'text-indigo-300',
+  'text-blue-300',
+  'text-rose-300',
+] as const;
+
+// ============================================
+// TYPE DEFINITIONS
+// ============================================
 interface Props {
   puzzle: any;
   role?: 'defuser' | 'expert' | 'host';
@@ -20,7 +41,146 @@ type TreeNode = {
 
 type Direction = 'left' | 'right';
 
+// ============================================
+// CUSTOM HOOKS
+// ============================================
+const useDungeonAtmosphere = () => {
+  const torchRefs = useRef<(HTMLElement | null)[]>([]);
+
+  useEffect(() => {
+    const torchInterval = setInterval(() => {
+      torchRefs.current.forEach((torch) => {
+        if (torch) {
+          gsap.to(torch, {
+            opacity: Math.random() * 0.14 + 0.86,
+            duration: 0.22,
+            ease: 'power1.inOut',
+          });
+        }
+      });
+    }, CONFIG.TORCH_FLICKER_INTERVAL);
+
+    return () => clearInterval(torchInterval);
+  }, []);
+
+  const setTorchRef = (index: number) => (el: HTMLSpanElement | null) => {
+    torchRefs.current[index] = el;
+  };
+
+  return { setTorchRef };
+};
+
+// ============================================
+// UTILITY FUNCTIONS
+// ============================================
+const toArray = (data: any): string[] => {
+  if (Array.isArray(data)) return data;
+  if (typeof data === 'string') return [data];
+  return [];
+};
+
+const obfuscate = (text: string): string => {
+  const runeMap: Record<string, string> = {
+    '0': '◇', '1': '†', '2': '♁', '3': '♆', '4': '♄',
+    '5': '♃', '6': '☿', '7': '☼', '8': '◈', '9': '★',
+  };
+
+  return String(text)
+    .replace(/\d/g, (d) => runeMap[d] ?? d)
+    .replace(/\b(akar|root)\b/gi, 'altar')
+    .replace(/\b(kiri|left)\b/gi, 'lorong barat')
+    .replace(/\b(kanan|right)\b/gi, 'lorong timur')
+    .replace(/\b(atas|up|naik)\b/gi, 'tangga menuju puncak')
+    .replace(/\b(bawah|down|turun)\b/gi, 'tangga menuju palung')
+    .replace(/\b(daun|leaf)\b/gi, 'ruang tak berujung')
+    .replace(/\b(preorder|inorder|postorder)\b/gi, 'ritus penelusuran')
+    .replace(/\b(jalur|path)\b/gi, 'jejak runik');
+};
+
+const normalizeStep = (step: string): Direction | null => {
+  const normalized = step.trim().toLowerCase();
+  const leftWords = ['left', 'kiri', 'lorong barat', 'l', 'west', 'barat'];
+  const rightWords = ['right', 'kanan', 'lorong timur', 'r', 'east', 'timur'];
+
+  if (leftWords.includes(normalized)) return 'left';
+  if (rightWords.includes(normalized)) return 'right';
+  return null;
+};
+
+const depthColor = (depth: number): string => {
+  return DEPTH_COLORS[depth % DEPTH_COLORS.length];
+};
+
+// ============================================
+// MEMOIZED COMPONENTS
+// ============================================
+const DirectionButton = memo(
+  ({
+    direction,
+    label,
+    onClick,
+    onMouseEnter,
+    onMouseLeave,
+    disabled,
+    variant = 'primary',
+  }: {
+    direction: string;
+    label: string;
+    onClick: () => void;
+    onMouseEnter?: () => void;
+    onMouseLeave?: () => void;
+    disabled: boolean;
+    variant?: 'primary' | 'outline';
+  }) => {
+    const icons: Record<string, string> = {
+      left: '⬅️',
+      right: '➡️',
+      up: '⬆️',
+      down: '⬇️',
+    };
+
+    const classes =
+      variant === 'primary'
+        ? 'bg-indigo-800 text-indigo-100 hover:bg-indigo-700 border border-indigo-600/60'
+        : 'border-stone-600/60 text-stone-200 hover:bg-stone-800/60';
+
+    return (
+      <Button
+        onMouseEnter={onMouseEnter}
+        onMouseLeave={onMouseLeave}
+        onClick={onClick}
+        disabled={disabled}
+        size="sm"
+        className={`${classes} transition-all duration-300`}
+      >
+        {icons[direction]} {label}
+      </Button>
+    );
+  }
+);
+
+DirectionButton.displayName = 'DirectionButton';
+
+const PathDisplay = memo(({ path }: { path: string[] }) => (
+  <div className="min-h-[60px] rounded-xl p-4 border border-amber-700/50 bg-stone-900/70 flex items-center backdrop-blur-sm">
+    {path.length > 0 ? (
+      <span className="font-mono text-sm text-amber-300 dungeon-rune-float break-all">
+        {path.join(' → ')}
+      </span>
+    ) : (
+      <span className="text-stone-400 italic text-sm">Belum ada jejak yang tercatat</span>
+    )}
+  </div>
+));
+
+PathDisplay.displayName = 'PathDisplay';
+
+// ============================================
+// MAIN COMPONENT
+// ============================================
 export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt, submitting }: Props) {
+  const { setTorchRef } = useDungeonAtmosphere();
+
   const [path, setPath] = useState<string[]>([]);
   const [showNulls, setShowNulls] = useState(false);
   const [hoverNext, setHoverNext] = useState<Direction | null>(null);
@@ -29,52 +189,25 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
   const isDefuser = role === 'defuser';
   const isExpert = role === 'expert';
 
-  // Memoized CSS animations
-  const DungeonCSS = useMemo(() => (
-    <style>{`
-      @keyframes torchFlicker { 0%,100%{opacity:1} 25%{opacity:.86} 50%{opacity:.75} 75%{opacity:.92} }
-      @keyframes runeFloat { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-4px)} }
-      .torch-flicker { animation: torchFlicker 2.2s ease-in-out infinite; }
-      .rune-float { animation: runeFloat 3.2s ease-in-out infinite; }
-    `}</style>
-  ), []);
+  // Get button label for direction
+  const pickLabel = useCallback(
+    (dir: 'left' | 'right' | 'up' | 'down'): string => {
+      const traversalOptions = toArray(puzzle?.defuserView?.traversalOptions);
+      const maps: Record<typeof dir, string[]> = {
+        left: ['left', 'kiri', 'lorong barat', 'l', 'west', 'barat'],
+        right: ['right', 'kanan', 'lorong timur', 'r', 'east', 'timur'],
+        up: ['up', 'atas', 'naik', 'u', 'north', 'utara'],
+        down: ['down', 'bawah', 'turun', 'd', 'south', 'selatan'],
+      };
 
-  // Utility: normalize array
-  const toArray = useCallback((data: any): string[] => {
-    if (Array.isArray(data)) return data;
-    if (typeof data === 'string') return [data];
-    return [];
-  }, []);
+      const picked = traversalOptions.find((o) => maps[dir].includes(o.toLowerCase()));
+      if (picked) return picked;
 
-  // Obfuscation mapping
-  const obfuscate = useCallback((text: string): string => {
-    const runeMap: Record<string, string> = {
-      '0': '◇', '1': '†', '2': '♁', '3': '♆', '4': '♄',
-      '5': '♃', '6': '☿', '7': '☼', '8': '◈', '9': '★'
-    };
-
-    return String(text)
-      .replace(/\d/g, (d) => runeMap[d] ?? d)
-      .replace(/\b(akar|root)\b/gi, 'altar')
-      .replace(/\b(kiri|left)\b/gi, 'lorong barat')
-      .replace(/\b(kanan|right)\b/gi, 'lorong timur')
-      .replace(/\b(atas|up|naik)\b/gi, 'tangga menuju puncak')
-      .replace(/\b(bawah|down|turun)\b/gi, 'tangga menuju palung')
-      .replace(/\b(daun|leaf)\b/gi, 'ruang tak berujung')
-      .replace(/\b(preorder|inorder|postorder)\b/gi, 'ritus penelusuran')
-      .replace(/\b(jalur|path)\b/gi, 'jejak runik');
-  }, []);
-
-  // Normalize step to direction
-  const normalizeStep = useCallback((step: string): Direction | null => {
-    const normalized = step.trim().toLowerCase();
-    const leftWords = ['left', 'kiri', 'lorong barat', 'l', 'west', 'barat'];
-    const rightWords = ['right', 'kanan', 'lorong timur', 'r', 'east', 'timur'];
-
-    if (leftWords.includes(normalized)) return 'left';
-    if (rightWords.includes(normalized)) return 'right';
-    return null;
-  }, []);
+      const defaults = { left: 'Kiri', right: 'Kanan', up: 'Atas', down: 'Bawah' };
+      return defaults[dir];
+    },
+    [puzzle]
+  );
 
   // Get tree root
   const root: TreeNode | undefined = puzzle?.expertView?.tree?.root;
@@ -93,7 +226,7 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
     }
 
     return current ?? null;
-  }, [root, path, normalizeStep]);
+  }, [root, path]);
 
   // Available directions at current node
   const availableDirections = useMemo((): Direction[] => {
@@ -105,39 +238,22 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
     return dirs;
   }, [currentNode]);
 
-  // Get button label for direction
-  const pickLabel = useCallback((dir: 'left' | 'right' | 'up' | 'down'): string => {
-    const traversalOptions = toArray(puzzle?.defuserView?.traversalOptions);
-    const maps: Record<typeof dir, string[]> = {
-      left: ['left', 'kiri', 'lorong barat', 'l', 'west', 'barat'],
-      right: ['right', 'kanan', 'lorong timur', 'r', 'east', 'timur'],
-      up: ['up', 'atas', 'naik', 'u', 'north', 'utara'],
-      down: ['down', 'bawah', 'turun', 'd', 'south', 'selatan'],
-    };
-
-    const picked = traversalOptions.find(o => maps[dir].includes(o.toLowerCase()));
-    if (picked) return picked;
-
-    const defaults = { left: 'Kiri', right: 'Kanan', up: 'Atas', down: 'Bawah' };
-    return defaults[dir];
-  }, [puzzle, toArray]);
-
   // Detect synchronization issues
   const syncIssue = useMemo(() => {
-    if (!currentNode) return root ? null : 'Struktur pohon belum tersedia.';
+    if (!currentNode) return root ? null : 'Struktur pohon belum tersedia dari grimoire.';
 
     const hasLeft = (currentNode as TreeNode).left != null;
     const hasRight = (currentNode as TreeNode).right != null;
     const traversalOptions = toArray(puzzle?.defuserView?.traversalOptions);
-    const offered = traversalOptions.map(o => normalizeStep(o)).filter(Boolean) as Direction[];
-    const anyOfferedInvalid = offered.some(d =>
-      (d === 'left' && !hasLeft) || (d === 'right' && !hasRight)
+    const offered = traversalOptions.map((o) => normalizeStep(o)).filter(Boolean) as Direction[];
+    const anyOfferedInvalid = offered.some(
+      (d) => (d === 'left' && !hasLeft) || (d === 'right' && !hasRight)
     );
 
     return anyOfferedInvalid
-      ? 'Petunjuk arah pada Defuser tidak cocok dengan cabang yang tersedia.'
+      ? 'Petunjuk arah pada Defuser tidak cocok dengan cabang yang tersedia. Tombol disesuaikan otomatis.'
       : null;
-  }, [currentNode, puzzle, root, toArray, normalizeStep]);
+  }, [currentNode, puzzle, root]);
 
   // Defuser hints
   const defuserHints = useMemo(() => {
@@ -149,16 +265,19 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
       'Pilih ritus penelusuran yang menyingkap makna paling banyak, bukan yang terdengar paling nyaring.',
     ];
     return [...base, ...extra].map(obfuscate);
-  }, [puzzle, toArray, obfuscate]);
+  }, [puzzle]);
 
   // Path management functions
-  const addDirection = useCallback((dir: Direction) => {
-    const label = pickLabel(dir);
-    setPath(prev => [...prev, label]);
-  }, [pickLabel]);
+  const addDirection = useCallback(
+    (dir: Direction) => {
+      const label = pickLabel(dir);
+      setPath((prev) => [...prev, label]);
+    },
+    [pickLabel]
+  );
 
   const removeLastStep = useCallback(() => {
-    setPath(prev => prev.slice(0, -1));
+    setPath((prev) => prev.slice(0, -1));
   }, []);
 
   const clearPath = useCallback(() => {
@@ -171,11 +290,14 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
     }
   }, [availableDirections, addDirection]);
 
-  const handleSubmit = useCallback((e: React.FormEvent) => {
-    e.preventDefault();
-    if (path.length === 0) return;
-    onSubmitAttempt(path.join(','));
-  }, [path, onSubmitAttempt]);
+  const handleSubmit = useCallback(
+    (e: React.FormEvent) => {
+      e.preventDefault();
+      if (path.length === 0) return;
+      onSubmitAttempt(path.join(','));
+    },
+    [path, onSubmitAttempt]
+  );
 
   // Visited nodes tracking
   const visitedNodes = useMemo(() => {
@@ -197,134 +319,152 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
     }
 
     if (hoverNext && current && (current as any)[hoverNext]) {
-      set.add(((current as any)[hoverNext]) as object);
+      set.add((current as any)[hoverNext] as object);
     }
 
     return set;
-  }, [root, path, hoverNext, normalizeStep]);
+  }, [root, path, hoverNext]);
 
-  // Depth color coding
-  const depthColor = useCallback((depth: number): string => {
-    const palette = [
-      'text-emerald-300',
-      'text-amber-300',
-      'text-purple-300',
-      'text-indigo-300',
-      'text-blue-300',
-      'text-rose-300'
-    ];
-    return palette[depth % palette.length];
-  }, []);
+  // Tree renderer
+  const renderNode = useCallback(
+    (
+      node: TreeNode | null,
+      prefix = '',
+      isLast = true,
+      keyPath = 'root',
+      depth = 0
+    ): React.ReactNode => {
+      const isNull = node === null;
+      const lineConnector = prefix ? (isLast ? '└── ' : '├── ') : '';
+      const nextPrefix = prefix + (prefix ? (isLast ? '    ' : '│   ') : '');
+      const isVisited = node && visitedNodes.has(node as object);
 
-  // Tree renderer with proper typing
-  const renderNode = useCallback((
-    node: TreeNode | null,
-    prefix = '',
-    isLast = true,
-    keyPath = 'root',
-    depth = 0
-  ): React.ReactNode => {
-    const isNull = node === null;
-    const lineConnector = prefix ? (isLast ? '└── ' : '├── ') : '';
-    const nextPrefix = prefix + (prefix ? (isLast ? '    ' : '│   ') : '');
-    const isVisited = node && visitedNodes.has(node as object);
+      const nodeClasses = [
+        'whitespace-pre leading-relaxed',
+        isNull
+          ? 'text-stone-500'
+          : isVisited
+          ? `font-bold dungeon-rune-float ${depthColor(depth)}`
+          : 'text-stone-300',
+      ].join(' ');
 
-    const nodeClasses = [
-      'whitespace-pre leading-relaxed',
-      isNull
-        ? 'text-stone-500'
-        : isVisited
-          ? `font-bold rune-float ${depthColor(depth)}`
-          : 'text-stone-300'
-    ].join(' ');
-
-    return (
-      <div key={keyPath} className="font-mono text-sm">
-        <div className={nodeClasses}>
-          {prefix}{lineConnector}{isNull ? '∅' : String((node as TreeNode).value)}
-        </div>
-        {!isNull && ((node as TreeNode).left !== undefined || (node as TreeNode).right !== undefined) && (
-          <div>
-            {(showNulls || (node as TreeNode).left) &&
-              renderNode((node as TreeNode).left ?? null, nextPrefix, !(node as TreeNode).right, `${keyPath}-L`, depth + 1)
-            }
-            {(showNulls || (node as TreeNode).right) &&
-              renderNode((node as TreeNode).right ?? null, nextPrefix, true, `${keyPath}-R`, depth + 1)
-            }
+      return (
+        <div key={keyPath} className="font-mono text-sm">
+          <div className={nodeClasses}>
+            {prefix}
+            {lineConnector}
+            {isNull ? '∅' : String((node as TreeNode).value)}
           </div>
-        )}
-      </div>
-    );
-  }, [showNulls, visitedNodes, depthColor]);
+          {!isNull &&
+            ((node as TreeNode).left !== undefined || (node as TreeNode).right !== undefined) && (
+              <div>
+                {(showNulls || (node as TreeNode).left) &&
+                  renderNode(
+                    (node as TreeNode).left ?? null,
+                    nextPrefix,
+                    !(node as TreeNode).right,
+                    `${keyPath}-L`,
+                    depth + 1
+                  )}
+                {(showNulls || (node as TreeNode).right) &&
+                  renderNode((node as TreeNode).right ?? null, nextPrefix, true, `${keyPath}-R`, depth + 1)}
+              </div>
+            )}
+        </div>
+      );
+    },
+    [showNulls, visitedNodes]
+  );
 
   if (!puzzle) {
     return (
       <Alert variant="destructive" className="min-h-[180px] flex items-center justify-center">
-        <AlertDescription>Data teka-teki tidak tersedia</AlertDescription>
+        <AlertDescription className="text-center">
+          Data teka-teki tidak tersedia dari grimoire kuno
+        </AlertDescription>
       </Alert>
     );
   }
 
   return (
     <div className="space-y-6 relative">
-      {DungeonCSS}
-
-      <Card className="overflow-hidden border border-amber-700/40 bg-gradient-to-br from-stone-900 via-stone-800 to-amber-950">
-        <CardHeader className="relative">
-          <div className="absolute top-3 left-3 text-2xl torch-flicker">🔥</div>
-          <div className="absolute top-3 right-3 text-2xl torch-flicker">🔥</div>
-          <CardTitle className="text-amber-300 text-2xl">{puzzle.title || 'Tantangan Navigasi'}</CardTitle>
-          <CardDescription className="text-stone-300">
+      <Card className="overflow-hidden border border-amber-700/40 bg-gradient-to-br from-stone-900 via-stone-800 to-amber-950 dungeon-card-glow">
+        <CardHeader className="relative p-4 sm:p-6">
+          <div className="absolute top-3 left-3 text-xl sm:text-2xl">
+            <span ref={setTorchRef(0)} className="dungeon-torch-flicker">
+              🔥
+            </span>
+          </div>
+          <div className="absolute top-3 right-3 text-xl sm:text-2xl">
+            <span ref={setTorchRef(1)} className="dungeon-torch-flicker">
+              🔥
+            </span>
+          </div>
+          <CardTitle className="text-amber-300 text-xl sm:text-2xl relative z-10 dungeon-glow-text">
+            {puzzle.title || 'Tantangan Navigasi Dungeon'}
+          </CardTitle>
+          <CardDescription className="text-stone-300 text-sm sm:text-base relative z-10">
             {puzzle.description || 'Menelusuri struktur pohon di lorong CodeAlpha Dungeon.'}
           </CardDescription>
 
-          <div className="pt-2 flex flex-wrap gap-2">
-            <Badge className="bg-amber-800 text-amber-100 border border-amber-700/50">🏰 Mode Dungeon</Badge>
-            <Badge className="bg-stone-700 text-stone-200 border border-stone-600/50">🧭 Navigasi Pohon</Badge>
-            {role && <Badge className="bg-purple-800 text-purple-100 border border-purple-700/50">🎭 Peran: {role}</Badge>}
+          <div className="pt-2 flex flex-wrap gap-2 relative z-10">
+            <Badge className="bg-amber-800 text-amber-100 border border-amber-700/50 dungeon-badge-glow">
+              🏰 Mode Dungeon
+            </Badge>
+            <Badge className="bg-stone-700 text-stone-200 border border-stone-600/50 dungeon-badge-glow">
+              🧭 Navigasi Pohon
+            </Badge>
+            {role && (
+              <Badge className="bg-purple-800 text-purple-100 border border-purple-700/50 dungeon-badge-glow">
+                🎭 Peran: {role}
+              </Badge>
+            )}
             {puzzle?.defuserView?.targetValue != null && (
-              <Badge className="bg-indigo-800 text-indigo-100 border border-indigo-700/50">
+              <Badge className="bg-indigo-800 text-indigo-100 border border-indigo-700/50 dungeon-badge-glow">
                 Target: {obfuscate(String(puzzle.defuserView.targetValue))}
               </Badge>
             )}
             {puzzle?.defuserView?.grid_size && (
-              <Badge className="bg-stone-800 text-stone-200 border border-stone-700/50">
+              <Badge className="bg-stone-800 text-stone-200 border border-stone-700/50 dungeon-badge-glow">
                 Grid: {String(puzzle.defuserView.grid_size)}
               </Badge>
             )}
           </div>
         </CardHeader>
 
-        <CardContent className="space-y-6">
+        <CardContent className="space-y-6 p-4 sm:p-6">
           {/* Sync Warning */}
           {(isDefuser || isExpert) && syncIssue && (
-            <Alert className="border-amber-700/40 bg-gradient-to-r from-amber-900/40 to-stone-900/40">
-              <AlertDescription className="text-amber-200">
-                ⚠️ {syncIssue} Tombol arah menyesuaikan otomatis dengan cabang tersedia.
+            <Alert className="border-amber-700/40 bg-gradient-to-r from-amber-900/40 to-stone-900/40 backdrop-blur-sm">
+              <AlertDescription className="text-amber-200 text-sm">
+                ⚠️ {syncIssue}
               </AlertDescription>
             </Alert>
           )}
 
-          <div className="grid lg:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
             {/* === DEFUSER PANEL === */}
             {(isDefuser || role === 'host') && (
-              <Card className="border border-amber-600/40 bg-gradient-to-b from-stone-900/60 to-stone-800/40">
-                <CardHeader>
-                  <CardTitle className="text-lg text-amber-300 flex items-center gap-2">
+              <Card className="border border-amber-600/40 bg-gradient-to-b from-stone-900/60 to-stone-800/40 backdrop-blur-sm dungeon-card-glow">
+                <CardHeader className="p-4 sm:p-6">
+                  <CardTitle className="text-base sm:text-lg text-amber-300 flex items-center gap-2 dungeon-glow-text">
                     <span>🗺️</span>
                     <span>Arahan Misi</span>
                   </CardTitle>
-                  <CardDescription className="text-stone-300">
+                  <CardDescription className="text-stone-300 text-sm">
                     Susun jejak runik langkah demi langkah
                   </CardDescription>
                 </CardHeader>
 
-                <CardContent className="space-y-5">
+                <CardContent className="space-y-4 sm:space-y-5 p-4 sm:p-6">
                   {/* Mission Description */}
-                  <div className="rounded-xl p-4 border border-stone-700/40 bg-stone-800/40">
+                  <div className="rounded-xl p-4 border border-stone-700/40 bg-stone-800/40 backdrop-blur-sm">
                     <h5 className="text-stone-200 font-semibold mb-2 text-sm">📜 Arahan Misi</h5>
-                    <p className="text-stone-300 text-sm leading-relaxed">
-                      {obfuscate(puzzle.defuserView?.task || 'Susun urutan langkah dari altar menuju ruang tujuan tanpa menyingkap mantra tersembunyi.')}
+                    <p className="text-stone-300 text-xs sm:text-sm leading-relaxed">
+                      {obfuscate(
+                        puzzle.defuserView?.task ||
+                          'Susun urutan langkah dari altar menuju ruang tujuan tanpa menyingkap mantra tersembunyi.'
+                      )}
                     </p>
                   </div>
 
@@ -332,56 +472,42 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
                   <div>
                     <h5 className="text-stone-200 font-semibold mb-3 text-sm">🧭 Kontrol Navigasi</h5>
                     <div className="grid grid-cols-2 gap-2">
-                      {/* Up - Undo */}
-                      <Button
+                      <DirectionButton
+                        direction="up"
+                        label={pickLabel('up')}
                         onClick={removeLastStep}
                         disabled={path.length === 0 || submitting}
                         variant="outline"
-                        size="sm"
-                        className="border-stone-600/60 text-stone-200 hover:bg-stone-800/60"
-                        title="Naik satu tingkat (undo langkah terakhir)"
-                      >
-                        ⬆️ {pickLabel('up')}
-                      </Button>
+                      />
 
-                      {/* Down - Auto descend */}
-                      <Button
+                      <DirectionButton
+                        direction="down"
+                        label={pickLabel('down')}
                         onClick={descendOne}
                         disabled={submitting || availableDirections.length !== 1}
                         variant="outline"
-                        size="sm"
-                        className="border-stone-600/60 text-stone-200 hover:bg-stone-800/60 disabled:opacity-50"
-                        title="Turun otomatis bila hanya satu cabang"
-                      >
-                        ⬇️ {pickLabel('down')}
-                      </Button>
+                      />
 
-                      {/* Left */}
                       {availableDirections.includes('left') && (
-                        <Button
+                        <DirectionButton
+                          direction="left"
+                          label={pickLabel('left')}
+                          onClick={() => addDirection('left')}
                           onMouseEnter={() => setHoverNext('left')}
                           onMouseLeave={() => setHoverNext(null)}
-                          onClick={() => addDirection('left')}
                           disabled={submitting}
-                          size="sm"
-                          className="bg-indigo-800 text-indigo-100 hover:bg-indigo-700 border border-indigo-600/60"
-                        >
-                          ⬅️ {pickLabel('left')}
-                        </Button>
+                        />
                       )}
 
-                      {/* Right */}
                       {availableDirections.includes('right') && (
-                        <Button
+                        <DirectionButton
+                          direction="right"
+                          label={pickLabel('right')}
+                          onClick={() => addDirection('right')}
                           onMouseEnter={() => setHoverNext('right')}
                           onMouseLeave={() => setHoverNext(null)}
-                          onClick={() => addDirection('right')}
                           disabled={submitting}
-                          size="sm"
-                          className="bg-indigo-800 text-indigo-100 hover:bg-indigo-700 border border-indigo-600/60"
-                        >
-                          ➡️ {pickLabel('right')}
-                        </Button>
+                        />
                       )}
                     </div>
 
@@ -395,15 +521,7 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
                   {/* Current Path Display */}
                   <div>
                     <h5 className="text-stone-200 font-semibold mb-2 text-sm">🛤️ Jejak Saat Ini</h5>
-                    <div className="min-h-[60px] rounded-xl p-4 border border-amber-700/50 bg-stone-900/70 flex items-center">
-                      {path.length > 0 ? (
-                        <span className="font-mono text-sm text-amber-300 rune-float break-all">
-                          {path.join(' → ')}
-                        </span>
-                      ) : (
-                        <span className="text-stone-400 italic text-sm">Belum ada jejak</span>
-                      )}
-                    </div>
+                    <PathDisplay path={path} />
 
                     <div className="flex gap-2 mt-3">
                       <Button
@@ -411,7 +529,7 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
                         disabled={path.length === 0 || submitting}
                         variant="outline"
                         size="sm"
-                        className="border-amber-600/60 text-amber-300 hover:bg-amber-900/30"
+                        className="border-amber-600/60 text-amber-300 hover:bg-amber-900/30 transition-all duration-300"
                       >
                         Hapus Terakhir
                       </Button>
@@ -420,9 +538,9 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
                         disabled={path.length === 0 || submitting}
                         variant="outline"
                         size="sm"
-                        className="border-red-600/60 text-red-300 hover:bg-red-900/30"
+                        className="border-red-600/60 text-red-300 hover:bg-red-900/30 transition-all duration-300"
                       >
-                        Bersihkan
+                        Bersihkan Semua
                       </Button>
                     </div>
                   </div>
@@ -432,21 +550,23 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
                     <Button
                       type="submit"
                       disabled={path.length === 0 || submitting}
-                      className="w-full bg-gradient-to-r from-amber-600 via-amber-700 to-red-600 hover:from-amber-500 hover:via-amber-600 hover:to-red-500 text-stone-900 font-semibold"
+                      className="w-full bg-gradient-to-r from-amber-600 via-amber-700 to-red-600 hover:from-amber-500 hover:via-amber-600 hover:to-red-500 text-stone-900 font-semibold transition-all duration-300"
                     >
-                      {submitting ? 'Mengirim...' : '✨ Kirim Jejak'}
+                      {submitting ? 'Mengirim...' : '✨ Kirim Jejak Runik'}
                     </Button>
                   </form>
 
                   {/* Defuser Hints */}
                   {defuserHints.length > 0 && (
-                    <div className="p-4 rounded-xl border border-blue-700/40 bg-gradient-to-r from-blue-950/40 to-stone-900/30">
+                    <div className="p-4 rounded-xl border border-blue-700/40 bg-gradient-to-r from-blue-950/40 to-stone-900/30 backdrop-blur-sm">
                       <h5 className="text-blue-200 font-medium mb-2 text-sm flex items-center gap-2">
                         <span>💡</span>
                         <span>Bisik-bisik Lorong</span>
                       </h5>
                       <ul className="text-xs text-blue-200/90 space-y-1.5 list-disc pl-5">
-                        {defuserHints.map((h, i) => <li key={i}>{h}</li>)}
+                        {defuserHints.map((h, i) => (
+                          <li key={i}>{h}</li>
+                        ))}
                       </ul>
                     </div>
                   )}
@@ -456,26 +576,26 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
 
             {/* === EXPERT PANEL === */}
             {(isExpert || role === 'host') && (
-              <Card className="border border-emerald-700/40 bg-gradient-to-b from-stone-900/60 to-emerald-950/40">
-                <CardHeader>
-                  <CardTitle className="text-lg text-emerald-300 flex items-center gap-2">
+              <Card className="border border-emerald-700/40 bg-gradient-to-b from-stone-900/60 to-emerald-950/40 backdrop-blur-sm dungeon-card-glow-green">
+                <CardHeader className="p-4 sm:p-6">
+                  <CardTitle className="text-base sm:text-lg text-emerald-300 flex items-center gap-2 dungeon-glow-text">
                     <span>🌳</span>
                     <span>Panel Expert</span>
                   </CardTitle>
-                  <CardDescription className="text-stone-300">
+                  <CardDescription className="text-stone-300 text-sm">
                     Struktur pohon & panduan pembimbingan
                   </CardDescription>
                 </CardHeader>
 
-                <CardContent className="space-y-5">
+                <CardContent className="space-y-4 sm:space-y-5 p-4 sm:p-6">
                   {/* Tree Controls */}
                   <div className="flex flex-wrap gap-2">
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={() => setShowNulls(x => !x)}
-                      className="border-stone-600/60 text-stone-200 hover:bg-stone-800/60 text-xs"
+                      onClick={() => setShowNulls((x) => !x)}
+                      className="border-stone-600/60 text-stone-200 hover:bg-stone-800/60 text-xs transition-all duration-300"
                     >
                       {showNulls ? '👁️ Sembunyikan ∅' : '👁️‍🗨️ Tampilkan ∅'}
                     </Button>
@@ -483,8 +603,8 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={() => setShowSolveHints(x => !x)}
-                      className="border-emerald-600/60 text-emerald-200 hover:bg-emerald-900/30 text-xs"
+                      onClick={() => setShowSolveHints((x) => !x)}
+                      className="border-emerald-600/60 text-emerald-200 hover:bg-emerald-900/30 text-xs transition-all duration-300"
                     >
                       {showSolveHints ? '📕 Sembunyikan Petunjuk' : '📗 Tampilkan Petunjuk'}
                     </Button>
@@ -507,8 +627,11 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
                     </h5>
 
                     {root ? (
-                      <div className="rounded-xl p-4 border-2 border-emerald-700/50 bg-stone-950">
-                        <div className="bg-stone-900 rounded-lg p-4 overflow-x-auto border border-stone-700/50 max-h-[500px] overflow-y-auto">
+                      <div className="rounded-xl p-4 border-2 border-emerald-700/50 bg-stone-950 backdrop-blur-sm">
+                        <div
+                          className="bg-stone-900 rounded-lg p-4 overflow-x-auto border border-stone-700/50 overflow-y-auto"
+                          style={{ maxHeight: `${CONFIG.MAX_TREE_HEIGHT}px` }}
+                        >
                           {renderNode(root as TreeNode, '', true, 'root', 0)}
                         </div>
 
@@ -538,19 +661,19 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
                     ) : (
                       <Alert className="border-amber-700/50 bg-gradient-to-r from-amber-900/40 to-stone-900/30">
                         <AlertDescription className="text-amber-200 text-sm">
-                          Struktur pohon sedang dimuat...
+                          Struktur pohon sedang dimuat dari grimoire...
                         </AlertDescription>
                       </Alert>
                     )}
                   </div>
 
                   {/* Guidance Principles */}
-                  <div className="rounded-xl p-4 border-2 border-emerald-700/50 bg-gradient-to-r from-emerald-950/40 to-stone-900/30">
+                  <div className="rounded-xl p-4 border-2 border-emerald-700/50 bg-gradient-to-r from-emerald-950/40 to-stone-900/30 backdrop-blur-sm">
                     <h5 className="text-emerald-200 font-semibold mb-3 text-sm flex items-center gap-2">
                       <span>🧭</span>
                       <span>Prinsip Pembimbingan</span>
                     </h5>
-                    <ul className="text-sm text-emerald-200/90 space-y-2">
+                    <ul className="text-xs sm:text-sm text-emerald-200/90 space-y-2">
                       <li className="flex items-start gap-2">
                         <span className="text-emerald-400 font-bold mt-0.5">→</span>
                         <span>Ajukan pertanyaan terbuka untuk memancing analisis Defuser</span>
@@ -572,27 +695,37 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
 
                   {/* Solve Hints (Collapsible) */}
                   {showSolveHints && (
-                    <div className="space-y-3 animate-in fade-in duration-300">
-                      <div className="rounded-xl p-4 border border-blue-700/50 bg-gradient-to-r from-blue-950/40 to-stone-900/30">
+                    <div className="space-y-3 animate-[fadeIn_0.3s_ease-out]">
+                      <div className="rounded-xl p-4 border border-blue-700/50 bg-gradient-to-r from-blue-950/40 to-stone-900/30 backdrop-blur-sm">
                         <h6 className="text-blue-200 font-semibold mb-2 text-sm">📚 Konsep Binary Tree</h6>
                         <ul className="text-xs text-blue-200/90 space-y-1 list-disc pl-5">
                           <li>Binary Tree: setiap node maksimal 2 anak (left & right)</li>
-                          <li>BST: left {'<'} parent {'<'} right untuk setiap subtree</li>
+                          <li>
+                            BST: left {'<'} parent {'<'} right untuk setiap subtree
+                          </li>
                           <li>Leaf node: tidak memiliki anak (endpoint)</li>
                         </ul>
                       </div>
 
-                      <div className="rounded-xl p-4 border border-purple-700/50 bg-gradient-to-r from-purple-950/40 to-stone-900/30">
+                      <div className="rounded-xl p-4 border border-purple-700/50 bg-gradient-to-r from-purple-950/40 to-stone-900/30 backdrop-blur-sm">
                         <h6 className="text-purple-200 font-semibold mb-2 text-sm">🔍 Strategi Traversal</h6>
                         <ul className="text-xs text-purple-200/90 space-y-1 list-disc pl-5">
-                          <li><strong>Inorder</strong> (Left-Root-Right): urutan terurut pada BST</li>
-                          <li><strong>Preorder</strong> (Root-Left-Right): copy struktur pohon</li>
-                          <li><strong>Postorder</strong> (Left-Right-Root): evaluasi bottom-up</li>
-                          <li><strong>Level-order</strong>: BFS per level untuk jarak minimum</li>
+                          <li>
+                            <strong>Inorder</strong> (Left-Root-Right): urutan terurut pada BST
+                          </li>
+                          <li>
+                            <strong>Preorder</strong> (Root-Left-Right): copy struktur pohon
+                          </li>
+                          <li>
+                            <strong>Postorder</strong> (Left-Right-Root): evaluasi bottom-up
+                          </li>
+                          <li>
+                            <strong>Level-order</strong>: BFS per level untuk jarak minimum
+                          </li>
                         </ul>
                       </div>
 
-                      <div className="rounded-xl p-4 border border-teal-700/50 bg-gradient-to-r from-teal-950/40 to-stone-900/30">
+                      <div className="rounded-xl p-4 border border-teal-700/50 bg-gradient-to-r from-teal-950/40 to-stone-900/30 backdrop-blur-sm">
                         <h6 className="text-teal-200 font-semibold mb-2 text-sm">✅ Validasi BST</h6>
                         <ul className="text-xs text-teal-200/90 space-y-1 list-disc pl-5">
                           <li>Inorder traversal harus menghasilkan urutan menaik</li>
@@ -605,11 +738,16 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
 
                   {/* Traversal Methods */}
                   {puzzle.expertView?.traversalMethods && (
-                    <div className="rounded-xl p-4 border border-purple-700/50 bg-gradient-to-r from-purple-950/40 to-stone-900/30">
-                      <h5 className="text-purple-200 font-medium mb-2 text-sm">🔮 Metode Traversal Tersedia</h5>
+                    <div className="rounded-xl p-4 border border-purple-700/50 bg-gradient-to-r from-purple-950/40 to-stone-900/30 backdrop-blur-sm">
+                      <h5 className="text-purple-200 font-medium mb-2 text-sm">
+                        🔮 Metode Traversal Tersedia
+                      </h5>
                       <div className="flex flex-wrap gap-2">
                         {Object.keys(puzzle.expertView.traversalMethods).map((name) => (
-                          <Badge key={name} className="bg-purple-800 text-purple-100 border border-purple-700/60 text-xs">
+                          <Badge
+                            key={name}
+                            className="bg-purple-800 text-purple-100 border border-purple-700/60 text-xs"
+                          >
                             {name}
                           </Badge>
                         ))}
@@ -621,52 +759,58 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
             )}
           </div>
 
-          {/* BST Lore Section - Shared Knowledge */}
-          <Card className="border border-purple-700/40 bg-gradient-to-br from-stone-900/60 to-purple-950/30">
-            <CardHeader>
-              <CardTitle className="text-purple-300 text-base flex items-center gap-2">
+          {/* BST Lore Section */}
+          <Card className="border border-purple-700/40 bg-gradient-to-br from-stone-900/60 to-purple-950/30 backdrop-blur-sm dungeon-card-glow">
+            <CardHeader className="p-4 sm:p-6">
+              <CardTitle className="text-purple-300 text-base flex items-center gap-2 dungeon-glow-text">
                 <span>📜</span>
                 <span>Gulungan Pengetahuan BST</span>
               </CardTitle>
               <CardDescription className="text-stone-300 text-sm">
-                Referensi konsep untuk semua peran
+                Referensi konsep untuk semua petualang
               </CardDescription>
             </CardHeader>
 
-            <CardContent>
-              <div className="grid md:grid-cols-2 gap-4">
-                {/* Left Column - Structure Rules */}
+            <CardContent className="p-4 sm:p-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Left Column */}
                 <div className="space-y-3">
-                  <div className="p-4 rounded-xl border border-amber-700/40 bg-stone-800/40">
+                  <div className="p-4 rounded-xl border border-amber-700/40 bg-stone-800/40 backdrop-blur-sm">
                     <h6 className="text-amber-300 font-semibold mb-2 text-sm flex items-center gap-2">
                       <span>🏛️</span>
                       <span>Hukum Struktur</span>
                     </h6>
                     <ul className="text-stone-200 space-y-1.5 text-xs leading-relaxed list-disc pl-5">
                       <li>Setiap simpul maksimal memiliki 2 anak (kiri & kanan)</li>
-                      <li>Pada BST: semua nilai kiri {'<'} parent {'<'} semua nilai kanan</li>
+                      <li>
+                        Pada BST: semua nilai kiri {'<'} parent {'<'} semua nilai kanan
+                      </li>
                       <li>Leaf node (daun): simpul tanpa anak, endpoint struktur</li>
                       <li>Root (akar): simpul tertinggi, titik mulai penelusuran</li>
                     </ul>
                   </div>
 
-                  <div className="p-4 rounded-xl border border-blue-700/40 bg-stone-800/40">
+                  <div className="p-4 rounded-xl border border-blue-700/40 bg-stone-800/40 backdrop-blur-sm">
                     <h6 className="text-blue-300 font-semibold mb-2 text-sm flex items-center gap-2">
                       <span>🧩</span>
                       <span>Strategi Navigasi</span>
                     </h6>
                     <ul className="text-stone-200 space-y-1.5 text-xs leading-relaxed list-disc pl-5">
                       <li>Bandingkan nilai target dengan nilai simpul saat ini</li>
-                      <li>Jika target {'<'} simpul → pilih cabang kiri</li>
-                      <li>Jika target {'>'} simpul → pilih cabang kanan</li>
+                      <li>
+                        Jika target {'<'} simpul → pilih cabang kiri
+                      </li>
+                      <li>
+                        Jika target {'>'} simpul → pilih cabang kanan
+                      </li>
                       <li>Jika sama → target ditemukan, catat jalur</li>
                     </ul>
                   </div>
                 </div>
 
-                {/* Right Column - Practical Tips */}
+                {/* Right Column */}
                 <div className="space-y-3">
-                  <div className="p-4 rounded-xl border border-emerald-700/40 bg-stone-800/40">
+                  <div className="p-4 rounded-xl border border-emerald-700/40 bg-stone-800/40 backdrop-blur-sm">
                     <h6 className="text-emerald-300 font-semibold mb-2 text-sm flex items-center gap-2">
                       <span>💡</span>
                       <span>Tips Kolaborasi</span>
@@ -679,7 +823,7 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
                     </ul>
                   </div>
 
-                  <div className="p-4 rounded-xl border border-rose-700/40 bg-stone-800/40">
+                  <div className="p-4 rounded-xl border border-rose-700/40 bg-stone-800/40 backdrop-blur-sm">
                     <h6 className="text-rose-300 font-semibold mb-2 text-sm flex items-center gap-2">
                       <span>⚠️</span>
                       <span>Peringatan Umum</span>
@@ -695,20 +839,23 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
               </div>
 
               {/* Quick Reference */}
-              <div className="mt-4 p-4 rounded-xl border border-indigo-700/40 bg-gradient-to-r from-indigo-950/40 to-stone-900/30">
+              <div className="mt-4 p-4 rounded-xl border border-indigo-700/40 bg-gradient-to-r from-indigo-950/40 to-stone-900/30 backdrop-blur-sm">
                 <h6 className="text-indigo-200 font-semibold mb-2 text-sm flex items-center gap-2">
                   <span>📖</span>
                   <span>Referensi Cepat</span>
                 </h6>
-                <div className="grid sm:grid-cols-3 gap-3 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
                   <div className="text-stone-300">
-                    <span className="font-semibold text-indigo-300">Inorder:</span> L-Root-R → urutan terurut
+                    <span className="font-semibold text-indigo-300">Inorder:</span> L-Root-R → urutan
+                    terurut
                   </div>
                   <div className="text-stone-300">
-                    <span className="font-semibold text-indigo-300">Preorder:</span> Root-L-R → copy struktur
+                    <span className="font-semibold text-indigo-300">Preorder:</span> Root-L-R → copy
+                    struktur
                   </div>
                   <div className="text-stone-300">
-                    <span className="font-semibold text-indigo-300">Postorder:</span> L-R-Root → delete/eval
+                    <span className="font-semibold text-indigo-300">Postorder:</span> L-R-Root →
+                    delete/eval
                   </div>
                 </div>
               </div>
@@ -716,6 +863,60 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
           </Card>
         </CardContent>
       </Card>
+
+      {/* ========================================
+          CUSTOM DUNGEON STYLES
+          ======================================== */}
+      <style>{`
+        /* Torch Flicker */
+        .dungeon-torch-flicker {
+          display: inline-block;
+        }
+
+        /* Rune Float */
+        .dungeon-rune-float {
+          display: inline-block;
+          animation: runeFloat 3.2s ease-in-out infinite;
+        }
+
+        @keyframes runeFloat {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-4px); }
+        }
+
+        /* Card Glows */
+        .dungeon-card-glow {
+          box-shadow: 0 0 20px rgba(120, 113, 108, 0.4);
+        }
+
+        .dungeon-card-glow-green {
+          box-shadow: 0 0 20px rgba(34, 197, 94, 0.4);
+        }
+
+        /* Badge Glow */
+        .dungeon-badge-glow {
+          filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.4));
+        }
+
+        /* Text Glow */
+        .dungeon-glow-text {
+          text-shadow: 0 0 20px rgba(251, 191, 36, 0.6), 0 0 40px rgba(251, 191, 36, 0.4);
+        }
+
+        /* Fade In */
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+
+        /* Responsive Adjustments */
+        @media (max-width: 768px) {
+          .dungeon-card-glow,
+          .dungeon-card-glow-green {
+            box-shadow: 0 0 15px rgba(120, 113, 108, 0.3);
+          }
+        }
+      `}</style>
     </div>
   );
 }

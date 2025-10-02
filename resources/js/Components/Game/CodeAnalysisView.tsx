@@ -1,9 +1,39 @@
-import React, { useMemo, useState, useCallback } from 'react';
+import React, { useMemo, useState, useCallback, useRef, useEffect, memo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/Components/ui/card';
 import { Button } from '@/Components/ui/button';
 import { Badge } from '@/Components/ui/badge';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/Components/ui/accordion';
+import { gsap } from 'gsap';
 
+// ============================================
+// CONSTANTS & CONFIGURATIONS
+// ============================================
+const CONFIG = {
+  TORCH_FLICKER_INTERVAL: 2200,
+  RUNE_FLOAT_DURATION: 3200,
+  LINE_HOVER_DURATION: 0.3,
+  MAX_INPUT_LENGTH: 200,
+} as const;
+
+const RUNE_MAP: Record<string, string> = {
+  '0': '◇', '1': '†', '2': '♁', '3': '♆', '4': '♄',
+  '5': '♃', '6': '☿', '7': '☼', '8': '◈', '9': '★',
+} as const;
+
+const OBFUSCATION_PATTERNS = [
+  { pattern: /\d/g, replacer: (d: string) => RUNE_MAP[d] ?? d },
+  { pattern: /\b(shift|geser)\b/gi, replacer: () => 'pergeseran sigil' },
+  { pattern: /\b(kunci|key)\b/gi, replacer: () => 'cipher rune' },
+  { pattern: /\b(tambah|penjumlahan)\b/gi, replacer: () => 'ritus penambahan' },
+  { pattern: /\b(kurang|pengurangan)\b/gi, replacer: () => 'pemotongan runik' },
+  { pattern: /\b(kali|perkalian)\b/gi, replacer: () => 'ritual penggandaan' },
+  { pattern: /\b(bagi|pembagian)\b/gi, replacer: () => 'pemisahan sigil' },
+  { pattern: /\b(pangkat|eksponen)\b/gi, replacer: () => 'sigil eksponensial' },
+] as const;
+
+// ============================================
+// TYPE DEFINITIONS
+// ============================================
 interface PuzzleDefuserView {
   cipher?: string;
   hints?: string[];
@@ -31,12 +61,216 @@ interface Props {
   submitting: boolean;
 }
 
+// ============================================
+// CUSTOM HOOKS
+// ============================================
+const useDungeonAtmosphere = () => {
+  const torchRefs = useRef<(HTMLElement | null)[]>([]);
+  const runeRefs = useRef<(HTMLElement | null)[]>([]);
+
+  useEffect(() => {
+    // Torch flicker animation
+    const torchInterval = setInterval(() => {
+      torchRefs.current.forEach((torch) => {
+        if (torch) {
+          gsap.to(torch, {
+            opacity: Math.random() * 0.14 + 0.86,
+            duration: 0.22,
+            ease: 'power1.inOut',
+          });
+        }
+      });
+    }, CONFIG.TORCH_FLICKER_INTERVAL);
+
+    // Rune float animation
+    runeRefs.current.forEach((rune, index) => {
+      if (rune) {
+        gsap.to(rune, {
+          y: -4,
+          duration: CONFIG.RUNE_FLOAT_DURATION / 1000,
+          repeat: -1,
+          yoyo: true,
+          ease: 'sine.inOut',
+          delay: index * 0.2,
+        });
+      }
+    });
+
+    return () => clearInterval(torchInterval);
+  }, []);
+
+  const setTorchRef = (index: number) => (el: HTMLDivElement | null) => {
+    torchRefs.current[index] = el;
+  };
+
+  const setRuneRef = (index: number) => (el: HTMLDivElement | null) => {
+    runeRefs.current[index] = el;
+  };
+
+  return { setTorchRef, setRuneRef };
+};
+
+// ============================================
+// UTILITY FUNCTIONS
+// ============================================
+const obfuscateText = (text: string): string => {
+  try {
+    let result = String(text);
+    OBFUSCATION_PATTERNS.forEach(({ pattern, replacer }) => {
+      result = result.replace(pattern, replacer as any);
+    });
+    return result;
+  } catch (error) {
+    console.error('Error obfuscating text:', error);
+    return text;
+  }
+};
+
+// ============================================
+// MEMOIZED COMPONENTS
+// ============================================
+const LoadingState = memo(() => (
+  <div className="min-h-[180px] flex items-center justify-center bg-gradient-to-br from-stone-900 to-amber-950 border-2 border-amber-700/60 rounded-xl dungeon-card-glow">
+    <p className="text-amber-200 font-medium text-lg">Memuat teka-teki...</p>
+  </div>
+));
+
+LoadingState.displayName = 'LoadingState';
+
+const ErrorState = memo(() => (
+  <div className="min-h-[180px] flex items-center justify-center bg-gradient-to-br from-stone-900 to-red-950 border-2 border-red-700/60 rounded-xl dungeon-card-glow-red">
+    <p className="text-red-200 font-medium text-lg">Data teka-teki tidak tersedia</p>
+  </div>
+));
+
+ErrorState.displayName = 'ErrorState';
+
+const RuneLegendBadge = memo(({ num, sym, index }: { num: string; sym: string; index: number }) => {
+  const { setRuneRef } = useDungeonAtmosphere();
+
+  return (
+    <div ref={setRuneRef(index)}>
+      <Badge className="bg-stone-800 text-amber-100 border border-amber-700/50 dungeon-rune-float dungeon-badge-glow">
+        {sym} = {num}
+      </Badge>
+    </div>
+  );
+});
+
+RuneLegendBadge.displayName = 'RuneLegendBadge';
+
+const CodeLine = memo(({
+  line,
+  lineNo,
+  isDefuser,
+  isActive,
+  isChosen,
+  onClick
+}: {
+  line: string;
+  lineNo: number;
+  isDefuser: boolean;
+  isActive: boolean;
+  isChosen: boolean;
+  onClick: () => void;
+}) => {
+  const lineRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (lineRef.current && isActive) {
+      gsap.to(lineRef.current, {
+        scale: 1.02,
+        duration: CONFIG.LINE_HOVER_DURATION,
+        ease: 'power2.out',
+      });
+
+      return () => {
+        if (lineRef.current) {
+          gsap.to(lineRef.current, {
+            scale: 1,
+            duration: CONFIG.LINE_HOVER_DURATION,
+            ease: 'power2.out',
+          });
+        }
+      };
+    }
+  }, [isActive]);
+
+  return (
+    <div
+      ref={lineRef}
+      onClick={isDefuser ? onClick : undefined}
+      className={[
+        'flex items-center px-2 py-1 rounded transition-all duration-300',
+        isDefuser ? 'cursor-pointer' : '',
+        isActive ? 'ring-2 ring-amber-400 dungeon-line-glow' : '',
+        isChosen ? 'bg-red-900/30 border-l-4 border-red-500' : isDefuser ? 'hover:bg-stone-800/60' : '',
+      ].filter(Boolean).join(' ')}
+      role={isDefuser ? 'button' : undefined}
+      tabIndex={isDefuser ? 0 : undefined}
+      aria-pressed={isDefuser ? isChosen : undefined}
+      onKeyDown={isDefuser ? (e) => e.key === 'Enter' && onClick() : undefined}
+    >
+      <span className="text-stone-500 w-10 text-right mr-4 select-none font-mono text-sm">
+        {lineNo}
+      </span>
+      <code className="text-green-300 font-mono text-sm">{line}</code>
+    </div>
+  );
+});
+
+CodeLine.displayName = 'CodeLine';
+
+const HintSection = memo(({ hints, title, colorScheme }: {
+  hints: string[];
+  title: string;
+  colorScheme: 'blue' | 'purple';
+}) => {
+  if (hints.length === 0) return null;
+
+  const colors = {
+    blue: {
+      border: 'border-blue-700/30',
+      bg: 'from-blue-950/40 to-stone-900/40',
+      text: 'text-blue-200',
+    },
+    purple: {
+      border: 'border-purple-700/30',
+      bg: 'from-purple-950/40 to-stone-900/40',
+      text: 'text-purple-200',
+    },
+  };
+
+  const scheme = colors[colorScheme];
+
+  return (
+    <div className={`mt-4 p-3 sm:p-4 rounded-lg border ${scheme.border} bg-gradient-to-r ${scheme.bg} dungeon-hint-glow`}>
+      <h5 className={`${scheme.text} font-medium mb-2 text-sm sm:text-base dungeon-glow-text`}>
+        {title}
+      </h5>
+      <ul className={`text-xs sm:text-sm ${scheme.text}/90 space-y-1 sm:space-y-2 list-disc pl-5`}>
+        {hints.map((hint, i) => (
+          <li key={i} className="leading-relaxed">{hint}</li>
+        ))}
+      </ul>
+    </div>
+  );
+});
+
+HintSection.displayName = 'HintSection';
+
+// ============================================
+// MAIN COMPONENT
+// ============================================
 export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAttempt, submitting }: Props) {
+  const { setTorchRef, setRuneRef } = useDungeonAtmosphere();
+
+  // State Management
   const [foundBugs, setFoundBugs] = useState<number[]>([]);
   const [selectedLine, setSelectedLine] = useState<number | null>(null);
   const [input, setInput] = useState('');
 
-  // Validasi puzzle existence
+  // Memoized Values
   const isCipherPuzzle = useMemo(() =>
     !!(puzzle?.defuserView?.cipher || puzzle?.expertView?.cipher_type),
     [puzzle]
@@ -51,37 +285,11 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
   const isExpert = role === 'expert';
   const isHost = role === 'host';
 
-  // Rune map untuk angka (0-9) → simbol
-  const runeMap: Record<string, string> = useMemo(() => ({
-    '0': '◇', '1': '†', '2': '♁', '3': '♆', '4': '♄',
-    '5': '♃', '6': '☿', '7': '☼', '8': '◈', '9': '★',
-  }), []);
-
-  // Obfuscation istilah dengan memoization
-  const obfuscate = useCallback((text: string): string => {
-    try {
-      return String(text)
-        .replace(/\d/g, (d) => runeMap[d] ?? d)
-        .replace(/\b(shift|geser)\b/gi, 'pergeseran sigil')
-        .replace(/\b(kunci|key)\b/gi, 'cipher rune')
-        .replace(/\b(tambah|penjumlahan)\b/gi, 'ritus penambahan')
-        .replace(/\b(kurang|pengurangan)\b/gi, 'pemotongan runik')
-        .replace(/\b(kali|perkalian)\b/gi, 'ritual penggandaan')
-        .replace(/\b(bagi|pembagian)\b/gi, 'pemisahan sigil')
-        .replace(/\b(pangkat|eksponen)\b/gi, 'sigil eksponensial');
-    } catch (error) {
-      console.error('Error obfuscating text:', error);
-      return text;
-    }
-  }, [runeMap]);
-
-  // Legend rune untuk ditampilkan
   const runeLegend = useMemo(() =>
-    Object.entries(runeMap).map(([num, sym]) => ({ num, sym })),
-    [runeMap]
+    Object.entries(RUNE_MAP).map(([num, sym]) => ({ num, sym })),
+    []
   );
 
-  // Data Caesar dinamis dari controller
   const cipherType = puzzle?.expertView?.cipher_type;
   const isCaesarCipher = cipherType === 'caesar';
 
@@ -92,14 +300,12 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
     return Math.abs(puzzle.expertView.shift % 26);
   }, [isCaesarCipher, puzzle?.expertView?.shift]);
 
-  // Petunjuk kunci dalam rune
   const caesarRuneHint = useMemo(() => {
     if (numericShift == null) return null;
     const digits = String(numericShift).split('');
-    return digits.map(d => runeMap[d] ?? d).join('');
-  }, [numericShift, runeMap]);
+    return digits.map(d => RUNE_MAP[d] ?? d).join('');
+  }, [numericShift]);
 
-  // Alfabet dan rotasi untuk tabel Caesar
   const alphabet = useMemo(() => 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split(''), []);
 
   const rotated = useMemo(() => {
@@ -108,7 +314,6 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
     return alphabet.map((_, i) => alphabet[(i + k) % 26]);
   }, [alphabet, numericShift]);
 
-  // Hints untuk defuser - cipher puzzle
   const defuserHintsCipher = useMemo(() => {
     if (!isCipherPuzzle) return [];
 
@@ -123,10 +328,9 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
       'Jejak aturan bisa bertingkat: transformasi kedua kerap membuka kunci pertama.',
     ];
 
-    return [...base, ...extra].map(obfuscate);
-  }, [isCipherPuzzle, puzzle?.defuserView?.hints, obfuscate]);
+    return [...base, ...extra].map(obfuscateText);
+  }, [isCipherPuzzle, puzzle?.defuserView?.hints]);
 
-  // Hints untuk defuser - bug puzzle
   const defuserHintsBug = useMemo(() => {
     if (!isBugPuzzle) return [];
 
@@ -141,10 +345,10 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
       'Kebocoran esensi (resource) menguap sunyi; perhatikan ritus yang tak pernah ditutup.',
     ];
 
-    return [...base, ...extra].map(obfuscate);
-  }, [isBugPuzzle, puzzle?.defuserView?.hints, obfuscate]);
+    return [...base, ...extra].map(obfuscateText);
+  }, [isBugPuzzle, puzzle?.defuserView?.hints]);
 
-  // Handler submit dengan error handling
+  // Handlers
   const handleSubmit = useCallback(() => {
     try {
       if (isCipherPuzzle) {
@@ -171,7 +375,6 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
     }
   }, [isCipherPuzzle, isBugPuzzle, input, foundBugs, onSubmitAttempt]);
 
-  // Handler line click dengan validasi
   const handleLineClick = useCallback((lineNumber: number) => {
     if (!isDefuser || !isBugPuzzle) return;
 
@@ -187,78 +390,57 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
     }
   }, [isDefuser, isBugPuzzle]);
 
-  // Handler input change dengan sanitasi
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     try {
-      setInput(e.target.value.toUpperCase());
+      const value = e.target.value.toUpperCase();
+      if (value.length <= CONFIG.MAX_INPUT_LENGTH) {
+        setInput(value);
+      }
     } catch (error) {
       console.error('Error saat mengubah input:', error);
     }
   }, []);
 
-  // Loading state
+  // Loading & Error States
   if (!puzzle) {
-    return (
-      <div className="min-h-[180px] flex items-center justify-center bg-gradient-to-br from-stone-900 to-red-950 border border-red-700/60 rounded-xl">
-        <p className="text-red-200 font-medium">Data teka-teki tidak tersedia</p>
-      </div>
-    );
+    return <ErrorState />;
   }
 
   if (!puzzle.defuserView && !puzzle.expertView) {
-    return (
-      <div className="min-h-[180px] flex items-center justify-center bg-gradient-to-br from-stone-900 to-amber-950 border border-amber-700/60 rounded-xl">
-        <p className="text-amber-200 font-medium">Memuat teka-teki...</p>
-      </div>
-    );
+    return <LoadingState />;
   }
 
+  // Main Render
   return (
-    <div className="space-y-6 relative">
-      {/* Animasi & tema dungeon */}
-      <style>{`
-        @keyframes torchFlicker {
-          0%, 100% { opacity: 1; }
-          25% { opacity: 0.86; }
-          50% { opacity: 0.75; }
-          75% { opacity: 0.92; }
-        }
-        .torch-flicker {
-          animation: torchFlicker 2.2s ease-in-out infinite;
-        }
-        @keyframes runeFloat {
-          0%, 100% { transform: translateY(0); }
-          50% { transform: translateY(-4px); }
-        }
-        .rune-float {
-          animation: runeFloat 3.2s ease-in-out infinite;
-        }
-      `}</style>
-
-      <Card className="overflow-hidden border border-amber-700/40 bg-gradient-to-br from-stone-900 via-stone-800 to-amber-950">
-        <CardHeader className="relative">
-          <div className="absolute top-3 left-3 text-2xl torch-flicker" aria-hidden="true">🔥</div>
-          <div className="absolute top-3 right-3 text-2xl torch-flicker" aria-hidden="true">🔥</div>
-          <CardTitle className="text-amber-300 text-2xl">
+    <div className="space-y-4 sm:space-y-6 relative">
+      <Card className="overflow-hidden border-2 border-amber-700/40 bg-gradient-to-br from-stone-900 via-stone-800 to-amber-950 dungeon-card-glow">
+        <CardHeader className="relative p-4 sm:p-6">
+          <div ref={setTorchRef(0)} className="absolute top-3 left-3 text-xl sm:text-2xl dungeon-torch-flicker" aria-hidden="true">
+            🔥
+          </div>
+          <div ref={setTorchRef(1)} className="absolute top-3 right-3 text-xl sm:text-2xl dungeon-torch-flicker" aria-hidden="true">
+            🔥
+          </div>
+          <CardTitle className="text-amber-300 text-xl sm:text-2xl text-center sm:text-left dungeon-glow-text">
             {puzzle.title || 'Tantangan Analisis Kode'}
           </CardTitle>
-          <CardDescription className="text-stone-300">
+          <CardDescription className="text-stone-300 text-sm sm:text-base text-center sm:text-left">
             {puzzle.description || 'Tuntaskan cobaan di lorong CodeAlpha Dungeon ini.'}
           </CardDescription>
 
-          {/* Info chips untuk expert dan host - hanya tampil jika ada expertView */}
+          {/* Info chips untuk expert dan host */}
           {(isExpert || isHost) && puzzle.expertView && (
-            <div className="pt-3 flex flex-wrap gap-2">
-              <Badge className="bg-stone-800 text-stone-200 border border-stone-700/60">
+            <div className="pt-3 flex flex-wrap gap-2 justify-center sm:justify-start">
+              <Badge className="bg-stone-800 text-stone-200 border border-stone-700/60 dungeon-badge-glow">
                 Jenis: {(cipherType || '—').toUpperCase()}
               </Badge>
               {isCaesarCipher && caesarRuneHint && (
-                <Badge className="bg-stone-800 text-amber-200 border border-amber-700/60">
+                <Badge className="bg-stone-800 text-amber-200 border border-amber-700/60 dungeon-badge-glow">
                   Pergeseran sigil: {caesarRuneHint}
                 </Badge>
               )}
               {puzzle.expertView.category && (
-                <Badge className="bg-stone-800 text-stone-200 border border-stone-700/60">
+                <Badge className="bg-stone-800 text-stone-200 border border-stone-700/60 dungeon-badge-glow">
                   Kategori: {puzzle.expertView.category}
                 </Badge>
               )}
@@ -266,27 +448,29 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
           )}
         </CardHeader>
 
-        <CardContent className="space-y-6">
+        <CardContent className="space-y-4 sm:space-y-6 p-4 sm:p-6">
           {/* CIPHER PUZZLE */}
           {isCipherPuzzle && (
-            <Card className="border border-blue-700/30 bg-gradient-to-b from-stone-900/60 to-blue-950/40">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base text-blue-300 text-center">
+            <Card className="border-2 border-blue-700/30 bg-gradient-to-b from-stone-900/60 to-blue-950/40 dungeon-card-glow-blue">
+              <CardHeader className="pb-2 p-3 sm:p-4">
+                <CardTitle className="text-sm sm:text-base text-blue-300 text-center dungeon-glow-text">
                   🔐 Analisis Sandi
                 </CardTitle>
-                <CardDescription className="text-center text-stone-300">
+                <CardDescription className="text-center text-stone-300 text-xs sm:text-sm">
                   Uraikan naskah yang terkungkung sigil
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                {/* Naskah terkunci - hanya untuk defuser dan host */}
+              <CardContent className="space-y-4 p-3 sm:p-4">
+                {/* Naskah terkunci */}
                 {(isDefuser || isHost) && puzzle.defuserView?.cipher && (
                   <div className="space-y-2">
-                    <h4 className="text-stone-200 font-semibold text-sm">Naskah Terkunci</h4>
-                    <div className="bg-stone-950 rounded-lg p-3 overflow-x-auto border border-stone-700/60">
+                    <h4 className="text-stone-200 font-semibold text-xs sm:text-sm">Naskah Terkunci</h4>
+                    <div className="bg-stone-950 rounded-lg p-3 overflow-x-auto border border-stone-700/60 dungeon-code-block">
                       <div className="flex items-center">
-                        <span className="text-stone-500 w-8 text-right mr-4 select-none" aria-hidden="true">1</span>
-                        <code className="text-green-300 text-lg font-mono">
+                        <span className="text-stone-500 w-8 text-right mr-4 select-none font-mono text-xs sm:text-sm" aria-hidden="true">
+                          1
+                        </span>
+                        <code className="text-green-300 text-sm sm:text-base md:text-lg font-mono break-all">
                           {puzzle.defuserView.cipher}
                         </code>
                       </div>
@@ -294,14 +478,14 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
                   </div>
                 )}
 
-                {/* Panel expert - HANYA untuk expert dan host, TIDAK untuk defuser */}
+                {/* Panel expert */}
                 {(isExpert || isHost) && puzzle.expertView && (
                   <div className="space-y-4">
-                    <div className="grid md:grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       {/* Kolom kiri */}
                       <Accordion type="multiple" className="space-y-2">
                         <AccordionItem value="dekripsi">
-                          <AccordionTrigger className="text-stone-200 text-sm">
+                          <AccordionTrigger className="text-stone-200 text-xs sm:text-sm hover:text-amber-300 transition-colors">
                             Panduan Dekripsi Langkah
                           </AccordionTrigger>
                           <AccordionContent className="p-3 rounded-lg bg-stone-900/60 border border-stone-700/40">
@@ -315,7 +499,7 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
                         </AccordionItem>
 
                         <AccordionItem value="penalaran">
-                          <AccordionTrigger className="text-stone-200 text-sm">
+                          <AccordionTrigger className="text-stone-200 text-xs sm:text-sm hover:text-amber-300 transition-colors">
                             Jejak Penalaran
                           </AccordionTrigger>
                           <AccordionContent className="p-3 rounded-lg bg-stone-900/60 border border-stone-700/40">
@@ -327,25 +511,24 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
                           </AccordionContent>
                         </AccordionItem>
 
-                        {/* Tabel Caesar - hanya muncul untuk cipher Caesar */}
                         {isCaesarCipher && (
                           <AccordionItem value="caesar-table">
-                            <AccordionTrigger className="text-stone-200 text-sm">
+                            <AccordionTrigger className="text-stone-200 text-xs sm:text-sm hover:text-amber-300 transition-colors">
                               Tabel Caesar (Tanpa Kunci)
                             </AccordionTrigger>
                             <AccordionContent className="p-3 rounded-lg bg-stone-900/60 border border-stone-700/40">
                               <div className="text-xs text-stone-200/90 space-y-2">
                                 <div className="flex flex-wrap items-center gap-2">
-                                  <Badge className="bg-stone-800 text-amber-200 border border-amber-700/50">
+                                  <Badge className="bg-stone-800 text-amber-200 border border-amber-700/50 dungeon-badge-glow">
                                     Pergeseran sigil: {caesarRuneHint || '◈?'}
                                   </Badge>
-                                  <span className="text-stone-400">
+                                  <span className="text-stone-400 text-xs">
                                     (gunakan rune sebagai petunjuk arah geser)
                                   </span>
                                 </div>
-                                <div className="rounded-md border border-stone-700/40 bg-stone-950 p-3">
+                                <div className="rounded-md border border-stone-700/40 bg-stone-950 p-3 overflow-x-auto">
                                   <div className="text-stone-300 mb-1">Plain:</div>
-                                  <div className="flex flex-wrap gap-1">
+                                  <div className="flex flex-wrap gap-1 mb-3">
                                     {alphabet.map((ch) => (
                                       <Badge
                                         key={`p-${ch}`}
@@ -355,7 +538,7 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
                                       </Badge>
                                     ))}
                                   </div>
-                                  <div className="text-stone-300 mt-2 mb-1">
+                                  <div className="text-stone-300 mb-1">
                                     Cipher (geser sesuai rune):
                                   </div>
                                   <div className="flex flex-wrap gap-1">
@@ -369,7 +552,7 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
                                     ))}
                                   </div>
                                 </div>
-                                <div className="text-stone-400">
+                                <div className="text-stone-400 text-xs">
                                   Enkripsi E<sub>K</sub>(x) = (x + K) mod 26,
                                   Dekripsi D<sub>K</sub>(x) = (x - K) mod 26
                                   tanpa menyebut K numerik secara eksplisit.
@@ -380,18 +563,13 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
                         )}
 
                         <AccordionItem value="runes">
-                          <AccordionTrigger className="text-stone-200 text-sm">
+                          <AccordionTrigger className="text-stone-200 text-xs sm:text-sm hover:text-amber-300 transition-colors">
                             Legenda Simbol Runik (0–9)
                           </AccordionTrigger>
                           <AccordionContent className="p-3 rounded-lg bg-stone-900/60 border border-stone-700/40">
                             <div className="flex flex-wrap gap-2">
-                              {runeLegend.map(({ num, sym }) => (
-                                <Badge
-                                  key={num}
-                                  className="bg-stone-800 text-amber-100 border border-amber-700/50 rune-float"
-                                >
-                                  {sym} = {num}
-                                </Badge>
+                              {runeLegend.map(({ num, sym }, idx) => (
+                                <RuneLegendBadge key={num} num={num} sym={sym} index={idx} />
                               ))}
                             </div>
                             <div className="text-xs text-stone-400 mt-2">
@@ -404,7 +582,7 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
                       {/* Kolom kanan */}
                       <Accordion type="multiple" className="space-y-2">
                         <AccordionItem value="deteksi">
-                          <AccordionTrigger className="text-stone-200 text-sm">
+                          <AccordionTrigger className="text-stone-200 text-xs sm:text-sm hover:text-amber-300 transition-colors">
                             Deteksi Jenis
                           </AccordionTrigger>
                           <AccordionContent className="p-3 rounded-lg bg-stone-900/60 border border-stone-700/40">
@@ -417,7 +595,7 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
                         </AccordionItem>
 
                         <AccordionItem value="mono">
-                          <AccordionTrigger className="text-stone-200 text-sm">
+                          <AccordionTrigger className="text-stone-200 text-xs sm:text-sm hover:text-amber-300 transition-colors">
                             Substitusi (Mono)
                           </AccordionTrigger>
                           <AccordionContent className="p-3 rounded-lg bg-stone-900/60 border border-stone-700/40">
@@ -430,7 +608,7 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
                         </AccordionItem>
 
                         <AccordionItem value="vigenere">
-                          <AccordionTrigger className="text-stone-200 text-sm">
+                          <AccordionTrigger className="text-stone-200 text-xs sm:text-sm hover:text-amber-300 transition-colors">
                             Polialfabetik (Vigenère)
                           </AccordionTrigger>
                           <AccordionContent className="p-3 rounded-lg bg-stone-900/60 border border-stone-700/40">
@@ -443,7 +621,7 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
                         </AccordionItem>
 
                         <AccordionItem value="transposisi">
-                          <AccordionTrigger className="text-stone-200 text-sm">
+                          <AccordionTrigger className="text-stone-200 text-xs sm:text-sm hover:text-amber-300 transition-colors">
                             Transposisi
                           </AccordionTrigger>
                           <AccordionContent className="p-3 rounded-lg bg-stone-900/60 border border-stone-700/40">
@@ -456,7 +634,7 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
                         </AccordionItem>
 
                         <AccordionItem value="pantangan">
-                          <AccordionTrigger className="text-stone-200 text-sm">
+                          <AccordionTrigger className="text-stone-200 text-xs sm:text-sm hover:text-amber-300 transition-colors">
                             Pantangan
                           </AccordionTrigger>
                           <AccordionContent className="p-3 rounded-lg bg-stone-900/60 border border-stone-700/40">
@@ -472,10 +650,10 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
                   </div>
                 )}
 
-                {/* Input area - hanya untuk defuser */}
+                {/* Input area - defuser only */}
                 {isDefuser && (
                   <div className="space-y-3">
-                    <label htmlFor="cipher-input" className="block text-xs font-medium text-blue-200">
+                    <label htmlFor="cipher-input" className="block text-xs sm:text-sm font-medium text-blue-200">
                       Masukkan hasil dekripsi
                     </label>
                     <input
@@ -484,30 +662,36 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
                       value={input}
                       onChange={handleInputChange}
                       placeholder="Ketik jawaban..."
-                      className="w-full px-3 py-2 bg-stone-900/70 border border-stone-700/50 rounded-lg text-amber-200 placeholder-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      className="w-full px-3 py-2 bg-stone-900/70 border border-stone-700/50 rounded-lg text-amber-200 placeholder-amber-500/50 focus:outline-none focus:ring-2 focus:ring-amber-500 transition-all text-sm sm:text-base font-mono"
                       disabled={submitting}
                       autoComplete="off"
+                      maxLength={CONFIG.MAX_INPUT_LENGTH}
+                      aria-label="Input hasil dekripsi"
                     />
+                    <div className="flex justify-between text-xs text-stone-400">
+                      <span>{input.length}/{CONFIG.MAX_INPUT_LENGTH} karakter</span>
+                    </div>
                     <Button
                       onClick={handleSubmit}
                       disabled={!input.trim() || submitting}
-                      className="w-full bg-gradient-to-r from-amber-600 via-amber-700 to-red-600 hover:from-amber-500 hover:via-amber-600 hover:to-red-500 text-stone-900 font-semibold py-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="w-full bg-gradient-to-r from-amber-600 via-amber-700 to-red-600 hover:from-amber-500 hover:via-amber-600 hover:to-red-500 text-stone-900 font-semibold py-2 sm:py-3 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 dungeon-button-glow"
+                      aria-label="Kirim jawaban dekripsi"
                     >
-                      {submitting ? 'Mengirim...' : 'Kirim Jawaban'}
+                      {submitting ? (
+                        <span className="flex items-center justify-center gap-2">
+                          <span className="animate-spin">⚙️</span>
+                          Mengirim...
+                        </span>
+                      ) : (
+                        'Kirim Jawaban'
+                      )}
                     </Button>
 
-                    {defuserHintsCipher.length > 0 && (
-                      <div className="mt-1 p-3 rounded-lg border border-blue-700/30 bg-gradient-to-r from-blue-950/40 to-stone-900/40">
-                        <h5 className="text-blue-200 font-medium mb-1 text-sm">
-                          Petunjuk Terselubung
-                        </h5>
-                        <ul className="text-xs text-blue-200/90 space-y-1 list-disc pl-5">
-                          {defuserHintsCipher.map((hint, i) => (
-                            <li key={i}>{hint}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
+                    <HintSection
+                      hints={defuserHintsCipher}
+                      title="Petunjuk Terselubung"
+                      colorScheme="blue"
+                    />
                   </div>
                 )}
               </CardContent>
@@ -516,57 +700,54 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
 
           {/* BUG PUZZLE */}
           {isBugPuzzle && (
-            <Card className="border border-red-700/30 bg-gradient-to-b from-stone-900/60 to-red-950/30">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base text-red-300 text-center">
+            <Card className="border-2 border-red-700/30 bg-gradient-to-b from-stone-900/60 to-red-950/30 dungeon-card-glow-red">
+              <CardHeader className="pb-2 p-3 sm:p-4">
+                <CardTitle className="text-sm sm:text-base text-red-300 text-center dungeon-glow-text">
                   🪓 Perburuan Bug
                 </CardTitle>
-                <CardDescription className="text-center text-stone-300">
+                <CardDescription className="text-center text-stone-300 text-xs sm:text-sm">
                   Tandai baris yang terkutuk di naskah
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                {/* Code lines - untuk defuser dan host */}
+              <CardContent className="space-y-4 p-3 sm:p-4">
+                {/* Code lines */}
                 {Array.isArray(puzzle.defuserView?.codeLines) && (isDefuser || isHost) && (
                   <div className="space-y-2">
-                    <h4 className="text-stone-200 font-semibold text-sm">Naskah Ditulis</h4>
-                    <div className="bg-stone-950 rounded-lg p-3 overflow-x-auto border border-stone-700/60">
-                      <pre className="text-sm">
+                    <h4 className="text-stone-200 font-semibold text-xs sm:text-sm">Naskah Ditulis</h4>
+                    <div className="bg-stone-950 rounded-lg p-3 overflow-x-auto border border-stone-700/60 dungeon-code-block">
+                      <pre className="text-xs sm:text-sm">
                         {puzzle.defuserView.codeLines.map((line, index) => {
                           const lineNo = index + 1;
                           const active = selectedLine === lineNo;
                           const chosen = foundBugs.includes(lineNo);
                           return (
-                            <div
+                            <CodeLine
                               key={index}
+                              line={line}
+                              lineNo={lineNo}
+                              isDefuser={isDefuser}
+                              isActive={active}
+                              isChosen={chosen}
                               onClick={() => handleLineClick(lineNo)}
-                              className={[
-                                'flex items-center px-2 py-1 rounded transition-colors',
-                                isDefuser ? 'cursor-pointer' : '',
-                                active ? 'ring-2 ring-amber-400' : '',
-                                chosen ? 'bg-red-900/30' : isDefuser ? 'hover:bg-stone-800/60' : '',
-                              ].filter(Boolean).join(' ')}
-                              role={isDefuser ? 'button' : undefined}
-                              tabIndex={isDefuser ? 0 : undefined}
-                            >
-                              <span className="text-stone-500 w-10 text-right mr-4 select-none">
-                                {lineNo}
-                              </span>
-                              <code className="text-green-300">{line}</code>
-                            </div>
+                            />
                           );
                         })}
                       </pre>
                     </div>
+                    {isDefuser && (
+                      <p className="text-xs text-stone-400 mt-2">
+                        Klik baris untuk menandai bug. Baris terpilih: <span className="text-red-400 font-bold">{foundBugs.length}</span>
+                      </p>
+                    )}
                   </div>
                 )}
 
-                {/* Panel expert - HANYA untuk expert dan host */}
+                {/* Panel expert */}
                 {(isExpert || isHost) && (
-                  <div className="grid md:grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <Accordion type="multiple" className="space-y-2">
                       <AccordionItem value="arah">
-                        <AccordionTrigger className="text-stone-200 text-sm">
+                        <AccordionTrigger className="text-stone-200 text-xs sm:text-sm hover:text-amber-300 transition-colors">
                           Arah Penelusuran
                         </AccordionTrigger>
                         <AccordionContent className="p-3 rounded-lg bg-stone-900/60 border border-stone-700/40">
@@ -580,7 +761,7 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
                       </AccordionItem>
 
                       <AccordionItem value="cek">
-                        <AccordionTrigger className="text-stone-200 text-sm">
+                        <AccordionTrigger className="text-stone-200 text-xs sm:text-sm hover:text-amber-300 transition-colors">
                           Daftar Cek Non-Spoiler
                         </AccordionTrigger>
                         <AccordionContent className="p-3 rounded-lg bg-stone-900/60 border border-stone-700/40">
@@ -596,7 +777,7 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
 
                     <Accordion type="multiple" className="space-y-2">
                       <AccordionItem value="sokratik">
-                        <AccordionTrigger className="text-stone-200 text-sm">
+                        <AccordionTrigger className="text-stone-200 text-xs sm:text-sm hover:text-amber-300 transition-colors">
                           Pertanyaan Pemandu
                         </AccordionTrigger>
                         <AccordionContent className="p-3 rounded-lg bg-stone-900/60 border border-stone-700/40">
@@ -610,7 +791,7 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
                       </AccordionItem>
 
                       <AccordionItem value="larangan">
-                        <AccordionTrigger className="text-stone-200 text-sm">
+                        <AccordionTrigger className="text-stone-200 text-xs sm:text-sm hover:text-amber-300 transition-colors">
                           Pantangan Mengungkap
                         </AccordionTrigger>
                         <AccordionContent className="p-3 rounded-lg bg-stone-900/60 border border-stone-700/40">
@@ -625,29 +806,30 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
                   </div>
                 )}
 
-                {/* Input area - hanya untuk defuser */}
+                {/* Input area - defuser only */}
                 {isDefuser && (
                   <div className="space-y-3">
                     <Button
                       onClick={handleSubmit}
                       disabled={foundBugs.length === 0 || submitting}
-                      className="w-full bg-gradient-to-r from-amber-600 via-amber-700 to-red-600 hover:from-amber-500 hover:via-amber-600 hover:to-red-500 text-stone-900 font-semibold py-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="w-full bg-gradient-to-r from-amber-600 via-amber-700 to-red-600 hover:from-amber-500 hover:via-amber-600 hover:to-red-500 text-stone-900 font-semibold py-2 sm:py-3 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 dungeon-button-glow"
+                      aria-label={`Kirim laporan ${foundBugs.length} bug`}
                     >
-                      {submitting ? 'Mengirim...' : `Kirim Laporan Bug (${foundBugs.length})`}
+                      {submitting ? (
+                        <span className="flex items-center justify-center gap-2">
+                          <span className="animate-spin">⚙️</span>
+                          Mengirim...
+                        </span>
+                      ) : (
+                        `Kirim Laporan Bug (${foundBugs.length})`
+                      )}
                     </Button>
 
-                    {defuserHintsBug.length > 0 && (
-                      <div className="p-3 rounded-lg border border-purple-700/30 bg-gradient-to-r from-purple-950/40 to-stone-900/40">
-                        <h5 className="text-purple-200 font-medium mb-1 text-sm">
-                          Bisik-bisik Lorong
-                        </h5>
-                        <ul className="text-xs text-purple-200/90 space-y-1 list-disc pl-5">
-                          {defuserHintsBug.map((hint, i) => (
-                            <li key={i}>{hint}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
+                    <HintSection
+                      hints={defuserHintsBug}
+                      title="Bisik-bisik Lorong"
+                      colorScheme="purple"
+                    />
                   </div>
                 )}
               </CardContent>
@@ -655,6 +837,73 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
           )}
         </CardContent>
       </Card>
+
+      {/* ========================================
+          CUSTOM DUNGEON STYLES
+          ======================================== */}
+      <style>{`
+        /* Torch Flicker Animation */
+        .dungeon-torch-flicker {
+          display: inline-block;
+        }
+
+        /* Rune Float Animation */
+        .dungeon-rune-float {
+          display: inline-block;
+        }
+
+        /* Card Glows */
+        .dungeon-card-glow {
+          box-shadow: 0 0 30px rgba(251, 191, 36, 0.4), 0 0 60px rgba(251, 191, 36, 0.2);
+        }
+
+        .dungeon-card-glow-blue {
+          box-shadow: 0 0 30px rgba(59, 130, 246, 0.4), 0 0 60px rgba(59, 130, 246, 0.2);
+        }
+
+        .dungeon-card-glow-red {
+          box-shadow: 0 0 30px rgba(239, 68, 68, 0.4), 0 0 60px rgba(239, 68, 68, 0.2);
+        }
+
+        /* Line Glow */
+        .dungeon-line-glow {
+          box-shadow: 0 0 15px rgba(251, 191, 36, 0.5);
+        }
+
+        /* Button Glow */
+        .dungeon-button-glow:hover:not(:disabled) {
+          box-shadow: 0 0 20px rgba(251, 191, 36, 0.5), 0 0 40px rgba(251, 191, 36, 0.3);
+        }
+
+        /* Badge Glow */
+        .dungeon-badge-glow {
+          filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.4));
+        }
+
+        /* Text Glow */
+        .dungeon-glow-text {
+          text-shadow: 0 0 20px rgba(251, 191, 36, 0.6), 0 0 40px rgba(251, 191, 36, 0.4);
+        }
+
+        /* Hint Glow */
+        .dungeon-hint-glow {
+          box-shadow: 0 0 15px rgba(59, 130, 246, 0.3);
+        }
+
+        /* Code Block */
+        .dungeon-code-block {
+          background: linear-gradient(to bottom, rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.6));
+        }
+
+        /* Responsive Adjustments */
+        @media (max-width: 768px) {
+          .dungeon-card-glow,
+          .dungeon-card-glow-blue,
+          .dungeon-card-glow-red {
+            box-shadow: 0 0 15px rgba(251, 191, 36, 0.3), 0 0 30px rgba(251, 191, 36, 0.15);
+          }
+        }
+      `}</style>
     </div>
   );
 }
