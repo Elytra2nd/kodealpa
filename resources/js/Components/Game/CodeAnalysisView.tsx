@@ -2,7 +2,6 @@ import React, { useMemo, useState, useCallback, useRef, useEffect, memo } from '
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/Components/ui/card';
 import { Button } from '@/Components/ui/button';
 import { Badge } from '@/Components/ui/badge';
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/Components/ui/accordion';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/Components/ui/tabs';
 import { gsap } from 'gsap';
 
@@ -14,8 +13,8 @@ const CONFIG = {
   RUNE_FLOAT_DURATION: 3200,
   LINE_HOVER_DURATION: 0.3,
   MAX_INPUT_LENGTH: 200,
-  MAX_CODE_HEIGHT: 380,
-  MAX_EXPERT_CONTENT_HEIGHT: 320,
+  MAX_CODE_HEIGHT: 420,
+  MAX_EXPERT_CONTENT_HEIGHT: 340,
 } as const;
 
 const RUNE_MAP: Record<string, string> = {
@@ -349,11 +348,6 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
               <Badge className="bg-stone-800 text-stone-200 border border-stone-700/60 text-xs">
                 {(cipherType || '—').toUpperCase()}
               </Badge>
-              {isCaesarCipher && caesarRuneHint && (
-                <Badge className="bg-stone-800 text-amber-200 border border-amber-700/60 text-xs">
-                  {caesarRuneHint}
-                </Badge>
-              )}
             </div>
           )}
         </CardHeader>
@@ -362,7 +356,7 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
           {/* CIPHER PUZZLE */}
           {isCipherPuzzle && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-              {/* Defuser Panel - PUZZLE ONLY */}
+              {/* Defuser Panel - WITH SHIFT HINT */}
               {(isDefuser || isHost) && (
                 <Card className="border-2 border-blue-700/40 bg-gradient-to-b from-stone-900/80 to-blue-950/40">
                   <CardHeader className="pb-2 p-2">
@@ -378,6 +372,18 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
                           <code className="text-green-300 text-xs font-mono break-all">
                             {puzzle.defuserView.cipher}
                           </code>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* SHIFT HINT - Moved to Defuser */}
+                    {isDefuser && isCaesarCipher && caesarRuneHint && (
+                      <div className="p-2 rounded-lg bg-amber-900/30 border border-amber-700/50">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-amber-200">Pergeseran Sigil:</span>
+                          <Badge className="bg-amber-800 text-amber-100 text-sm font-bold">
+                            {caesarRuneHint}
+                          </Badge>
                         </div>
                       </div>
                     )}
@@ -412,7 +418,7 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
                 </Card>
               )}
 
-              {/* Expert Panel */}
+              {/* Expert Panel - WITHOUT SHIFT HINT */}
               {(isExpert || isHost) && (
                 <Card className="border-2 border-emerald-700/40 bg-gradient-to-b from-stone-900/80 to-emerald-950/40">
                   <CardHeader className="pb-2 p-2">
@@ -449,15 +455,11 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
                           className="space-y-2 overflow-y-auto"
                           style={{ maxHeight: `${CONFIG.MAX_EXPERT_CONTENT_HEIGHT}px` }}
                         >
+                          {/* Caesar Alphabet Table - WITHOUT SHIFT DISPLAY */}
                           {isCaesarCipher && (
                             <div className="p-2 rounded-lg bg-stone-900/60 border border-stone-700/40">
+                              <h6 className="text-xs text-stone-300 mb-1 font-semibold">Caesar Cipher Table</h6>
                               <div className="text-xs text-stone-300 space-y-1">
-                                <div className="flex items-center gap-1 mb-1">
-                                  <Badge className="bg-amber-800/80 text-amber-100 text-xs">
-                                    {caesarRuneHint || '?'}
-                                  </Badge>
-                                  <span className="text-stone-400 text-xs">Shift</span>
-                                </div>
                                 <div className="grid grid-cols-13 gap-0.5">
                                   {alphabet.slice(0, 13).map((ch) => (
                                     <Badge key={ch} className="bg-stone-800 text-stone-100 text-[10px] p-0.5">
@@ -498,7 +500,7 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
           {/* BUG PUZZLE */}
           {isBugPuzzle && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-              {/* Defuser Panel - PUZZLE ONLY (NO HINTS) */}
+              {/* Defuser Panel - ONLY CODE (NO EXTRA INFO) */}
               {(isDefuser || isHost) && (
                 <Card className="border-2 border-red-700/40 bg-gradient-to-b from-stone-900/80 to-red-950/30">
                   <CardHeader className="pb-2 p-2">
@@ -507,47 +509,37 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-2 p-2">
-                    {Array.isArray(puzzle.defuserView?.codeLines) && (
+                    {Array.isArray(puzzle.defuserView?.codeLines) && isDefuser && (
                       <>
-                        <div>
-                          <h4 className="text-stone-200 font-semibold text-xs mb-1">Kode Program</h4>
-                          <div
-                            className="bg-stone-950 rounded-lg p-1 border border-stone-700/60 overflow-y-auto"
-                            style={{ maxHeight: `${CONFIG.MAX_CODE_HEIGHT}px` }}
-                          >
-                            <pre className="text-xs">
-                              {puzzle.defuserView.codeLines.map((line, index) => {
-                                const lineNo = index + 1;
-                                return (
-                                  <CodeLine
-                                    key={index}
-                                    line={line}
-                                    lineNo={lineNo}
-                                    isDefuser={isDefuser}
-                                    isActive={selectedLine === lineNo}
-                                    isChosen={foundBugs.includes(lineNo)}
-                                    onClick={() => handleLineClick(lineNo)}
-                                  />
-                                );
-                              })}
-                            </pre>
-                          </div>
+                        <div
+                          className="bg-stone-950 rounded-lg p-1 border border-stone-700/60 overflow-y-auto"
+                          style={{ maxHeight: `${CONFIG.MAX_CODE_HEIGHT}px` }}
+                        >
+                          <pre className="text-xs">
+                            {puzzle.defuserView.codeLines.map((line, index) => {
+                              const lineNo = index + 1;
+                              return (
+                                <CodeLine
+                                  key={index}
+                                  line={line}
+                                  lineNo={lineNo}
+                                  isDefuser={isDefuser}
+                                  isActive={selectedLine === lineNo}
+                                  isChosen={foundBugs.includes(lineNo)}
+                                  onClick={() => handleLineClick(lineNo)}
+                                />
+                              );
+                            })}
+                          </pre>
                         </div>
 
-                        {isDefuser && (
-                          <>
-                            <p className="text-xs text-stone-400">
-                              Bug terpilih: <span className="text-red-400 font-bold text-sm">{foundBugs.length}</span>
-                            </p>
-                            <Button
-                              onClick={handleSubmit}
-                              disabled={foundBugs.length === 0 || submitting}
-                              className="w-full bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-stone-900 font-semibold py-2 rounded-lg disabled:opacity-50 transition-all text-xs"
-                            >
-                              {submitting ? 'Mengirim...' : `✨ Kirim (${foundBugs.length})`}
-                            </Button>
-                          </>
-                        )}
+                        <Button
+                          onClick={handleSubmit}
+                          disabled={foundBugs.length === 0 || submitting}
+                          className="w-full bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-stone-900 font-semibold py-2 rounded-lg disabled:opacity-50 transition-all text-xs"
+                        >
+                          {submitting ? 'Mengirim...' : `✨ Kirim (${foundBugs.length})`}
+                        </Button>
                       </>
                     )}
                   </CardContent>
