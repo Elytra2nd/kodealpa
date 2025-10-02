@@ -19,7 +19,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ... (langkah setup node, npm ci, npm run build tetap sama) ...
       - name: Setup Node.js 22.x
         uses: actions/setup-node@v4
         with:
@@ -30,84 +29,59 @@ jobs:
         run: npm ci
 
       - name: Build for production
-        env:
-          NODE_ENV: production
-          VITE_HMR_HOST: ''
         run: npm run build
 
-      - name: Start ssh-agent
-        uses: webfactory/ssh-agent@v0.5.4
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.DEPLOY_KEY }}
 
       - name: Add server to known_hosts
         run: |
           mkdir -p ~/.ssh
-          ssh-keyscan -p $DEPLOY_PORT -H $DEPLOY_HOST > ~/.ssh/known_hosts
+          ssh-keyscan -p ${{ env.DEPLOY_PORT }} -H ${{ env.DEPLOY_HOST }} >> ~/.ssh/known_hosts
 
-      # ✅ LANGKAH BARU: Siapkan direktori dan berikan izin ke deploy user
-      - name: Prepare Directories and Fix Ownership
+      - name: Prepare Server Directories
         run: |
-          echo "🔐 Preparing destination directory..."
-          ssh -p $DEPLOY_PORT root@$DEPLOY_HOST << 'ENDSSH'
+          echo "🔐 Preparing directories on server..."
+          ssh -p ${{ env.DEPLOY_PORT }} root@${{ env.DEPLOY_HOST }} << 'ENDSSH'
             mkdir -p ${{ env.DEPLOY_PATH }}
+            # Set ownership to the deploy user so rsync can write files
             chown -R ${{ env.DEPLOY_USER }}:${{ env.DEPLOY_USER }} ${{ env.DEPLOY_PATH }}
-            echo "✅ Directory ownership set for deploy user"
+            echo "✅ Directories are ready."
           ENDSSH
 
-      - name: Deploy application files
+      - name: Deploy Application using rsync
         run: |
-          echo "📦 Deploying application..."
+          echo "📦 Deploying application files..."
           rsync -avz --delete \
-            -e "ssh -p $DEPLOY_PORT" \
-            --exclude='.git/' \
-            --exclude='node_modules/' \
-            --exclude='vendor/' \
-            --exclude='.env' \
-            --exclude='storage/' \
-            --exclude='bootstrap/cache/' \
-            --exclude='public/build/' \
-            --exclude='public/hot' \
+            -e "ssh -p ${{ env.DEPLOY_PORT }}" \
+            --exclude ".git/" \
+            --exclude "node_modules/" \
+            --exclude ".env" \
             ./ \
-            $DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/
-          echo "✅ Code deployed"
+            ${{ env.DEPLOY_USER }}@${{ env.DEPLOY_HOST }}:${{ env.DEPLOY_PATH }}/
+          echo "✅ Application files deployed."
 
-      - name: Deploy built assets
+      - name: Run Deployment Script on Server
         run: |
-          echo "📦 Deploying assets..."
-          rsync -rlvz --delete \
-            -e "ssh -p $DEPLOY_PORT" \
-            public/build/ \
-            $DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/public/build/
-          echo "✅ Assets deployed"
+          echo "🚀 Executing deployment script on server..."
+          ssh -p ${{ env.DEPLOY_PORT }} ${{ env.DEPLOY_USER }}@${{ env.DEPLOY_HOST }} \
+            "bash ${{ env.DEPLOY_PATH }}/deploy.sh"
 
-      # Langkah ini tetap penting untuk mengatur izin akhir untuk web server (www-data)
       - name: Finalize Permissions for Web Server
         run: |
-          echo "🔐 Finalizing permissions for web server..."
-          ssh -p $DEPLOY_PORT root@$DEPLOY_HOST << 'ENDSSH'
+          echo "🔐 Setting final permissions for web server..."
+          ssh -p ${{ env.DEPLOY_PORT }} root@${{ env.DEPLOY_HOST }} << 'ENDSSH'
             cd ${{ env.DEPLOY_PATH }}
-            chown -R www-data:www-data storage bootstrap/cache public/build
+            # Directories that need to be writable by the web server
+            chown -R www-data:www-data storage bootstrap/cache
             chmod -R 775 storage bootstrap/cache
-            chmod -R 755 public/build
-            echo "✅ Permissions finalized"
+            echo "✅ Final permissions are set."
           ENDSSH
 
-      - name: Run deploy script
+      - name: Verify Deployment
         run: |
-          echo "🚀 Running deployment..."
-          ssh -p $DEPLOY_PORT $DEPLOY_USER@$DEPLOY_HOST \
-            "bash $DEPLOY_PATH/deploy.sh"
-            
-      # ... (langkah verify dan success summary tetap sama) ...
-      - name: Verify deployment
-        run: |
-          ssh -p $DEPLOY_PORT $DEPLOY_USER@$DEPLOY_HOST \
-            "test -f $DEPLOY_PATH/public/build/manifest.json && \
-             test ! -f $DEPLOY_PATH/public/hot && \
-             echo '✅ Deployment verified!'"
-
-      - name: Success summary
-        if: success()
-        run: |
-          echo "Deployment successful!"
+          echo "🔍 Verifying deployment..."
+          ssh -p ${{ env.DEPLOY_PORT }} ${{ env.DEPLOY_USER }}@${{ env.DEPLOY_HOST }} \
+            "test -f ${{ env.DEPLOY_PATH }}/public/build/manifest.json && echo '✅ Deployment looks good!'"
