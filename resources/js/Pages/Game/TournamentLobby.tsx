@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, memo } from 'react';
 import { Head, usePage, router } from '@inertiajs/react';
+import { motion, AnimatePresence, useMotionValue, useTransform, PanInfo } from 'framer-motion';
 import { gameApi } from '@/services/gameApi';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/Components/ui/card';
@@ -14,11 +15,415 @@ import {
   normalizeTournamentData,
   normalizeBoolean
 } from '@/types/game';
+import { toast } from 'sonner';
 
-export default function TournamentLobby() {
+// ========================================
+// CONSTANTS & CONFIGURATIONS
+// ========================================
+const POLLING_INTERVAL = 5000;
+const MAX_GROUP_NAME_LENGTH = 30;
+const MAX_TOURNAMENT_DISPLAY = 10;
+const SWIPE_THRESHOLD = 50; // pixels untuk trigger swipe
+const MOBILE_BREAKPOINT = 768; // px
+
+const TOURNAMENT_STATUS = {
+  waiting: {
+    color: 'bg-gradient-to-r from-yellow-500 to-amber-600',
+    text: 'Menunggu',
+    icon: '⏳',
+    description: 'Menunggu peserta'
+  },
+  qualification: {
+    color: 'bg-gradient-to-r from-blue-500 to-cyan-600',
+    text: 'Kualifikasi',
+    icon: '🎯',
+    description: 'Babak kualifikasi'
+  },
+  semifinals: {
+    color: 'bg-gradient-to-r from-purple-500 to-pink-600',
+    text: 'Semi Final',
+    icon: '⚔️',
+    description: 'Babak semi final'
+  },
+  finals: {
+    color: 'bg-gradient-to-r from-red-500 to-rose-600',
+    text: 'Final',
+    icon: '👑',
+    description: 'Pertandingan final'
+  },
+  completed: {
+    color: 'bg-gradient-to-r from-green-500 to-emerald-600',
+    text: 'Selesai',
+    icon: '🏆',
+    description: 'Turnamen selesai'
+  },
+} as const;
+
+const ROLE_CONFIG = {
+  defuser: {
+    icon: '💣',
+    title: 'Penjinakkan Bom',
+    color: 'red',
+    description: 'Menangani perangkat berbahaya',
+    gradient: 'from-red-500 to-orange-600'
+  },
+  expert: {
+    icon: '📖',
+    title: 'Ahli Manual',
+    color: 'blue',
+    description: 'Membimbing proses penjinakkan',
+    gradient: 'from-blue-500 to-cyan-600'
+  }
+} as const;
+
+// ========================================
+// CUSTOM HOOKS
+// ========================================
+const useIsMobile = () => {
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
+    };
+
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  return isMobile;
+};
+
+const useTouchOptimized = () => {
+  useEffect(() => {
+    // Prevent pull-to-refresh on mobile
+    document.body.style.overscrollBehavior = 'contain';
+
+    // Prevent double-tap zoom
+    let lastTouchEnd = 0;
+    const preventZoom = (e: TouchEvent) => {
+      const now = Date.now();
+      if (now - lastTouchEnd <= 300) {
+        e.preventDefault();
+      }
+      lastTouchEnd = now;
+    };
+
+    document.addEventListener('touchend', preventZoom, { passive: false });
+
+    return () => {
+      document.body.style.overscrollBehavior = 'auto';
+      document.removeEventListener('touchend', preventZoom);
+    };
+  }, []);
+};
+
+// ========================================
+// ANIMATION VARIANTS
+// ========================================
+const fadeInUp = {
+  initial: { opacity: 0, y: 20 },
+  animate: { opacity: 1, y: 0 },
+  exit: { opacity: 0, y: -20 }
+};
+
+const scaleIn = {
+  initial: { scale: 0.9, opacity: 0 },
+  animate: { scale: 1, opacity: 1 },
+  exit: { scale: 0.9, opacity: 0 }
+};
+
+const slideInFromBottom = {
+  initial: { y: '100%', opacity: 0 },
+  animate: { y: 0, opacity: 1 },
+  exit: { y: '100%', opacity: 0 }
+};
+
+const staggerContainer = {
+  animate: {
+    transition: {
+      staggerChildren: 0.08
+    }
+  }
+};
+
+// ========================================
+// SWIPEABLE CARD COMPONENT
+// ========================================
+interface SwipeableCardProps {
+  children: React.ReactNode;
+  onSwipeLeft?: () => void;
+  onSwipeRight?: () => void;
+  className?: string;
+}
+
+const SwipeableCard = memo(({ children, onSwipeLeft, onSwipeRight, className = '' }: SwipeableCardProps) => {
+  const x = useMotionValue(0);
+  const opacity = useTransform(x, [-200, 0, 200], [0.5, 1, 0.5]);
+  const scale = useTransform(x, [-200, 0, 200], [0.95, 1, 0.95]);
+
+  const handleDragEnd = (event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
+    if (info.offset.x > SWIPE_THRESHOLD && onSwipeRight) {
+      onSwipeRight();
+    } else if (info.offset.x < -SWIPE_THRESHOLD && onSwipeLeft) {
+      onSwipeLeft();
+    }
+  };
+
+  return (
+    <motion.div
+      drag="x"
+      dragConstraints={{ left: 0, right: 0 }}
+      dragElastic={0.7}
+      onDragEnd={handleDragEnd}
+      style={{ x, opacity, scale }}
+      className={`cursor-grab active:cursor-grabbing touch-pan-y ${className}`}
+      whileTap={{ scale: 0.98 }}
+    >
+      {children}
+    </motion.div>
+  );
+});
+
+SwipeableCard.displayName = 'SwipeableCard';
+
+// ========================================
+// BOTTOM SHEET COMPONENT (Mobile)
+// ========================================
+interface BottomSheetProps {
+  isOpen: boolean;
+  onClose: () => void;
+  children: React.ReactNode;
+  title?: string;
+}
+
+const BottomSheet = memo(({ isOpen, onClose, children, title }: BottomSheetProps) => {
+  const y = useMotionValue(0);
+  const isMobile = useIsMobile();
+
+  const handleDragEnd = (event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
+    if (info.offset.y > 100) {
+      onClose();
+    }
+  };
+
+  if (!isMobile) return null;
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <>
+          {/* Backdrop */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="fixed inset-0 bg-black/60 z-40 backdrop-blur-sm"
+          />
+
+          {/* Bottom Sheet */}
+          <motion.div
+            initial={{ y: '100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
+            drag="y"
+            dragConstraints={{ top: 0, bottom: 0 }}
+            dragElastic={{ top: 0, bottom: 0.5 }}
+            onDragEnd={handleDragEnd}
+            style={{ y }}
+            transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+            className="fixed bottom-0 left-0 right-0 z-50 bg-gradient-to-b from-stone-800 to-stone-900 rounded-t-3xl shadow-2xl max-h-[90vh] overflow-hidden"
+          >
+            {/* Drag Handle */}
+            <div className="flex justify-center pt-3 pb-2">
+              <motion.div
+                className="w-12 h-1.5 bg-gray-600 rounded-full"
+                whileTap={{ scale: 1.2 }}
+              />
+            </div>
+
+            {/* Header */}
+            {title && (
+              <div className="px-6 py-4 border-b border-gray-700">
+                <h3 className="text-xl font-bold text-amber-300">{title}</h3>
+              </div>
+            )}
+
+            {/* Content */}
+            <div className="overflow-y-auto max-h-[calc(90vh-80px)] overscroll-contain">
+              {children}
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  );
+});
+
+BottomSheet.displayName = 'BottomSheet';
+
+// ========================================
+// MOBILE-OPTIMIZED COMPONENTS
+// ========================================
+const StatusBadge = memo(({ status }: { status: string }) => {
+  const config = TOURNAMENT_STATUS[status as keyof typeof TOURNAMENT_STATUS] || TOURNAMENT_STATUS.waiting;
+  const isMobile = useIsMobile();
+
+  return (
+    <motion.div
+      initial={{ scale: 0 }}
+      animate={{ scale: 1 }}
+      whileTap={{ scale: 0.95 }}
+      className={isMobile ? 'flex-shrink-0' : ''}
+    >
+      <Badge className={`${config.color} text-white flex items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 shadow-lg text-xs sm:text-sm`}>
+        <span className="text-sm sm:text-base">{config.icon}</span>
+        <span className="font-semibold whitespace-nowrap">{config.text}</span>
+      </Badge>
+    </motion.div>
+  );
+});
+
+StatusBadge.displayName = 'StatusBadge';
+
+const LoadingSpinner = memo(() => (
+  <motion.div
+    className="flex items-center justify-center space-x-2"
+    initial={{ opacity: 0 }}
+    animate={{ opacity: 1 }}
+  >
+    {[0, 0.2, 0.4].map((delay, i) => (
+      <motion.div
+        key={i}
+        className="w-2 h-2 sm:w-3 sm:h-3 bg-amber-500 rounded-full"
+        animate={{ y: [0, -15, 0] }}
+        transition={{ duration: 0.6, repeat: Infinity, delay }}
+      />
+    ))}
+  </motion.div>
+));
+
+LoadingSpinner.displayName = 'LoadingSpinner';
+
+const RoleSelectionCard = memo(({
+  role,
+  selected,
+  onSelect
+}: {
+  role: 'defuser' | 'expert';
+  selected: boolean;
+  onSelect: () => void;
+}) => {
+  const config = ROLE_CONFIG[role];
+  const isMobile = useIsMobile();
+
+  return (
+    <motion.div
+      whileTap={{ scale: 0.95 }}
+      onClick={onSelect}
+      className="cursor-pointer touch-manipulation"
+    >
+      <Card
+        className={`
+          transition-all duration-300 overflow-hidden
+          ${selected
+            ? `border-4 border-${config.color}-500 bg-gradient-to-br from-${config.color}-900/40 to-stone-900 shadow-2xl`
+            : 'border-2 border-gray-700 bg-gray-900/30 hover:border-gray-500'
+          }
+        `}
+      >
+        <CardContent className={`${isMobile ? 'p-4' : 'p-6'} text-center relative`}>
+          {selected && (
+            <motion.div
+              className="absolute top-2 right-2"
+              initial={{ scale: 0, rotate: -180 }}
+              animate={{ scale: 1, rotate: 0 }}
+              transition={{ type: 'spring', stiffness: 200 }}
+            >
+              <span className="text-xl sm:text-2xl">✓</span>
+            </motion.div>
+          )}
+          <motion.div
+            className={`${isMobile ? 'text-3xl' : 'text-4xl sm:text-5xl'} mb-2 sm:mb-3`}
+            animate={selected ? { rotate: [0, -10, 10, 0] } : {}}
+            transition={{ duration: 0.5 }}
+          >
+            {config.icon}
+          </motion.div>
+          <h4 className={`font-bold ${isMobile ? 'text-base' : 'text-lg'} mb-1 sm:mb-2 text-${config.color}-300`}>
+            {config.title}
+          </h4>
+          <p className={`text-${config.color}-200 ${isMobile ? 'text-xs' : 'text-sm'} leading-relaxed`}>
+            {config.description}
+          </p>
+        </CardContent>
+      </Card>
+    </motion.div>
+  );
+});
+
+RoleSelectionCard.displayName = 'RoleSelectionCard';
+
+// ========================================
+// FLOATING ACTION BUTTON
+// ========================================
+const FloatingActionButton = memo(({
+  onClick,
+  icon,
+  label,
+  variant = 'primary'
+}: {
+  onClick: () => void;
+  icon: string;
+  label: string;
+  variant?: 'primary' | 'success';
+}) => {
+  const isMobile = useIsMobile();
+
+  return (
+    <motion.button
+      onClick={onClick}
+      initial={{ scale: 0, rotate: -180 }}
+      animate={{ scale: 1, rotate: 0 }}
+      whileHover={{ scale: 1.1 }}
+      whileTap={{ scale: 0.9 }}
+      className={`
+        fixed ${isMobile ? 'bottom-20 right-4' : 'bottom-8 right-8'} z-50
+        ${variant === 'primary'
+          ? 'bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-700 hover:to-yellow-700'
+          : 'bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700'
+        }
+        text-white ${isMobile ? 'p-4' : 'p-5'} rounded-full shadow-2xl
+        flex items-center gap-2 min-w-[56px] min-h-[56px]
+        touch-manipulation
+      `}
+      title={label}
+      aria-label={label}
+    >
+      <motion.span
+        className={isMobile ? 'text-2xl' : 'text-3xl'}
+        animate={{ scale: [1, 1.2, 1] }}
+        transition={{ duration: 2, repeat: Infinity }}
+      >
+        {icon}
+      </motion.span>
+    </motion.button>
+  );
+});
+
+FloatingActionButton.displayName = 'FloatingActionButton';
+
+// ========================================
+// MAIN COMPONENT
+// ========================================
+export default function TurnamenLobby() {
   const { auth } = usePage().props as any;
+  const isMobile = useIsMobile();
+  useTouchOptimized();
 
-  // ✅ FIXED: Explicit typing for all state variables
+  // State Management
   const [tournaments, setTournaments] = useState<TournamentData[]>([]);
   const [activeTournament, setActiveTournament] = useState<TournamentData | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -27,102 +432,76 @@ export default function TournamentLobby() {
   const [selectedRole, setSelectedRole] = useState<'defuser' | 'expert'>('defuser');
   const [groupName, setGroupName] = useState<string>('');
   const [showVoiceChat, setShowVoiceChat] = useState<boolean>(false);
-  const [error, setError] = useState<string>('');
   const [selectedTournament, setSelectedTournament] = useState<TournamentData | null>(null);
+  const [showJoinSheet, setShowJoinSheet] = useState<boolean>(false);
 
-  // Tournament animations
-  const tournamentStyles = `
-    @keyframes championGlow {
-      0%, 100% { box-shadow: 0 0 20px rgba(255, 215, 0, 0.6), 0 0 40px rgba(255, 215, 0, 0.3); }
-      50% { box-shadow: 0 0 30px rgba(255, 215, 0, 0.8), 0 0 60px rgba(255, 215, 0, 0.5); }
+  // ========================================
+  // MEMOIZED VALUES
+  // ========================================
+  const currentUserTeamId = useMemo(() => {
+    if (!activeTournament || !Array.isArray(activeTournament.groups)) {
+      return undefined;
     }
-    @keyframes eliminationPulse {
-      0%, 100% { box-shadow: 0 0 15px rgba(239, 68, 68, 0.5); }
-      50% { box-shadow: 0 0 25px rgba(239, 68, 68, 0.8); }
-    }
-    @keyframes battleReady {
-      0%, 100% { transform: scale(1); }
-      50% { transform: scale(1.02); }
-    }
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(20px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-    .champion-glow { animation: championGlow 3s ease-in-out infinite; }
-    .elimination-pulse { animation: eliminationPulse 2s ease-in-out infinite; }
-    .battle-ready { animation: battleReady 2s ease-in-out infinite; }
-    .fade-in { animation: fadeIn 0.5s ease-out; }
-  `;
+    const userGroup = activeTournament.groups.find((group: TournamentGroup) =>
+      Array.isArray(group.participants) &&
+      group.participants.some((p: any) => p.user_id === auth?.user?.id)
+    );
+    return userGroup?.id;
+  }, [activeTournament, auth?.user?.id]);
 
-  useEffect(() => {
-    loadTournaments();
-    const interval = setInterval(loadTournaments, 5000);
-    return () => clearInterval(interval);
-  }, []);
+  const globalLeaderboard = useMemo(() =>
+    tournaments
+      .flatMap(t => t.groups || [])
+      .filter(g => typeof g.rank === 'number' && g.rank <= MAX_TOURNAMENT_DISPLAY)
+      .sort((a, b) => (a.rank || 999) - (b.rank || 999))
+      .map(group => ({
+        id: group.id,
+        name: group.name,
+        rank: group.rank,
+        score: group.score,
+        status: group.status,
+        completion_time: group.completion_time,
+        participants: group.participants,
+      })),
+    [tournaments]
+  );
 
-  // ✅ Type guards for extra safety
-  const isValidTournamentData = (tournament: any): tournament is TournamentData => {
-    return tournament &&
-           typeof tournament.id === 'number' &&
-           typeof tournament.name === 'string' &&
-           Array.isArray(tournament.groups);
-  };
-
-  const isValidTournamentGroup = (group: any): group is TournamentGroup => {
-    return group &&
-           typeof group.id === 'number' &&
-           typeof group.name === 'string' &&
-           Array.isArray(group.participants);
-  };
-
-  // ✅ FIXED: Complete data loading function with proper type handling
-  const loadTournaments = async (): Promise<void> => {
+  // ========================================
+  // CALLBACKS
+  // ========================================
+  const loadTournaments = useCallback(async (): Promise<void> => {
     try {
-      console.log('🔄 Loading tournaments list...');
       const response = await gameApi.getTournaments();
-
-      // ✅ FIXED: Explicit typing and normalization
-      const normalizedTournaments: TournamentData[] = (response.tournaments || []).map((tournament: any) => ({
-        ...normalizeTournamentData(tournament),
-        // ✅ Ensure bracket is always an array to prevent undefined errors
-        bracket: Array.isArray(tournament.bracket) ? tournament.bracket : [],
+      const normalized: TournamentData[] = (response.tournaments || []).map((t: any) => ({
+        ...normalizeTournamentData(t),
+        bracket: Array.isArray(t.bracket) ? t.bracket : [],
       }));
 
-      setTournaments(normalizedTournaments);
+      setTournaments(normalized);
 
-      // ✅ FIXED: Explicit type annotations to prevent 'never' inference
-      const userTournament = normalizedTournaments.find((tournament: TournamentData) =>
-        Array.isArray(tournament.groups) && tournament.groups.some((group: TournamentGroup) =>
-          Array.isArray(group.participants) && group.participants.some((participant: any) =>
-            participant.user_id === auth?.user?.id
+      const userTournament = normalized.find((t: TournamentData) =>
+        Array.isArray(t.groups) && t.groups.some((g: TournamentGroup) =>
+          Array.isArray(g.participants) && g.participants.some((p: any) =>
+            p.user_id === auth?.user?.id
           )
         )
       );
 
-      if (userTournament) {
-        setActiveTournament(userTournament);
-      } else {
-        setActiveTournament(null);
-      }
-
+      setActiveTournament(userTournament || null);
       setLoading(false);
-      setError('');
     } catch (error: any) {
-      console.error('❌ Failed to load tournaments:', error);
-      setError(error.response?.data?.message || 'Failed to load tournament data');
+      console.error('❌ Gagal memuat turnamen:', error);
+      toast.error('Gagal memuat data turnamen');
       setLoading(false);
     }
-  };
+  }, [auth?.user?.id]);
 
-  const createTournament = async (): Promise<void> => {
+  const createTournament = useCallback(async (): Promise<void> => {
     if (creating) return;
 
     setCreating(true);
-    setError('');
-
     try {
-      console.log('🏆 Creating new tournament...');
-      const newTournamentName = `Tournament ${new Date().toLocaleString('id-ID', {
+      const newTournamentName = `Turnamen ${new Date().toLocaleString('id-ID', {
         day: '2-digit',
         month: 'short',
         hour: '2-digit',
@@ -135,27 +514,24 @@ export default function TournamentLobby() {
       });
 
       if (response.success) {
+        toast.success('Turnamen berhasil dibuat!');
         await loadTournaments();
       } else {
-        throw new Error(response.message || 'Failed to create tournament');
+        throw new Error(response.message || 'Gagal membuat turnamen');
       }
-
-      setCreating(false);
     } catch (error: any) {
-      console.error('❌ Tournament creation failed:', error);
-      setError(error.response?.data?.message || 'Failed to create tournament');
+      console.error('❌ Pembuatan turnamen gagal:', error);
+      toast.error(error.response?.data?.message || 'Gagal membuat turnamen');
+    } finally {
       setCreating(false);
     }
-  };
+  }, [creating, loadTournaments]);
 
-  const joinTournament = async (tournamentId: number): Promise<void> => {
+  const joinTournament = useCallback(async (tournamentId: number): Promise<void> => {
     if (!groupName.trim() || joining) return;
 
     setJoining(true);
-    setError('');
-
     try {
-      console.log('⚔️ Joining tournament ID:', tournamentId);
       const response = await gameApi.joinTournament(tournamentId, {
         group_name: groupName.trim(),
         role: selectedRole,
@@ -163,526 +539,781 @@ export default function TournamentLobby() {
       });
 
       if (response.success) {
+        toast.success(`Berhasil bergabung sebagai ${ROLE_CONFIG[selectedRole].title}!`);
         await loadTournaments();
         setGroupName('');
         setSelectedTournament(null);
+        setShowJoinSheet(false);
 
-        // Redirect to tournament session
         if (tournamentId && response.group?.id) {
-          console.log('✅ Redirecting to tournament session:', tournamentId, 'group:', response.group.id);
           router.visit(`/game/tournament/${tournamentId}`, {
             method: 'get',
             data: { groupId: response.group.id },
-            onSuccess: () => {
-              console.log('✅ Successfully navigated to tournament session');
-            },
             onError: (errors) => {
-              console.error('❌ Tournament redirect failed:', errors);
-              setError('Failed to join tournament session');
+              console.error('❌ Redirect turnamen gagal:', errors);
+              toast.error('Gagal masuk ke sesi turnamen');
             }
           });
-        } else {
-          setError('Invalid tournament or group data received');
         }
       }
-
-      setJoining(false);
     } catch (error: any) {
-      console.error('❌ Tournament join failed:', error);
-      setError(error.response?.data?.message || 'Failed to join tournament');
+      console.error('❌ Gagal bergabung turnamen:', error);
+      toast.error(error.response?.data?.message || 'Gagal bergabung turnamen');
+    } finally {
       setJoining(false);
     }
-  };
+  }, [groupName, joining, selectedRole, auth.user.name, loadTournaments]);
 
-  const getStatusBadge = (status: string) => {
-    const statusConfig = {
-      waiting: { color: 'bg-yellow-600', text: 'Waiting', icon: '⏳' },
-      qualification: { color: 'bg-blue-600', text: 'Qualification', icon: '🎯' },
-      semifinals: { color: 'bg-purple-600', text: 'Semifinals', icon: '⚔️' },
-      finals: { color: 'bg-red-600', text: 'Finals', icon: '👑' },
-      completed: { color: 'bg-green-600', text: 'Completed', icon: '🏆' },
-    };
-
-    const config = statusConfig[status as keyof typeof statusConfig] || statusConfig.waiting;
-
-    return (
-      <Badge className={`${config.color} text-white flex items-center space-x-1`}>
-        <span>{config.icon}</span>
-        <span>{config.text}</span>
-      </Badge>
-    );
-  };
-
-  // ✅ FIXED: Helper function to safely get current user team ID
-  const getCurrentUserTeamId = (): number | undefined => {
-    if (!activeTournament || !Array.isArray(activeTournament.groups)) {
-      return undefined;
+  const handleTournamentSelect = useCallback((tournament: TournamentData) => {
+    setSelectedTournament(tournament);
+    if (isMobile) {
+      setShowJoinSheet(true);
     }
+  }, [isMobile]);
 
-    const userGroup = activeTournament.groups.find((group: TournamentGroup) =>
-      Array.isArray(group.participants) &&
-      group.participants.some((participant: any) =>
-        participant.user_id === auth?.user?.id
-      )
-    );
+  // ========================================
+  // EFFECTS
+  // ========================================
+  useEffect(() => {
+    loadTournaments();
+    const interval = setInterval(loadTournaments, POLLING_INTERVAL);
+    return () => clearInterval(interval);
+  }, [loadTournaments]);
 
-    return userGroup?.id;
-  };
-
+  // ========================================
+  // LOADING STATE
+  // ========================================
   if (loading) {
     return (
       <AuthenticatedLayout
-        header={<h2 className="font-semibold text-xl text-amber-300">🏆 Tournament Arena</h2>}
+        header={<h2 className="font-semibold text-lg sm:text-xl text-amber-300">🏆 Arena Turnamen</h2>}
       >
-        <Head title="Tournament Arena" />
-        <div className="py-12">
-          <div className="max-w-7xl mx-auto sm:px-6 lg:px-8">
-            <Card className="bg-white shadow-sm sm:rounded-lg p-6 text-center fade-in">
-              <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-amber-500 mx-auto mb-4"></div>
-              <h3 className="text-lg font-semibold text-gray-700">Loading Tournament Arena...</h3>
-              <p className="text-gray-500 mt-2">Preparing your battle arena...</p>
+        <Head title="Arena Turnamen" />
+        <div className="min-h-screen bg-gradient-to-br from-stone-900 via-purple-900 to-amber-900 flex items-center justify-center p-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="text-center w-full max-w-md"
+          >
+            <Card className="bg-gradient-to-br from-stone-800 to-stone-900 border-4 border-amber-600 p-6 sm:p-12 shadow-2xl">
+              <CardContent>
+                <LoadingSpinner />
+                <motion.h3
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.2 }}
+                  className="text-xl sm:text-2xl font-bold text-amber-300 mt-6 mb-2"
+                >
+                  Memuat Arena...
+                </motion.h3>
+                <motion.p
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.4 }}
+                  className="text-sm sm:text-base text-amber-200"
+                >
+                  Menyiapkan arena pertempuran
+                </motion.p>
+              </CardContent>
             </Card>
-          </div>
+          </motion.div>
         </div>
       </AuthenticatedLayout>
     );
   }
 
+  // ========================================
+  // MAIN RENDER
+  // ========================================
   return (
     <AuthenticatedLayout
-      header={<h2 className="font-semibold text-xl text-amber-300">🏆 Tournament Arena - Battle Royale</h2>}
+      header={
+        <h2 className="font-semibold text-base sm:text-lg md:text-xl text-amber-300 truncate">
+          🏆 Arena Turnamen
+        </h2>
+      }
     >
-      <Head title="Tournament Arena" />
-      <style>{tournamentStyles}</style>
+      <Head title="Arena Turnamen" />
 
-      <div className="min-h-screen bg-gradient-to-br from-stone-900 via-purple-900 to-amber-900 py-12">
-        <div className="max-w-7xl mx-auto sm:px-6 lg:px-8">
-          <div className="grid lg:grid-cols-4 gap-6">
-            {/* Main Tournament Content */}
-            <div className={normalizeBoolean(showVoiceChat) ? "lg:col-span-3" : "lg:col-span-4"}>
-              <div className="space-y-6 fade-in">
-                {/* Tournament Header */}
-                <Card className="border-4 border-amber-600 bg-gradient-to-br from-amber-900/30 to-stone-900 champion-glow">
-                  <CardContent className="p-8 text-center">
-                    <div className="text-6xl mb-4">⚔️</div>
-                    <h1 className="text-4xl font-bold text-amber-300 mb-4">
-                      🏆 CodeAlpha Tournament Arena
-                    </h1>
-                    <p className="text-amber-200 text-lg leading-relaxed max-w-3xl mx-auto mb-6">
-                      Enter the ultimate competition where 4 elite guilds battle for supremacy!
-                      Only the fastest and most coordinated teams will survive the elimination rounds.
-                    </p>
-                    <div className="flex flex-wrap justify-center gap-4">
-                      <Badge className="bg-purple-700 text-purple-100 border-purple-600 px-3 py-2">
-                        🎯 4-Guild Tournament
-                      </Badge>
-                      <Badge className="bg-red-700 text-red-100 border-red-600 px-3 py-2">
-                        ⏱️ Speed-Based Elimination
-                      </Badge>
-                      <Badge className="bg-blue-700 text-blue-100 border-blue-600 px-3 py-2">
-                        👥 Team Coordination
-                      </Badge>
-                      <Badge className="bg-green-700 text-green-100 border-green-600 px-3 py-2">
-                        🏆 Championship Glory
-                      </Badge>
-                    </div>
-                  </CardContent>
-                </Card>
+      <div className="min-h-screen bg-gradient-to-br from-stone-900 via-purple-900 to-amber-900 py-4 sm:py-8 md:py-12 pb-24 sm:pb-12">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
+          {/* Konten Utama */}
+          <motion.div
+            variants={staggerContainer}
+            initial="initial"
+            animate="animate"
+            className="space-y-4 sm:space-y-6"
+          >
+            {/* Header Turnamen - Optimized untuk mobile */}
+            <motion.div variants={fadeInUp}>
+              <Card className="border-2 sm:border-4 border-amber-600 bg-gradient-to-br from-amber-900/30 to-stone-900 overflow-hidden shadow-xl sm:shadow-2xl">
+                <CardContent className="p-4 sm:p-6 md:p-8 text-center relative">
+                  <motion.div
+                    className="text-4xl sm:text-5xl md:text-7xl mb-3 sm:mb-4"
+                    animate={{
+                      rotate: [0, -5, 5, -5, 0],
+                      scale: [1, 1.05, 1]
+                    }}
+                    transition={{
+                      duration: 2,
+                      repeat: Infinity,
+                      ease: 'easeInOut'
+                    }}
+                  >
+                    ⚔️
+                  </motion.div>
+                  <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-yellow-300 to-amber-300 mb-2 sm:mb-4">
+                    🏆 Arena Turnamen
+                  </h1>
+                  <p className="text-amber-200 text-xs sm:text-sm md:text-base lg:text-lg leading-relaxed max-w-3xl mx-auto mb-3 sm:mb-6 px-2">
+                    Masuki kompetisi utama di mana 4 guild elit bertarung untuk supremasi!
+                  </p>
 
-                {/* Error Display */}
-                {error && (
-                  <Card className="border-4 border-red-600 bg-red-900/30">
-                    <CardContent className="p-6">
-                      <div className="flex items-center text-red-200">
-                        <span className="text-3xl mr-4">⚠️</span>
-                        <div>
-                          <h3 className="font-bold text-lg">Tournament Error!</h3>
-                          <p>{error}</p>
-                        </div>
+                  {/* Mobile: Horizontal scroll badges */}
+                  <div className="flex gap-2 sm:gap-4 overflow-x-auto pb-2 -mx-2 px-2 scrollbar-hide snap-x snap-mandatory md:flex-wrap md:justify-center md:overflow-visible">
+                    {[
+                      { icon: '🎯', text: 'Turnamen 4 Guild', color: 'purple' },
+                      { icon: '⏱️', text: 'Berbasis Kecepatan', color: 'red' },
+                      { icon: '👥', text: 'Koordinasi Tim', color: 'blue' },
+                      { icon: '🏆', text: 'Kejayaan Juara', color: 'green' }
+                    ].map((badge, index) => (
+                      <motion.div
+                        key={badge.text}
+                        initial={{ opacity: 0, scale: 0 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ delay: index * 0.1 }}
+                        className="snap-center flex-shrink-0"
+                      >
+                        <Badge className={`bg-gradient-to-r from-${badge.color}-600 to-${badge.color}-700 text-${badge.color}-100 px-2 sm:px-3 md:px-4 py-1 sm:py-1.5 md:py-2 text-xs sm:text-sm font-semibold shadow-lg whitespace-nowrap`}>
+                          <span className="mr-1 sm:mr-2">{badge.icon}</span>
+                          <span className="hidden sm:inline">{badge.text}</span>
+                          <span className="sm:hidden">{badge.text.split(' ')[0]}</span>
+                        </Badge>
+                      </motion.div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+
+            {/* Turnamen Aktif / Daftar Turnamen */}
+            <AnimatePresence mode="wait">
+              {activeTournament ? (
+                /* Turnamen Aktif */
+                <motion.div
+                  key="active-tournament"
+                  variants={fadeInUp}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  className="space-y-4 sm:space-y-6"
+                >
+                  <Card className="border-2 sm:border-4 border-green-600 bg-gradient-to-br from-green-900/30 to-stone-900 shadow-xl sm:shadow-2xl">
+                    <CardHeader className="p-4 sm:p-6">
+                      <CardTitle className="text-green-300 text-center text-xl sm:text-2xl md:text-3xl flex items-center justify-center gap-2 sm:gap-3">
+                        <motion.span
+                          animate={{ rotate: [0, 360] }}
+                          transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
+                          className="text-2xl sm:text-3xl"
+                        >
+                          🎯
+                        </motion.span>
+                        <span className="text-lg sm:text-2xl md:text-3xl">Turnamen Aktif</span>
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="text-center space-y-4 sm:space-y-6 p-4 sm:p-6">
+                      <h3 className="text-lg sm:text-xl md:text-2xl font-bold text-green-200 px-2">
+                        {activeTournament.name}
+                      </h3>
+
+                      {/* Mobile: Vertical stack, Desktop: Grid */}
+                      <div className="flex flex-col sm:grid sm:grid-cols-3 gap-3 sm:gap-4">
+                        <StatusBadge status={activeTournament.status} />
+                        <motion.div whileTap={{ scale: 0.95 }}>
+                          <Badge className="bg-gradient-to-r from-blue-600 to-cyan-600 text-white px-3 sm:px-4 py-2 text-sm sm:text-base w-full sm:w-auto">
+                            Babak {activeTournament.current_round}/3
+                          </Badge>
+                        </motion.div>
+                        <motion.div whileTap={{ scale: 0.95 }}>
+                          <Badge className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-3 sm:px-4 py-2 text-sm sm:text-base w-full sm:w-auto">
+                            {Array.isArray(activeTournament.groups)
+                              ? activeTournament.groups.filter(g => g.status !== 'eliminated').length
+                              : 0} Guild Aktif
+                          </Badge>
+                        </motion.div>
                       </div>
-                    </CardContent>
-                  </Card>
-                )}
 
-                {/* Active Tournament Display */}
-                {activeTournament ? (
-                  <div className="space-y-6">
-                    <Card className="border-4 border-green-600 bg-green-900/20">
-                      <CardHeader>
-                        <CardTitle className="text-green-300 text-center text-2xl">
-                          🎯 Your Active Tournament
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="text-center">
-                        <h3 className="text-xl font-bold text-green-200 mb-4">
-                          {activeTournament.name}
-                        </h3>
-                        <div className="grid md:grid-cols-3 gap-4 mb-6">
-                          <div>{getStatusBadge(activeTournament.status)}</div>
-                          <div>
-                            <p className="text-green-200">Round {activeTournament.current_round}/3</p>
-                          </div>
-                          <div>
-                            <p className="text-green-200">
-                              {Array.isArray(activeTournament.groups)
-                                ? activeTournament.groups.filter((group: TournamentGroup) => group.status !== 'eliminated').length
-                                : 0} Groups Active
-                            </p>
-                          </div>
-                        </div>
+                      <motion.div whileTap={{ scale: 0.95 }}>
                         <Button
                           onClick={() => router.visit(`/game/tournament/${activeTournament.id}`)}
-                          className="bg-green-600 hover:bg-green-700 text-white px-8 py-4 text-lg font-bold rounded-xl"
+                          className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white px-6 sm:px-8 md:px-10 py-4 sm:py-5 md:py-6 text-base sm:text-lg md:text-xl font-bold rounded-xl sm:rounded-2xl shadow-2xl w-full sm:w-auto touch-manipulation"
                         >
-                          🚀 Enter Tournament Arena
+                          <span className="mr-2 sm:mr-3 text-xl sm:text-2xl">🚀</span>
+                          Masuk Arena
                         </Button>
-                      </CardContent>
-                    </Card>
+                      </motion.div>
+                    </CardContent>
+                  </Card>
 
-                    {/* Tournament Bracket Display */}
-                    {activeTournament.bracket && Array.isArray(activeTournament.bracket) && activeTournament.bracket.length > 0 && (
+                  {/* Tournament Bracket - Hidden on small mobile */}
+                  {activeTournament.bracket && Array.isArray(activeTournament.bracket) && activeTournament.bracket.length > 0 && (
+                    <motion.div variants={fadeInUp} className="hidden sm:block">
                       <TournamentBracket
                         tournament={activeTournament}
                         groups={activeTournament.groups || []}
                         loading={false}
                       />
-                    )}
-                  </div>
-                ) : (
-                  /* Join/Create Tournament Interface */
-                  <div className="space-y-6">
-                    {/* Available Tournaments */}
-                    <Card className="border-4 border-blue-600 bg-blue-900/20">
-                      <CardHeader>
-                        <CardTitle className="text-blue-300 text-center text-2xl">
-                          📋 Available Tournaments
+                    </motion.div>
+                  )}
+                </motion.div>
+              ) : (
+                /* Daftar Turnamen Tersedia */
+                <motion.div
+                  key="tournament-list"
+                  variants={staggerContainer}
+                  initial="initial"
+                  animate="animate"
+                  className="space-y-4 sm:space-y-6"
+                >
+                  {/* Daftar Turnamen */}
+                  <motion.div variants={fadeInUp}>
+                    <Card className="border-2 sm:border-4 border-blue-600 bg-gradient-to-br from-blue-900/30 to-stone-900 shadow-xl sm:shadow-2xl">
+                      <CardHeader className="p-4 sm:p-6">
+                        <CardTitle className="text-blue-300 text-center text-xl sm:text-2xl md:text-3xl flex items-center justify-center gap-2 sm:gap-3">
+                          <motion.span
+                            animate={{ y: [0, -10, 0] }}
+                            transition={{ duration: 1.5, repeat: Infinity }}
+                            className="text-2xl sm:text-3xl"
+                          >
+                            📋
+                          </motion.span>
+                          <span className="text-lg sm:text-2xl md:text-3xl">Turnamen Tersedia</span>
                         </CardTitle>
                       </CardHeader>
-                      <CardContent>
-                        {tournaments.length === 0 ? (
-                          <div className="text-center py-8">
-                            <div className="text-6xl mb-4">🏟️</div>
-                            <h3 className="text-xl font-bold text-blue-200 mb-4">
-                              No Active Tournaments
-                            </h3>
-                            <p className="text-blue-300 mb-6">
-                              Be the first to start a new tournament and gather warriors for battle!
-                            </p>
-                            <Button
-                              onClick={createTournament}
-                              disabled={creating}
-                              className="bg-amber-600 hover:bg-amber-700 text-white px-8 py-4 text-lg font-bold rounded-xl champion-glow"
+                      <CardContent className="p-3 sm:p-6">
+                        <AnimatePresence mode="wait">
+                          {tournaments.length === 0 ? (
+                            <motion.div
+                              key="no-tournaments"
+                              variants={scaleIn}
+                              initial="initial"
+                              animate="animate"
+                              exit="exit"
+                              className="text-center py-8 sm:py-12 px-4"
                             >
-                              {creating ? (
-                                <div className="flex items-center">
-                                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white mr-3"></div>
-                                  Creating Tournament...
-                                </div>
-                              ) : (
-                                '🏆 Create New Tournament'
-                              )}
-                            </Button>
-                          </div>
-                        ) : (
-                          <div className="grid gap-4">
-                            {tournaments.filter(isValidTournamentData).map((tournament: TournamentData) => (
-                              <Card
-                                key={tournament.id}
-                                className="border-2 border-purple-600 bg-purple-900/20 hover:border-purple-400 transition-all duration-300"
+                              <motion.div
+                                className="text-6xl sm:text-7xl md:text-8xl mb-4 sm:mb-6"
+                                animate={{
+                                  scale: [1, 1.1, 1],
+                                  rotate: [0, -10, 10, 0]
+                                }}
+                                transition={{
+                                  duration: 3,
+                                  repeat: Infinity
+                                }}
                               >
-                                <CardContent className="p-6">
-                                  <div className="flex justify-between items-center">
-                                    <div>
-                                      <h4 className="text-xl font-bold text-purple-300 mb-2">
-                                        {tournament.name}
-                                      </h4>
-                                      <div className="flex space-x-4 text-sm mb-2">
-                                        {getStatusBadge(tournament.status)}
-                                        <span className="text-purple-200">
-                                          Groups: {Array.isArray(tournament.groups) ? tournament.groups.length : 0}/{tournament.max_groups}
-                                        </span>
-                                        <span className="text-purple-200">
-                                          Round: {tournament.current_round}/3
-                                        </span>
-                                      </div>
-                                      {Array.isArray(tournament.groups) && tournament.groups.length > 0 && (
-                                        <div className="flex items-center space-x-2">
-                                          {tournament.groups.slice(0, 3).map((group: TournamentGroup, index: number) => (
-                                            <Badge key={group.id} className="bg-gray-700 text-gray-200 text-xs">
-                                              {group.name}
-                                            </Badge>
-                                          ))}
-                                          {tournament.groups.length > 3 && (
-                                            <Badge className="bg-gray-600 text-gray-300 text-xs">
-                                              +{tournament.groups.length - 3} more
-                                            </Badge>
-                                          )}
-                                        </div>
-                                      )}
-                                    </div>
-                                    <div className="text-right">
-                                      {Array.isArray(tournament.groups) && tournament.groups.length < tournament.max_groups && tournament.status === 'waiting' ? (
-                                        <Button
-                                          onClick={() => setSelectedTournament(tournament)}
-                                          className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg"
-                                        >
-                                          ⚔️ Join Battle
-                                        </Button>
-                                      ) : (
-                                        <div>
-                                          <Badge className="bg-gray-700 text-gray-300 mb-2">
-                                            {tournament.status === 'waiting' ? 'Full' : 'In Progress'}
-                                          </Badge>
-                                          <br />
-                                          <Button
-                                            onClick={() => router.visit(`/game/tournament/${tournament.id}`)}
-                                            className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 text-sm rounded-lg"
-                                          >
-                                            👁️ Spectate
-                                          </Button>
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
-                                </CardContent>
-                              </Card>
-                            ))}
-
-                            {/* Create New Tournament Button */}
-                            <Card className="border-2 border-dashed border-amber-600 bg-amber-900/10 hover:bg-amber-900/20 transition-all duration-300">
-                              <CardContent className="p-6 text-center">
+                                🏟️
+                              </motion.div>
+                              <h3 className="text-lg sm:text-xl md:text-2xl font-bold text-blue-200 mb-3 sm:mb-4">
+                                Tidak Ada Turnamen
+                              </h3>
+                              <p className="text-blue-300 mb-6 sm:mb-8 text-sm sm:text-base md:text-lg px-4">
+                                Jadilah yang pertama memulai turnamen baru!
+                              </p>
+                              <motion.div whileTap={{ scale: 0.95 }}>
                                 <Button
                                   onClick={createTournament}
                                   disabled={creating}
-                                  className="w-full bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-700 hover:to-yellow-700 text-white py-4 text-lg font-bold rounded-xl"
+                                  className="bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-700 hover:to-yellow-700 disabled:from-gray-600 disabled:to-gray-700 text-white px-6 sm:px-8 md:px-10 py-4 sm:py-5 md:py-6 text-base sm:text-lg md:text-xl font-bold rounded-xl sm:rounded-2xl shadow-2xl w-full sm:w-auto touch-manipulation"
                                 >
                                   {creating ? (
                                     <div className="flex items-center justify-center">
-                                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white mr-3"></div>
-                                      Forging New Arena...
+                                      <LoadingSpinner />
+                                      <span className="ml-3">Membuat...</span>
                                     </div>
                                   ) : (
-                                    '🏆 Create New Tournament'
+                                    <>
+                                      <span className="mr-2 sm:mr-3 text-xl sm:text-2xl">🏆</span>
+                                      <span className="hidden sm:inline">Buat Turnamen Baru</span>
+                                      <span className="sm:hidden">Buat Turnamen</span>
+                                    </>
                                   )}
                                 </Button>
-                              </CardContent>
-                            </Card>
-                          </div>
-                        )}
+                              </motion.div>
+                            </motion.div>
+                          ) : (
+                            <div className="space-y-3 sm:space-y-4">
+                              {tournaments.map((tournament: TournamentData, index: number) => (
+                                <SwipeableCard
+                                  key={tournament.id}
+                                  onSwipeRight={() => {
+                                    if (Array.isArray(tournament.groups) &&
+                                        tournament.groups.length < tournament.max_groups &&
+                                        tournament.status === 'waiting') {
+                                      handleTournamentSelect(tournament);
+                                    }
+                                  }}
+                                  className="w-full"
+                                >
+                                  <motion.div
+                                    variants={fadeInUp}
+                                    custom={index}
+                                  >
+                                    <Card className="border-2 border-purple-600 bg-gradient-to-r from-purple-900/30 to-stone-900 hover:border-purple-400 transition-all duration-300 overflow-hidden shadow-lg">
+                                      <CardContent className="p-3 sm:p-4 md:p-6">
+                                        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-4">
+                                          <div className="flex-1 min-w-0">
+                                            <h4 className="text-base sm:text-lg md:text-xl lg:text-2xl font-bold text-purple-300 mb-2 sm:mb-3 truncate">
+                                              {tournament.name}
+                                            </h4>
+
+                                            {/* Mobile: Wrap badges */}
+                                            <div className="flex flex-wrap gap-2 mb-2 sm:mb-3">
+                                              <StatusBadge status={tournament.status} />
+                                              <Badge className="bg-gradient-to-r from-gray-700 to-gray-800 text-gray-200 px-2 sm:px-3 py-1 text-xs sm:text-sm flex-shrink-0">
+                                                Guild: {Array.isArray(tournament.groups) ? tournament.groups.length : 0}/{tournament.max_groups}
+                                              </Badge>
+                                              <Badge className="bg-gradient-to-r from-indigo-700 to-indigo-800 text-indigo-200 px-2 sm:px-3 py-1 text-xs sm:text-sm flex-shrink-0">
+                                                Babak: {tournament.current_round}/3
+                                              </Badge>
+                                            </div>
+
+                                            {/* Group badges - horizontal scroll on mobile */}
+                                            {Array.isArray(tournament.groups) && tournament.groups.length > 0 && (
+                                              <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+                                                {tournament.groups.slice(0, isMobile ? 2 : 3).map((group: TournamentGroup) => (
+                                                  <motion.div
+                                                    key={group.id}
+                                                    initial={{ opacity: 0, scale: 0 }}
+                                                    animate={{ opacity: 1, scale: 1 }}
+                                                    whileTap={{ scale: 0.95 }}
+                                                    className="flex-shrink-0"
+                                                  >
+                                                    <Badge className="bg-gradient-to-r from-gray-700 to-gray-800 text-gray-200 text-xs px-2 py-0.5 sm:py-1">
+                                                      {group.name}
+                                                    </Badge>
+                                                  </motion.div>
+                                                ))}
+                                                {tournament.groups.length > (isMobile ? 2 : 3) && (
+                                                  <Badge className="bg-gradient-to-r from-gray-600 to-gray-700 text-gray-300 text-xs px-2 py-0.5 sm:py-1 flex-shrink-0">
+                                                    +{tournament.groups.length - (isMobile ? 2 : 3)}
+                                                  </Badge>
+                                                )}
+                                              </div>
+                                            )}
+                                          </div>
+
+                                          {/* Action buttons */}
+                                          <div className="flex sm:flex-col gap-2 w-full sm:w-auto">
+                                            {Array.isArray(tournament.groups) &&
+                                            tournament.groups.length < tournament.max_groups &&
+                                            tournament.status === 'waiting' ? (
+                                              <motion.div whileTap={{ scale: 0.95 }} className="flex-1 sm:flex-initial">
+                                                <Button
+                                                  onClick={() => handleTournamentSelect(tournament)}
+                                                  className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white px-4 sm:px-6 py-2 sm:py-3 rounded-lg sm:rounded-xl font-bold shadow-lg w-full touch-manipulation text-sm sm:text-base"
+                                                >
+                                                  <span className="mr-1 sm:mr-2">⚔️</span>
+                                                  <span className="hidden sm:inline">Gabung</span>
+                                                  <span className="sm:hidden">Gabung</span>
+                                                </Button>
+                                              </motion.div>
+                                            ) : (
+                                              <>
+                                                <Badge className="bg-gradient-to-r from-gray-700 to-gray-800 text-gray-300 flex-1 sm:flex-initial justify-center py-2">
+                                                  {tournament.status === 'waiting' ? 'Penuh' : 'Berlangsung'}
+                                                </Badge>
+                                                <motion.div whileTap={{ scale: 0.95 }} className="flex-1 sm:flex-initial">
+                                                  <Button
+                                                    onClick={() => router.visit(`/game/tournament/${tournament.id}`)}
+                                                    className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white px-3 sm:px-4 py-2 text-xs sm:text-sm rounded-lg shadow-lg w-full touch-manipulation"
+                                                  >
+                                                    <span className="mr-1 sm:mr-2">👁️</span>
+                                                    Tonton
+                                                  </Button>
+                                                </motion.div>
+                                              </>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </CardContent>
+                                    </Card>
+                                  </motion.div>
+                                </SwipeableCard>
+                              ))}
+
+                              {/* Tombol Buat Turnamen */}
+                              <motion.div
+                                variants={fadeInUp}
+                                whileTap={{ scale: 0.98 }}
+                              >
+                                <Card className="border-2 border-dashed border-amber-600 bg-gradient-to-r from-amber-900/10 to-yellow-900/10 hover:from-amber-900/20 hover:to-yellow-900/20 transition-all duration-300">
+                                  <CardContent className="p-3 sm:p-4 md:p-6 text-center">
+                                    <Button
+                                      onClick={createTournament}
+                                      disabled={creating}
+                                      className="w-full bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-700 hover:to-yellow-700 disabled:from-gray-600 disabled:to-gray-700 text-white py-3 sm:py-4 text-base sm:text-lg font-bold rounded-lg sm:rounded-xl shadow-xl touch-manipulation"
+                                    >
+                                      {creating ? (
+                                        <div className="flex items-center justify-center">
+                                          <LoadingSpinner />
+                                          <span className="ml-2 sm:ml-3">Membuat...</span>
+                                        </div>
+                                      ) : (
+                                        <>
+                                          <span className="mr-2 sm:mr-3 text-xl">🏆</span>
+                                          <span className="hidden sm:inline">Buat Turnamen Baru</span>
+                                          <span className="sm:hidden">Buat Turnamen</span>
+                                        </>
+                                      )}
+                                    </Button>
+                                  </CardContent>
+                                </Card>
+                              </motion.div>
+                            </div>
+                          )}
+                        </AnimatePresence>
                       </CardContent>
                     </Card>
+                  </motion.div>
 
-                    {/* Join Tournament Form */}
-                    {selectedTournament && (
-                      <Card className="border-4 border-green-600 bg-green-900/20">
-                        <CardHeader>
-                          <CardTitle className="text-green-300 text-center text-2xl">
-                            ⚔️ Join {selectedTournament.name}
-                          </CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-6">
-                          {/* Group Name Input */}
-                          <div>
-                            <label className="block text-lg font-bold text-green-300 mb-3">
-                              🏰 Guild Name
-                            </label>
-                            <input
-                              type="text"
-                              value={groupName}
-                              onChange={(e) => setGroupName(e.target.value)}
-                              placeholder="Enter your guild name"
-                              className="w-full px-4 py-3 bg-stone-800 border-2 border-green-600 rounded-xl text-green-300 placeholder-green-500 focus:outline-none focus:ring-2 focus:ring-green-500"
-                              maxLength={30}
-                            />
-                          </div>
-
-                          {/* Role Selection */}
-                          <div>
-                            <label className="block text-lg font-bold text-green-300 mb-3">
-                              ⚔️ Your Battle Role
-                            </label>
-                            <div className="grid grid-cols-2 gap-4">
-                              <Card
-                                className={`cursor-pointer transition-all duration-300 ${
-                                  selectedRole === 'defuser'
-                                    ? 'border-3 border-red-500 bg-red-900/30 scale-105'
-                                    : 'border-2 border-gray-600 bg-gray-900/30 hover:border-red-400'
-                                }`}
-                                onClick={() => setSelectedRole('defuser')}
+                  {/* Desktop: Join Form, Mobile: Bottom Sheet */}
+                  {!isMobile && selectedTournament && (
+                    <AnimatePresence>
+                      <motion.div
+                        key="join-form-desktop"
+                        variants={scaleIn}
+                        initial="initial"
+                        animate="animate"
+                        exit="exit"
+                      >
+                        <Card className="border-4 border-green-600 bg-gradient-to-br from-green-900/30 to-stone-900 shadow-2xl">
+                          <CardHeader>
+                            <CardTitle className="text-green-300 text-center text-2xl md:text-3xl flex items-center justify-center gap-3">
+                              <motion.span
+                                animate={{ rotate: [0, -15, 15, 0] }}
+                                transition={{ duration: 1, repeat: Infinity }}
                               >
-                                <CardContent className="p-6 text-center">
-                                  <div className="text-4xl mb-3">💣</div>
-                                  <h4 className="font-bold text-lg text-red-300 mb-2">
-                                    Bomb Defuser
-                                  </h4>
-                                  <p className="text-red-200 text-sm">
-                                    Handle the dangerous devices
-                                  </p>
-                                </CardContent>
-                              </Card>
-
-                              <Card
-                                className={`cursor-pointer transition-all duration-300 ${
-                                  selectedRole === 'expert'
-                                    ? 'border-3 border-blue-500 bg-blue-900/30 scale-105'
-                                    : 'border-2 border-gray-600 bg-gray-900/30 hover:border-blue-400'
-                                }`}
-                                onClick={() => setSelectedRole('expert')}
-                              >
-                                <CardContent className="p-6 text-center">
-                                  <div className="text-4xl mb-3">📖</div>
-                                  <h4 className="font-bold text-lg text-blue-300 mb-2">
-                                    Manual Expert
-                                  </h4>
-                                  <p className="text-blue-200 text-sm">
-                                    Guide with knowledge
-                                  </p>
-                                </CardContent>
-                              </Card>
-                            </div>
-                          </div>
-
-                          {/* Enhanced Role Information */}
-                          <Card className="border-3 border-purple-600 bg-gradient-to-br from-purple-900 to-stone-800">
-                            <CardContent className="p-6">
-                              <p className="text-purple-200 leading-relaxed">
-                                <strong className="text-purple-300">Selected Role:</strong> You will join as{' '}
-                                <strong className="text-amber-300">
-                                  {selectedRole === 'defuser' ? 'Bomb Defuser' : 'Manual Expert'}
-                                </strong>.{' '}
-                                {selectedRole === 'defuser'
-                                  ? 'You will see the dangerous devices and describe them to your teammate.'
-                                  : 'You will have the instruction manual and guide the Defuser through the disarming process.'
-                                }
-                              </p>
-                            </CardContent>
-                          </Card>
-
-                          {/* Join Button */}
-                          <div className="flex space-x-4">
-                            <Button
-                              onClick={() => joinTournament(selectedTournament.id)}
-                              disabled={!groupName.trim() || joining}
-                              className="flex-1 bg-green-600 hover:bg-green-700 text-white py-4 text-lg font-bold rounded-xl"
-                            >
-                              {joining ? (
-                                <div className="flex items-center justify-center">
-                                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white mr-3"></div>
-                                  Joining Battle...
-                                </div>
-                              ) : (
-                                '⚔️ Enter Tournament'
-                              )}
-                            </Button>
-                            <Button
-                              onClick={() => {
+                                ⚔️
+                              </motion.span>
+                              Gabung {selectedTournament.name}
+                            </CardTitle>
+                          </CardHeader>
+                          <CardContent className="space-y-6 p-6">
+                            <JoinTournamentForm
+                              groupName={groupName}
+                              setGroupName={setGroupName}
+                              selectedRole={selectedRole}
+                              setSelectedRole={setSelectedRole}
+                              onJoin={() => joinTournament(selectedTournament.id)}
+                              onCancel={() => {
                                 setSelectedTournament(null);
                                 setGroupName('');
                               }}
-                              className="bg-gray-600 hover:bg-gray-700 text-white py-4 px-8 rounded-xl"
-                            >
-                              Cancel
-                            </Button>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    )}
+                              joining={joining}
+                              isMobile={false}
+                            />
+                          </CardContent>
+                        </Card>
+                      </motion.div>
+                    </AnimatePresence>
+                  )}
 
-                    {/* Tournament Leaderboards */}
-                    {tournaments.length > 0 && (
-                      <Card className="border-4 border-purple-600 bg-purple-900/20">
+                  {/* Global Leaderboard - Hidden on mobile if too long */}
+                  {tournaments.length > 0 && globalLeaderboard.length > 0 && (
+                    <motion.div variants={fadeInUp} className={isMobile ? 'hidden' : 'block'}>
+                      <Card className="border-4 border-purple-600 bg-gradient-to-br from-purple-900/30 to-stone-900 shadow-2xl">
                         <CardHeader>
-                          <CardTitle className="text-purple-300 text-center text-2xl">
-                            🏆 Global Tournament Leaderboard
+                          <CardTitle className="text-purple-300 text-center text-2xl md:text-3xl flex items-center justify-center gap-3">
+                            <motion.span
+                              animate={{
+                                rotate: [0, 360],
+                                scale: [1, 1.2, 1]
+                              }}
+                              transition={{
+                                duration: 3,
+                                repeat: Infinity
+                              }}
+                            >
+                              🏆
+                            </motion.span>
+                            Papan Peringkat Global
                           </CardTitle>
-                          <CardDescription className="text-purple-200 text-center">
-                            Top performing guilds across all tournaments
+                          <CardDescription className="text-purple-200 text-center text-base md:text-lg">
+                            Guild terbaik di semua turnamen
                           </CardDescription>
                         </CardHeader>
                         <CardContent>
                           <Leaderboard
-                            teams={
-                              tournaments.length > 0
-                                ? tournaments
-                                    .filter(isValidTournamentData)
-                                    .flatMap((tournament: TournamentData) =>
-                                      Array.isArray(tournament.groups)
-                                        ? tournament.groups.filter(isValidTournamentGroup)
-                                        : []
-                                    )
-                                    .filter((group: TournamentGroup) =>
-                                      typeof group.rank === 'number' && group.rank <= 10
-                                    )
-                                    .sort((a: TournamentGroup, b: TournamentGroup) =>
-                                      (a.rank || 999) - (b.rank || 999)
-                                    )
-                                    .map((group: TournamentGroup) => ({
-                                      id: group.id,
-                                      name: group.name,
-                                      rank: group.rank,
-                                      score: group.score,
-                                      status: group.status,
-                                      completion_time: group.completion_time,
-                                      participants: group.participants,
-                                    }))
-                                : []
-                            }
-                            currentUserTeamId={getCurrentUserTeamId()}
-                            title="Global Rankings"
+                            teams={globalLeaderboard}
+                            currentUserTeamId={currentUserTeamId}
+                            title="Peringkat Global"
                             showParticipants={true}
-                            maxTeams={10}
+                            maxTeams={MAX_TOURNAMENT_DISPLAY}
                           />
                         </CardContent>
                       </Card>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Voice Chat Sidebar */}
-            {normalizeBoolean(showVoiceChat) && (
-              <div className="lg:col-span-1">
-                <Card className="border-3 border-green-600 bg-green-900/20 sticky top-4">
-                  <CardHeader>
-                    <CardTitle className="text-green-300 flex items-center justify-between">
-                      <span>🎙️ Tournament Lobby</span>
-                      <Button
-                        onClick={() => setShowVoiceChat(false)}
-                        className="bg-red-600/20 hover:bg-red-600/40 text-red-300 px-2 py-1 text-sm"
-                      >
-                        ✕
-                      </Button>
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <VoiceChat
-                      sessionId={0} // Lobby mode - no specific session
-                      userId={auth?.user?.id || 0}
-                      nickname={auth?.user?.name || 'Player'}
-                      role="host"
-                      participants={[]}
-                    />
-                  </CardContent>
-                </Card>
-              </div>
-            )}
-          </div>
-
-          {/* Floating Voice Chat Toggle */}
-          {!normalizeBoolean(showVoiceChat) && (
-            <div className="fixed bottom-6 right-6 z-50">
-              <Button
-                onClick={() => setShowVoiceChat(true)}
-                className="bg-green-600 hover:bg-green-700 text-white p-4 rounded-full shadow-2xl champion-glow"
-                title="Enable Tournament Communication"
-              >
-                <span className="text-2xl">🎙️</span>
-              </Button>
-            </div>
-          )}
+                    </motion.div>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </motion.div>
         </div>
       </div>
+
+      {/* Mobile Bottom Sheet untuk Join Tournament */}
+      <BottomSheet
+        isOpen={showJoinSheet && isMobile && selectedTournament !== null}
+        onClose={() => {
+          setShowJoinSheet(false);
+          setSelectedTournament(null);
+          setGroupName('');
+        }}
+        title={selectedTournament ? `Gabung ${selectedTournament.name}` : ''}
+      >
+        {selectedTournament && (
+          <div className="p-6">
+            <JoinTournamentForm
+              groupName={groupName}
+              setGroupName={setGroupName}
+              selectedRole={selectedRole}
+              setSelectedRole={setSelectedRole}
+              onJoin={() => joinTournament(selectedTournament.id)}
+              onCancel={() => {
+                setShowJoinSheet(false);
+                setSelectedTournament(null);
+                setGroupName('');
+              }}
+              joining={joining}
+              isMobile={true}
+            />
+          </div>
+        )}
+      </BottomSheet>
+
+      {/* Floating Voice Chat Button - Adapted for mobile */}
+      {!showVoiceChat && (
+        <FloatingActionButton
+          onClick={() => setShowVoiceChat(true)}
+          icon="🎙️"
+          label="Voice Chat"
+          variant="success"
+        />
+      )}
+
+      {/* Voice Chat Sidebar/Modal */}
+      <AnimatePresence>
+        {showVoiceChat && (
+          isMobile ? (
+            // Mobile: Full screen modal
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 bg-stone-900"
+            >
+              <div className="h-full flex flex-col">
+                <div className="flex items-center justify-between p-4 border-b border-gray-700">
+                  <h3 className="text-xl font-bold text-green-300 flex items-center gap-2">
+                    <span>🎙️</span>
+                    Lobi Turnamen
+                  </h3>
+                  <motion.button
+                    whileTap={{ scale: 0.9 }}
+                    onClick={() => setShowVoiceChat(false)}
+                    className="bg-red-600/30 hover:bg-red-600/50 text-red-300 px-4 py-2 rounded-lg touch-manipulation"
+                  >
+                    ✕ Tutup
+                  </motion.button>
+                </div>
+                <div className="flex-1 overflow-auto p-4">
+                  <VoiceChat
+                    sessionId={0}
+                    userId={auth?.user?.id || 0}
+                    nickname={auth?.user?.name || 'Pemain'}
+                    role="host"
+                    participants={[]}
+                  />
+                </div>
+              </div>
+            </motion.div>
+          ) : (
+            // Desktop: Sidebar
+            <motion.div
+              className="fixed top-0 right-0 h-screen w-96 z-50"
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+            >
+              <Card className="h-full border-l-4 border-green-600 bg-gradient-to-br from-green-900/30 to-stone-900 shadow-2xl rounded-none">
+                <CardHeader>
+                  <CardTitle className="text-green-300 flex items-center justify-between">
+                    <span className="flex items-center gap-2">
+                      <motion.span
+                        animate={{ scale: [1, 1.2, 1] }}
+                        transition={{ duration: 1, repeat: Infinity }}
+                      >
+                        🎙️
+                      </motion.span>
+                      Lobi Turnamen
+                    </span>
+                    <motion.button
+                      whileHover={{ scale: 1.1, rotate: 90 }}
+                      whileTap={{ scale: 0.9 }}
+                      onClick={() => setShowVoiceChat(false)}
+                      className="bg-red-600/30 hover:bg-red-600/50 text-red-300 px-3 py-1 text-sm rounded-lg"
+                    >
+                      ✕
+                    </motion.button>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="h-[calc(100vh-100px)] overflow-auto">
+                  <VoiceChat
+                    sessionId={0}
+                    userId={auth?.user?.id || 0}
+                    nickname={auth?.user?.name || 'Pemain'}
+                    role="host"
+                    participants={[]}
+                  />
+                </CardContent>
+              </Card>
+            </motion.div>
+          )
+        )}
+      </AnimatePresence>
     </AuthenticatedLayout>
   );
 }
+
+// ========================================
+// JOIN TOURNAMENT FORM COMPONENT
+// ========================================
+interface JoinTournamentFormProps {
+  groupName: string;
+  setGroupName: (name: string) => void;
+  selectedRole: 'defuser' | 'expert';
+  setSelectedRole: (role: 'defuser' | 'expert') => void;
+  onJoin: () => void;
+  onCancel: () => void;
+  joining: boolean;
+  isMobile: boolean;
+}
+
+const JoinTournamentForm = memo(({
+  groupName,
+  setGroupName,
+  selectedRole,
+  setSelectedRole,
+  onJoin,
+  onCancel,
+  joining,
+  isMobile
+}: JoinTournamentFormProps) => {
+  return (
+    <div className="space-y-4 sm:space-y-6">
+      {/* Input Nama Guild */}
+      <motion.div
+        initial={{ x: -50, opacity: 0 }}
+        animate={{ x: 0, opacity: 1 }}
+        transition={{ delay: 0.1 }}
+      >
+        <label className="block text-base sm:text-lg font-bold text-green-300 mb-2 sm:mb-3">
+          🏰 Nama Guild
+        </label>
+        <input
+          type="text"
+          value={groupName}
+          onChange={(e) => setGroupName(e.target.value)}
+          placeholder="Masukkan nama guild"
+          className="w-full px-4 sm:px-6 py-3 sm:py-4 bg-stone-800 border-2 border-green-600 rounded-lg sm:rounded-xl text-green-300 placeholder-green-500/50 focus:outline-none focus:ring-4 focus:ring-green-500/50 transition-all text-sm sm:text-base touch-manipulation"
+          maxLength={MAX_GROUP_NAME_LENGTH}
+        />
+        <p className="text-green-400 text-xs sm:text-sm mt-2">
+          {groupName.length}/{MAX_GROUP_NAME_LENGTH} karakter
+        </p>
+      </motion.div>
+
+      {/* Pemilihan Peran */}
+      <motion.div
+        initial={{ x: -50, opacity: 0 }}
+        animate={{ x: 0, opacity: 1 }}
+        transition={{ delay: 0.2 }}
+      >
+        <label className="block text-base sm:text-lg font-bold text-green-300 mb-2 sm:mb-3">
+          ⚔️ Peran Pertempuran
+        </label>
+        <div className="grid grid-cols-2 gap-3 sm:gap-4">
+          <RoleSelectionCard
+            role="defuser"
+            selected={selectedRole === 'defuser'}
+            onSelect={() => setSelectedRole('defuser')}
+          />
+          <RoleSelectionCard
+            role="expert"
+            selected={selectedRole === 'expert'}
+            onSelect={() => setSelectedRole('expert')}
+          />
+        </div>
+      </motion.div>
+
+      {/* Informasi Peran */}
+      <motion.div
+        initial={{ y: 20, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ delay: 0.3 }}
+      >
+        <Card className="border-2 sm:border-3 border-purple-600 bg-gradient-to-br from-purple-900/40 to-stone-800 overflow-hidden">
+          <CardContent className="p-4 sm:p-6">
+            <p className="text-purple-200 leading-relaxed text-xs sm:text-sm md:text-base">
+              <strong className="text-purple-300">Peran Terpilih:</strong> Anda akan bergabung sebagai{' '}
+              <strong className="text-transparent bg-clip-text bg-gradient-to-r from-amber-300 to-yellow-300">
+                {ROLE_CONFIG[selectedRole].title}
+              </strong>.{' '}
+              {ROLE_CONFIG[selectedRole].description}
+            </p>
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      {/* Tombol Action */}
+      <motion.div
+        initial={{ y: 20, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ delay: 0.4 }}
+        className="flex flex-col sm:flex-row gap-3 sm:gap-4"
+      >
+        <motion.div className="flex-1" whileTap={{ scale: 0.98 }}>
+          <Button
+            onClick={onJoin}
+            disabled={!groupName.trim() || joining}
+            className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 disabled:from-gray-600 disabled:to-gray-700 text-white py-3 sm:py-4 text-base sm:text-lg font-bold rounded-lg sm:rounded-xl shadow-xl touch-manipulation"
+          >
+            {joining ? (
+              <div className="flex items-center justify-center">
+                <LoadingSpinner />
+                <span className="ml-2 sm:ml-3">Bergabung...</span>
+              </div>
+            ) : (
+              <>
+                <span className="mr-2 sm:mr-3">⚔️</span>
+                Masuk Turnamen
+              </>
+            )}
+          </Button>
+        </motion.div>
+        <motion.div whileTap={{ scale: 0.98 }} className={isMobile ? 'w-full' : ''}>
+          <Button
+            onClick={onCancel}
+            className={`${isMobile ? 'w-full' : ''} bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-700 hover:to-gray-800 text-white py-3 sm:py-4 px-6 sm:px-8 rounded-lg sm:rounded-xl shadow-xl touch-manipulation text-base sm:text-lg`}
+          >
+            Batal
+          </Button>
+        </motion.div>
+      </motion.div>
+    </div>
+  );
+});
+
+JoinTournamentForm.displayName = 'JoinTournamentForm';
