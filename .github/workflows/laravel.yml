@@ -14,6 +14,7 @@ jobs:
       DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
       DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
       DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || '/var/www/kodealpa' }}
+      ROOT_USER: root  # Add this
 
     steps:
       - name: Checkout repository
@@ -26,38 +27,21 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: |
-          echo "Installing dependencies..."
-          npm ci --legacy-peer-deps
-          echo "✅ Dependencies installed"
-
-      - name: Type check (optional)
-        continue-on-error: true
-        run: |
-          echo "Running type check..."
-          npx tsc --noEmit || echo "⚠️ Type check has warnings"
+        run: npm ci
 
       - name: Build for production
         env:
           NODE_ENV: production
           VITE_HMR_HOST: ''
-        run: |
-          echo "Building assets for production..."
-          npx vite build
-          echo "✅ Build completed"
+        run: npm run build
 
       - name: Verify build output
         run: |
           if [ ! -f "public/build/manifest.json" ]; then
-            echo "❌ Build failed: manifest.json not found"
+            echo "❌ Build failed"
             exit 1
           fi
           echo "✅ Build verified"
-          echo "Manifest preview:"
-          head -20 public/build/manifest.json
-          echo ""
-          echo "Build files:"
-          ls -lh public/build/assets/ | head -10
 
       - name: Start ssh-agent and add key
         uses: webfactory/ssh-agent@v0.5.4
@@ -70,37 +54,65 @@ jobs:
           ssh-keyscan -p $DEPLOY_PORT -H $DEPLOY_HOST > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
+      # ✅ FIX PERMISSIONS BEFORE EVERYTHING (AS ROOT)
+      - name: Fix all permissions on server
+        run: |
+          echo "🔐 Fixing permissions on server..."
+          ssh -p $DEPLOY_PORT $ROOT_USER@$DEPLOY_HOST << 'ENDSSH'
+            cd /var/www/kodealpa
+            
+            # Fix ownership
+            chown -R deploy:deploy .
+            
+            # Fix specific directories
+            chown -R www-data:www-data storage bootstrap/cache
+            
+            # Set proper permissions
+            chmod -R 755 .
+            chmod -R 775 storage bootstrap/cache
+            
+            # Verify
+            ls -ld storage/ bootstrap/cache/ public/build/
+          ENDSSH
+          echo "✅ Permissions fixed"
+
+      # Deploy built assets
       - name: Deploy built assets to server
         run: |
-          echo "Deploying assets to server..."
-          ssh -p $DEPLOY_PORT $DEPLOY_USER@$DEPLOY_HOST \
-            "mkdir -p $DEPLOY_PATH/public/build"
-          
+          echo "📦 Deploying assets..."
           rsync -avz --delete \
             -e "ssh -p $DEPLOY_PORT" \
-            --progress \
+            --chmod=D755,F644 \
             public/build/ \
             $DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/public/build/
-          
-          echo "✅ Assets deployed successfully"
+          echo "✅ Assets deployed"
 
+      # Set final permissions for build
+      - name: Set build permissions
+        run: |
+          ssh -p $DEPLOY_PORT $ROOT_USER@$DEPLOY_HOST \
+            "cd $DEPLOY_PATH && \
+             chown -R www-data:www-data public/build && \
+             chmod -R 755 public/build"
+
+      # Run deploy script
       - name: Run remote deploy script
         run: |
-          echo "Running deployment script on server..."
+          echo "🚀 Running deployment script..."
           ssh -o StrictHostKeyChecking=yes \
               -p $DEPLOY_PORT \
               $DEPLOY_USER@$DEPLOY_HOST \
               "bash $DEPLOY_PATH/deploy.sh"
-          echo "✅ Deployment script completed"
 
+      # Verify deployment
       - name: Verify deployment
         run: |
-          echo "Verifying deployment..."
+          echo "🔍 Verifying deployment..."
           ssh -p $DEPLOY_PORT $DEPLOY_USER@$DEPLOY_HOST \
             "test -f $DEPLOY_PATH/public/build/manifest.json && \
              test ! -f $DEPLOY_PATH/public/hot && \
-             echo '✅ Deployment verified successfully!' || \
-             (echo '❌ Deployment verification failed' && exit 1)"
+             echo '✅ Deployment verified!' || \
+             (echo '❌ Verification failed' && exit 1)"
 
       - name: Deployment summary
         if: success()
@@ -113,4 +125,4 @@ jobs:
           echo "✅ All checks passed"
           echo ""
           echo "🌐 Site: https://codealpha-dungeon.tech"
-          echo "⚠️  Remember to hard refresh browser (Ctrl+Shift+R)"
+          echo "⚠️  Hard refresh: Ctrl+Shift+R"
