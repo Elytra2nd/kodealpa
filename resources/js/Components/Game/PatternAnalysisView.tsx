@@ -144,7 +144,7 @@ const PatternBox = memo(
   }) => (
     <div
       ref={setPatternRef(index)}
-      className={`w-12 h-12 sm:w-14 sm:h-14 rounded-xl flex items-center justify-center text-lg sm:text-xl font-extrabold border shadow-lg transition-all duration-300 hover:scale-110 ${
+      className={`w-14 h-14 sm:w-16 sm:h-16 rounded-xl flex items-center justify-center text-xl sm:text-2xl font-extrabold border-2 shadow-lg transition-all duration-300 hover:scale-110 ${
         isEmpty
           ? 'border-red-600/60 bg-gradient-to-br from-red-900/40 to-red-950/60 text-red-200 dungeon-pulse dungeon-card-glow-red'
           : 'border-blue-600/60 bg-gradient-to-br from-blue-900/40 to-blue-950/60 text-blue-200 dungeon-rune-float dungeon-card-glow-blue'
@@ -263,7 +263,7 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
           {(isExpert || isHost) && puzzle.expertView?.rule && (
             <Card className="border border-stone-700/40 bg-stone-800/40 backdrop-blur-sm">
               <CardContent className="p-3">
-                <p className="text-stone-300 italic text-xs sm:text-sm leading-relaxed">
+                <p className="text-stone-300 italic text-xs sm:text-sm leading-relaxed text-center">
                   "{dungeonizeRule(puzzle.expertView.rule)}"
                 </p>
               </CardContent>
@@ -283,8 +283,8 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
                 <CardContent className="p-3 space-y-3">
                   {Array.isArray(puzzle.defuserView?.pattern) ? (
                     <>
-                      {/* Pattern boxes */}
-                      <div className="flex justify-center items-center flex-wrap gap-2 mb-3">
+                      {/* FIX: Pattern boxes - Centered with justify-center */}
+                      <div className="flex justify-center items-center flex-wrap gap-2 sm:gap-3 mb-4">
                         {puzzle.defuserView.pattern.map((item: any, idx: number) => {
                           const kosong = item === '?' || item == null;
                           return (
@@ -299,8 +299,9 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
                         })}
                         <div
                           ref={setPatternRef(puzzle.defuserView.pattern.length)}
-                          className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl flex items-center justify-center text-lg sm:text-xl font-extrabold border-2 border-red-600 bg-gradient-to-br from-red-900/40 to-red-950/60 text-red-200 dungeon-pulse dungeon-card-glow-red shadow-lg"
+                          className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl flex items-center justify-center text-xl sm:text-2xl font-extrabold border-2 border-red-600 bg-gradient-to-br from-red-900/40 to-red-950/60 text-red-200 dungeon-pulse dungeon-card-glow-red shadow-lg"
                           title="Angka hilang yang harus ditemukan"
+                          aria-label="Angka hilang"
                         >
                           ?
                         </div>
@@ -308,22 +309,31 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
 
                       {/* Input form */}
                       {isDefuser && (
-                        <form onSubmit={handleSubmit} className="space-y-2">
-                          <input
-                            type="number"
-                            value={jawaban}
-                            onChange={handleInputChange}
-                            placeholder="Masukkan angka..."
-                            className="w-full h-10 text-center text-base font-bold bg-stone-900/70 border-2 border-amber-600/60 rounded-xl text-amber-200 placeholder-amber-500/50 focus:outline-none focus:ring-2 focus:ring-amber-500 transition-all"
-                            disabled={submitting}
-                            maxLength={CONFIG.MAX_INPUT_LENGTH}
-                          />
+                        <form onSubmit={handleSubmit} className="space-y-3">
+                          <div className="flex justify-center">
+                            <input
+                              type="number"
+                              value={jawaban}
+                              onChange={handleInputChange}
+                              placeholder="Masukkan angka..."
+                              className="w-full max-w-xs h-11 text-center text-lg font-bold bg-stone-900/70 border-2 border-amber-600/60 rounded-xl text-amber-200 placeholder-amber-500/50 focus:outline-none focus:ring-2 focus:ring-amber-500 transition-all"
+                              disabled={submitting}
+                              maxLength={CONFIG.MAX_INPUT_LENGTH}
+                            />
+                          </div>
                           <Button
                             type="submit"
                             disabled={!jawaban.trim() || submitting}
-                            className="w-full bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-stone-900 font-semibold py-2 rounded-xl disabled:opacity-50 transition-all"
+                            className="w-full bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-stone-900 font-semibold py-2.5 rounded-xl disabled:opacity-50 transition-all"
                           >
-                            {submitting ? 'Mengirim...' : 'Kirim Jawaban'}
+                            {submitting ? (
+                              <span className="flex items-center justify-center gap-2">
+                                <span className="animate-spin">⚙️</span>
+                                Mengirim...
+                              </span>
+                            ) : (
+                              '✨ Kirim Jawaban'
+                            )}
                           </Button>
 
                           {/* Hints accordion */}
@@ -331,7 +341,7 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
                             <Accordion type="single" collapsible>
                               <AccordionItem value="hints" className="border-blue-700/40">
                                 <AccordionTrigger className="text-blue-200 text-xs hover:text-blue-300 py-2">
-                                  💡 Petunjuk
+                                  💡 Petunjuk Terselubung
                                 </AccordionTrigger>
                                 <AccordionContent
                                   className="p-2 rounded-lg bg-blue-950/40 max-h-60 overflow-y-auto"
@@ -385,12 +395,12 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
                               ✨ Legenda Rune
                             </AccordionTrigger>
                             <AccordionContent className="p-2 text-xs text-stone-300 space-y-1">
-                              <div className="flex flex-wrap gap-1 mb-2">
+                              <div className="flex flex-wrap gap-1 mb-2 justify-center">
                                 {runeLegend.slice(0, 10).map(({ num, sym }) => (
                                   <RuneLegendBadge key={num} num={num} sym={sym} />
                                 ))}
                               </div>
-                              <p>Pulihkan digit dari rune untuk analisis yang akurat</p>
+                              <p className="text-center">Pulihkan digit dari rune untuk analisis yang akurat</p>
                             </AccordionContent>
                           </AccordionItem>
 
@@ -454,12 +464,12 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
                   </AccordionTrigger>
                   <AccordionContent className="p-2 text-xs text-stone-300 space-y-2">
                     <div>
-                      <span className="font-semibold text-amber-300">Defuser:</span> Telusuri selisih,
-                      uji progresi, minta validasi tanpa mengungkap final
+                      <span className="font-semibold text-amber-300">Defuser:</span> Telusuri selisih, uji
+                      progresi, minta validasi tanpa mengungkap final
                     </div>
                     <div>
-                      <span className="font-semibold text-blue-300">Expert:</span> Mulai observasi
-                      kualitatif, batasi petunjuk pada bentuk transformasi
+                      <span className="font-semibold text-blue-300">Expert:</span> Mulai observasi kualitatif,
+                      batasi petunjuk pada bentuk transformasi
                     </div>
                   </AccordionContent>
                 </AccordionItem>
