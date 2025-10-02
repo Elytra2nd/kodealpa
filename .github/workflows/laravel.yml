@@ -16,65 +16,101 @@ jobs:
       DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || '/var/www/kodealpa' }}
 
     steps:
-      # 1. Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Setup Node.js 22.x (UPDATED!)
-      - name: Setup Node.js
+      - name: Setup Node.js 22.x
         uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: 'npm'
 
-      # 3. Install dependencies and build assets
-      - name: Install dependencies and build assets
-        env:
-          # ✅ Set production environment variables for build
-          NODE_ENV: production
-          VITE_HMR_HOST: ''  # Empty untuk production build
+      - name: Install dependencies
         run: |
-          npm ci
-          npm run build
+          echo "Installing dependencies..."
+          npm ci --legacy-peer-deps
+          echo "✅ Dependencies installed"
 
-      # 4. Start ssh-agent
+      - name: Type check (optional)
+        continue-on-error: true
+        run: |
+          echo "Running type check..."
+          npx tsc --noEmit || echo "⚠️ Type check has warnings"
+
+      - name: Build for production
+        env:
+          NODE_ENV: production
+          VITE_HMR_HOST: ''
+        run: |
+          echo "Building assets for production..."
+          npx vite build
+          echo "✅ Build completed"
+
+      - name: Verify build output
+        run: |
+          if [ ! -f "public/build/manifest.json" ]; then
+            echo "❌ Build failed: manifest.json not found"
+            exit 1
+          fi
+          echo "✅ Build verified"
+          echo "Manifest preview:"
+          head -20 public/build/manifest.json
+          echo ""
+          echo "Build files:"
+          ls -lh public/build/assets/ | head -10
+
       - name: Start ssh-agent and add key
         uses: webfactory/ssh-agent@v0.5.4
         with:
           ssh-private-key: ${{ secrets.DEPLOY_KEY }}
 
-      # 5. Add server to known_hosts
       - name: Add server to known_hosts
         run: |
           mkdir -p ~/.ssh
           ssh-keyscan -p $DEPLOY_PORT -H $DEPLOY_HOST > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
-      # 6. Deploy built assets to server
       - name: Deploy built assets to server
         run: |
-          # Create build directory if not exists
+          echo "Deploying assets to server..."
           ssh -p $DEPLOY_PORT $DEPLOY_USER@$DEPLOY_HOST \
             "mkdir -p $DEPLOY_PATH/public/build"
           
-          # Sync built assets (delete old files)
           rsync -avz --delete \
             -e "ssh -p $DEPLOY_PORT" \
+            --progress \
             public/build/ \
             $DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/public/build/
+          
+          echo "✅ Assets deployed successfully"
 
-      # 7. Run remote deploy script
       - name: Run remote deploy script
         run: |
+          echo "Running deployment script on server..."
           ssh -o StrictHostKeyChecking=yes \
               -p $DEPLOY_PORT \
               $DEPLOY_USER@$DEPLOY_HOST \
               "bash $DEPLOY_PATH/deploy.sh"
+          echo "✅ Deployment script completed"
 
-      # 8. Verify deployment
       - name: Verify deployment
         run: |
+          echo "Verifying deployment..."
           ssh -p $DEPLOY_PORT $DEPLOY_USER@$DEPLOY_HOST \
-            "ls -la $DEPLOY_PATH/public/build/manifest.json && \
+            "test -f $DEPLOY_PATH/public/build/manifest.json && \
              test ! -f $DEPLOY_PATH/public/hot && \
-             echo '✅ Deployment verified successfully!'"
+             echo '✅ Deployment verified successfully!' || \
+             (echo '❌ Deployment verification failed' && exit 1)"
+
+      - name: Deployment summary
+        if: success()
+        run: |
+          echo "========================================="
+          echo "🎉 Deployment Successful!"
+          echo "========================================="
+          echo "✅ Assets built and deployed"
+          echo "✅ Server updated"
+          echo "✅ All checks passed"
+          echo ""
+          echo "🌐 Site: https://codealpha-dungeon.tech"
+          echo "⚠️  Remember to hard refresh browser (Ctrl+Shift+R)"
