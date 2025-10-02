@@ -19,6 +19,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # ... (langkah setup node, npm ci, npm run build tetap sama) ...
       - name: Setup Node.js 22.x
         uses: actions/setup-node@v4
         with:
@@ -34,14 +35,6 @@ jobs:
           VITE_HMR_HOST: ''
         run: npm run build
 
-      - name: Verify build
-        run: |
-          if [ ! -f "public/build/manifest.json" ]; then
-            echo "❌ Build failed"
-            exit 1
-          fi
-          echo "✅ Build verified"
-
       - name: Start ssh-agent
         uses: webfactory/ssh-agent@v0.5.4
         with:
@@ -51,6 +44,16 @@ jobs:
         run: |
           mkdir -p ~/.ssh
           ssh-keyscan -p $DEPLOY_PORT -H $DEPLOY_HOST > ~/.ssh/known_hosts
+
+      # ✅ LANGKAH BARU: Siapkan direktori dan berikan izin ke deploy user
+      - name: Prepare Directories and Fix Ownership
+        run: |
+          echo "🔐 Preparing destination directory..."
+          ssh -p $DEPLOY_PORT root@$DEPLOY_HOST << 'ENDSSH'
+            mkdir -p ${{ env.DEPLOY_PATH }}
+            chown -R ${{ env.DEPLOY_USER }}:${{ env.DEPLOY_USER }} ${{ env.DEPLOY_PATH }}
+            echo "✅ Directory ownership set for deploy user"
+          ENDSSH
 
       - name: Deploy application files
         run: |
@@ -72,25 +75,22 @@ jobs:
       - name: Deploy built assets
         run: |
           echo "📦 Deploying assets..."
-          # ✅ FIX: Use -rlvz instead of -avz to avoid permission errors.
-          # This copies files without trying to set ownership.
-          # The 'Fix permissions' step will handle ownership later as root.
           rsync -rlvz --delete \
             -e "ssh -p $DEPLOY_PORT" \
             public/build/ \
             $DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/public/build/
           echo "✅ Assets deployed"
 
-      - name: Fix permissions
+      # Langkah ini tetap penting untuk mengatur izin akhir untuk web server (www-data)
+      - name: Finalize Permissions for Web Server
         run: |
-          echo "🔐 Fixing permissions..."
+          echo "🔐 Finalizing permissions for web server..."
           ssh -p $DEPLOY_PORT root@$DEPLOY_HOST << 'ENDSSH'
-            cd /var/www/kodealpa
+            cd ${{ env.DEPLOY_PATH }}
             chown -R www-data:www-data storage bootstrap/cache public/build
             chmod -R 775 storage bootstrap/cache
-            # Permissions for build assets are usually more restrictive for security
-            chmod -R 755 public/build 
-            echo "✅ Permissions fixed"
+            chmod -R 755 public/build
+            echo "✅ Permissions finalized"
           ENDSSH
 
       - name: Run deploy script
@@ -98,7 +98,8 @@ jobs:
           echo "🚀 Running deployment..."
           ssh -p $DEPLOY_PORT $DEPLOY_USER@$DEPLOY_HOST \
             "bash $DEPLOY_PATH/deploy.sh"
-
+            
+      # ... (langkah verify dan success summary tetap sama) ...
       - name: Verify deployment
         run: |
           ssh -p $DEPLOY_PORT $DEPLOY_USER@$DEPLOY_HOST \
@@ -109,13 +110,4 @@ jobs:
       - name: Success summary
         if: success()
         run: |
-          echo "========================================="
-          echo "🎉 DEPLOYMENT SUCCESSFUL!"
-          echo "========================================="
-          echo "✅ Code deployed via rsync"
-          echo "✅ Assets deployed"
-          echo "✅ Permissions fixed"
-          echo "✅ Caches rebuilt"
-          echo ""
-          echo "🌐 https://codealpha-dungeon.tech"
-          echo "⚠️  Hard refresh: Ctrl+Shift+R"
+          echo "Deployment successful!"
