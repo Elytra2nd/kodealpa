@@ -20,15 +20,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Setup Node.js (untuk build assets)
+      # 2. Setup Node.js 22.x (UPDATED!)
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '22'
           cache: 'npm'
 
-      # 3. Install dependencies dan build assets
+      # 3. Install dependencies and build assets
       - name: Install dependencies and build assets
+        env:
+          # ✅ Set production environment variables for build
+          NODE_ENV: production
+          VITE_HMR_HOST: ''  # Empty untuk production build
         run: |
           npm ci
           npm run build
@@ -46,7 +50,7 @@ jobs:
           ssh-keyscan -p $DEPLOY_PORT -H $DEPLOY_HOST > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
-      # 6. Deploy built assets ke server
+      # 6. Deploy built assets to server
       - name: Deploy built assets to server
         run: |
           # Create build directory if not exists
