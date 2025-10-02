@@ -5,19 +5,21 @@ import mkcert from 'vite-plugin-mkcert';
 import path from 'path';
 
 export default defineConfig(({ mode }) => {
-    // Muat variabel dari file .env
     const env = loadEnv(mode, process.cwd(), '');
 
-    // Ambil host dari variabel environment
-    let hmrHost = env.VITE_HMR_HOST;
+    // ✅ Only require HMR host untuk development
+    let hmrHost = env.VITE_HMR_HOST || '';
 
-    // Pemeriksaan penting
-    if (!hmrHost) {
-        throw new Error('ERROR: VITE_HMR_HOST is not defined in your .env file.');
+    // ✅ Jangan throw error jika production build
+    if (!hmrHost && mode === 'development') {
+        console.warn('WARNING: VITE_HMR_HOST is not defined. Using default localhost.');
+        hmrHost = 'localhost';
     }
 
     // Membersihkan URL
-    hmrHost = hmrHost.replace(/^(https?:\/\/)?(\/\/)?/, '');
+    if (hmrHost) {
+        hmrHost = hmrHost.replace(/^(https?:\/\/)?(\/\/)?/, '');
+    }
 
     return {
         plugins: [
@@ -27,25 +29,19 @@ export default defineConfig(({ mode }) => {
                 refresh: true,
             }),
             react(),
-            mkcert()
-        ],
+            // ✅ Only use mkcert di development
+            mode === 'development' ? mkcert() : null,
+        ].filter(Boolean),
 
-        // ========================================
-        // RESOLVE ALIASES
-        // ========================================
         resolve: {
             alias: {
                 '@': path.resolve(__dirname, './resources/js'),
             },
         },
 
-        // ========================================
-        // BUILD CONFIGURATION (Production)
-        // ========================================
         build: {
             rollupOptions: {
                 output: {
-                    // Manual chunks untuk better caching
                     manualChunks: {
                         'react-vendor': ['react', 'react-dom'],
                         'router-vendor': ['@inertiajs/react'],
@@ -54,28 +50,15 @@ export default defineConfig(({ mode }) => {
                         'ui-vendor': ['sonner'],
                     },
                 },
-                // ✅ FIX: External CSS imports yang bermasalah
                 external: [
                     /^react-pdf\/dist\/esm\/.*\.css$/,
                 ],
             },
-            // Naikkan warning limit untuk chunks besar
             chunkSizeWarningLimit: 1000,
-            // Source maps untuk debugging production
             sourcemap: mode === 'development',
-            // Minify untuk production
-            minify: mode === 'production' ? 'terser' : false,
-            terserOptions: mode === 'production' ? {
-                compress: {
-                    drop_console: true, // Remove console.log di production
-                    drop_debugger: true,
-                },
-            } : undefined,
+            minify: mode === 'production' ? 'esbuild' : false,
         },
 
-        // ========================================
-        // OPTIMIZATION DEPENDENCIES
-        // ========================================
         optimizeDeps: {
             include: [
                 'react',
@@ -86,90 +69,59 @@ export default defineConfig(({ mode }) => {
                 'framer-motion',
                 'sonner',
             ],
-            // ✅ FIX: Exclude CSS yang bermasalah dari optimization
             exclude: [
                 'react-pdf/dist/esm/Page/AnnotationLayer.css',
                 'react-pdf/dist/esm/Page/TextLayer.css',
             ],
         },
 
-        // ========================================
-        // CSS CONFIGURATION
-        // ========================================
         css: {
             postcss: './postcss.config.js',
             devSourcemap: true,
         },
 
-        // ========================================
-        // SERVER CONFIGURATION (Development)
-        // ========================================
-        server: {
+        // ✅ Only configure server untuk development
+        server: mode === 'development' && hmrHost ? {
             https: true,
             host: '0.0.0.0',
             port: 5173,
             strictPort: true,
             origin: `https://${hmrHost}`,
-
-            // HMR Configuration
             hmr: {
                 host: hmrHost,
                 protocol: 'wss',
                 clientPort: 443,
             },
-
-            // Proxy Configuration
             proxy: {
                 '^/(?!resources|@vite|@react-refresh|@fs|node_modules).*': {
                     target: 'http://127.0.0.1:8000',
                     changeOrigin: true,
                     secure: false,
-                    ws: true, // Enable WebSocket proxying
-
-                    // Custom proxy configuration
+                    ws: true,
                     configure: (proxy, options) => {
                         proxy.on('proxyReq', (proxyReq, req, res) => {
-                            // Memaksa proxy mengirimkan header Host yang benar
                             if (req.headers.host) {
                                 proxyReq.setHeader('Host', req.headers.host);
                             }
-
-                            // Forward X-Forwarded-* headers
                             proxyReq.setHeader('X-Forwarded-Proto', 'https');
                             proxyReq.setHeader('X-Forwarded-Host', hmrHost);
                         });
-
-                        // Log proxy errors untuk debugging
                         proxy.on('error', (err, req, res) => {
                             console.error('Proxy error:', err);
-                        });
-
-                        // Log successful proxy
-                        proxy.on('proxyRes', (proxyRes, req, res) => {
-                            if (mode === 'development') {
-                                console.log(`Proxied: ${req.method} ${req.url} -> ${proxyRes.statusCode}`);
-                            }
                         });
                     }
                 }
             },
-
-            // CORS Configuration
             cors: {
                 origin: `https://${hmrHost}`,
                 credentials: true,
             },
-
-            // Watch configuration
             watch: {
                 usePolling: true,
                 interval: 100,
             },
-        },
+        } : undefined,
 
-        // ========================================
-        // PREVIEW CONFIGURATION (Production Preview)
-        // ========================================
         preview: {
             https: true,
             host: '0.0.0.0',
@@ -178,23 +130,14 @@ export default defineConfig(({ mode }) => {
             cors: true,
         },
 
-        // ========================================
-        // ESBUILD CONFIGURATION
-        // ========================================
         esbuild: {
             logOverride: {
                 'this-is-undefined-in-esm': 'silent'
             },
-            // Drop console & debugger di production
             drop: mode === 'production' ? ['console', 'debugger'] : [],
-        },
-
-        // ========================================
-        // PERFORMANCE CONFIGURATION
-        // ========================================
-        performance: {
-            maxEntrypointSize: 512000,
-            maxAssetSize: 512000,
+            minifyIdentifiers: mode === 'production',
+            minifySyntax: mode === 'production',
+            minifyWhitespace: mode === 'production',
         },
     };
 });
