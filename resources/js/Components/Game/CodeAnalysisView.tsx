@@ -14,8 +14,8 @@ const CONFIG = {
   RUNE_FLOAT_DURATION: 3200,
   LINE_HOVER_DURATION: 0.3,
   MAX_INPUT_LENGTH: 200,
-  MAX_CODE_HEIGHT: 400,
-  MAX_ACCORDION_HEIGHT: 300,
+  MAX_CODE_HEIGHT: 380,
+  MAX_EXPERT_CONTENT_HEIGHT: 320,
 } as const;
 
 const RUNE_MAP: Record<string, string> = {
@@ -179,7 +179,7 @@ const CodeLine = memo(
         ref={lineRef}
         onClick={isDefuser ? onClick : undefined}
         className={[
-          'flex items-start px-3 py-1.5 rounded transition-all duration-300',
+          'flex items-start px-2 py-1 rounded transition-all duration-300',
           isDefuser ? 'cursor-pointer' : '',
           isActive ? 'ring-2 ring-amber-400 dungeon-line-glow' : '',
           isChosen ? 'bg-red-900/30 border-l-4 border-red-500' : isDefuser ? 'hover:bg-stone-800/60' : '',
@@ -191,10 +191,10 @@ const CodeLine = memo(
         aria-pressed={isDefuser ? isChosen : undefined}
         onKeyDown={isDefuser ? (e) => e.key === 'Enter' && onClick() : undefined}
       >
-        <span className="text-stone-400 min-w-[2.5rem] text-right mr-3 select-none font-mono text-sm font-semibold">
+        <span className="text-stone-400 min-w-[2rem] text-right mr-2 select-none font-mono text-xs font-semibold">
           {lineNo}
         </span>
-        <code className="text-green-300 font-mono text-xs sm:text-sm flex-1 break-all">{line}</code>
+        <code className="text-green-300 font-mono text-xs flex-1 break-all">{line}</code>
       </div>
     );
   }
@@ -259,9 +259,8 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
       'Cari pola pergeseran yang tidak seragam dalam siklus.',
       'Uji pemetaan huruf dengan frekuensi bahasa.',
       'Frekuensi simbol membisikkan arah transformasi.',
-      'Jejak aturan bisa bertingkat dan berlapis.',
     ];
-    return [...base, ...extra].slice(0, 4).map(obfuscateText);
+    return [...base, ...extra].slice(0, 3).map(obfuscateText);
   }, [isCipherPuzzle, puzzle?.defuserView?.hints]);
 
   const defuserHintsBug = useMemo(() => {
@@ -271,9 +270,8 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
       'Perhatikan variabel yang berubah sebelum digunakan.',
       'Mantra cabang sering menyembunyikan kutukan tersembunyi.',
       'Fokus pada mantra yang aktif berjalan.',
-      'Perhatikan resource yang tidak ditutup.',
     ];
-    return [...base, ...extra].slice(0, 4).map(obfuscateText);
+    return [...base, ...extra].slice(0, 3).map(obfuscateText);
   }, [isBugPuzzle, puzzle?.defuserView?.hints]);
 
   const handleSubmit = useCallback(() => {
@@ -330,7 +328,7 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <Card className="overflow-hidden border-2 border-amber-700/40 bg-gradient-to-br from-stone-900 via-stone-800 to-amber-950">
         <CardHeader className="relative p-3">
           <div ref={setTorchRef(0)} className="absolute top-2 left-2 text-xl dungeon-torch-flicker">
@@ -423,94 +421,71 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="p-2">
-                    <Tabs defaultValue="guide" className="w-full">
-                      <TabsList className="grid w-full grid-cols-3 bg-stone-900/60 h-7">
-                        <TabsTrigger value="guide" className="text-xs py-1">
-                          Panduan
+                    <Tabs defaultValue="hints" className="w-full">
+                      <TabsList className="grid w-full grid-cols-2 bg-stone-900/60 h-7">
+                        <TabsTrigger value="hints" className="text-xs py-1">
+                          💡 Petunjuk
                         </TabsTrigger>
                         <TabsTrigger value="tools" className="text-xs py-1">
-                          Tools
-                        </TabsTrigger>
-                        <TabsTrigger value="hints" className="text-xs py-1">
-                          Petunjuk
+                          🛠️ Tools
                         </TabsTrigger>
                       </TabsList>
 
-                      <TabsContent value="guide" className="space-y-1 mt-2">
-                        <div className="max-h-72 overflow-y-auto space-y-1 pr-1">
-                          <Accordion type="single" collapsible className="space-y-1">
-                            <AccordionItem value="dekripsi" className="border-stone-700/40">
-                              <AccordionTrigger className="text-stone-200 text-xs hover:text-amber-300 py-1">
-                                Panduan Dekripsi
-                              </AccordionTrigger>
-                              <AccordionContent className="text-xs text-stone-300 p-1 space-y-0.5">
-                                <p>• Deteksi cipher dengan IoC</p>
-                                <p>• Analisis frekuensi untuk mono</p>
-                                <p>• Estimasi key length untuk poli</p>
-                              </AccordionContent>
-                            </AccordionItem>
-
-                            <AccordionItem value="caesar" className="border-stone-700/40">
-                              <AccordionTrigger className="text-stone-200 text-xs hover:text-amber-300 py-1">
-                                Teknik Caesar
-                              </AccordionTrigger>
-                              <AccordionContent className="text-xs text-stone-300 p-1 space-y-0.5">
-                                <p>• Uji setiap shift</p>
-                                <p>• Konfirmasi digram umum</p>
-                                <p>• Validasi konteks</p>
-                              </AccordionContent>
-                            </AccordionItem>
-                          </Accordion>
-                        </div>
-                      </TabsContent>
-
-                      <TabsContent value="tools" className="space-y-1 mt-2">
-                        {isCaesarCipher && (
-                          <div className="p-2 rounded-lg bg-stone-900/60 border border-stone-700/40 max-h-72 overflow-y-auto">
-                            <div className="text-xs text-stone-300 space-y-1">
-                              <div className="flex items-center gap-1 mb-1">
-                                <Badge className="bg-amber-800/80 text-amber-100 text-xs">
-                                  {caesarRuneHint || '?'}
-                                </Badge>
-                                <span className="text-stone-400 text-xs">Shift</span>
-                              </div>
-                              <div className="grid grid-cols-13 gap-0.5">
-                                {alphabet.slice(0, 13).map((ch) => (
-                                  <Badge key={ch} className="bg-stone-800 text-stone-100 text-[10px] p-0.5">
-                                    {ch}
-                                  </Badge>
-                                ))}
-                              </div>
-                              <div className="grid grid-cols-13 gap-0.5">
-                                {rotated.slice(0, 13).map((ch) => (
-                                  <Badge key={ch} className="bg-stone-900 text-amber-300 text-[10px] p-0.5">
-                                    {ch}
-                                  </Badge>
-                                ))}
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        <div className="p-1 rounded-lg bg-stone-900/60 border border-stone-700/40">
-                          <h6 className="text-xs text-stone-300 mb-1">Rune Legend</h6>
-                          <div className="grid grid-cols-5 gap-0.5">
-                            {runeLegend.map(({ num, sym }) => (
-                              <Badge key={num} className="bg-stone-800 text-amber-100 text-[10px]">
-                                {sym}={num}
-                              </Badge>
-                            ))}
-                          </div>
-                        </div>
-                      </TabsContent>
-
-                      <TabsContent value="hints" className="space-y-1 mt-2">
-                        <div className="p-2 rounded-lg bg-blue-950/40 border border-blue-700/40 max-h-72 overflow-y-auto">
+                      <TabsContent value="hints" className="mt-2">
+                        <div
+                          className="p-2 rounded-lg bg-blue-950/40 border border-blue-700/40 overflow-y-auto"
+                          style={{ maxHeight: `${CONFIG.MAX_EXPERT_CONTENT_HEIGHT}px` }}
+                        >
                           <ul className="text-xs text-blue-200/90 space-y-1 list-disc pl-3">
                             {defuserHintsCipher.map((hint, i) => (
                               <li key={i}>{hint}</li>
                             ))}
                           </ul>
+                        </div>
+                      </TabsContent>
+
+                      <TabsContent value="tools" className="mt-2">
+                        <div
+                          className="space-y-2 overflow-y-auto"
+                          style={{ maxHeight: `${CONFIG.MAX_EXPERT_CONTENT_HEIGHT}px` }}
+                        >
+                          {isCaesarCipher && (
+                            <div className="p-2 rounded-lg bg-stone-900/60 border border-stone-700/40">
+                              <div className="text-xs text-stone-300 space-y-1">
+                                <div className="flex items-center gap-1 mb-1">
+                                  <Badge className="bg-amber-800/80 text-amber-100 text-xs">
+                                    {caesarRuneHint || '?'}
+                                  </Badge>
+                                  <span className="text-stone-400 text-xs">Shift</span>
+                                </div>
+                                <div className="grid grid-cols-13 gap-0.5">
+                                  {alphabet.slice(0, 13).map((ch) => (
+                                    <Badge key={ch} className="bg-stone-800 text-stone-100 text-[10px] p-0.5">
+                                      {ch}
+                                    </Badge>
+                                  ))}
+                                </div>
+                                <div className="grid grid-cols-13 gap-0.5">
+                                  {rotated.slice(0, 13).map((ch) => (
+                                    <Badge key={ch} className="bg-stone-900 text-amber-300 text-[10px] p-0.5">
+                                      {ch}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="p-2 rounded-lg bg-stone-900/60 border border-stone-700/40">
+                            <h6 className="text-xs text-stone-300 mb-1 font-semibold">Rune Legend</h6>
+                            <div className="grid grid-cols-5 gap-0.5">
+                              {runeLegend.map(({ num, sym }) => (
+                                <Badge key={num} className="bg-stone-800 text-amber-100 text-[10px] p-0.5">
+                                  {sym}={num}
+                                </Badge>
+                              ))}
+                            </div>
+                          </div>
                         </div>
                       </TabsContent>
                     </Tabs>
@@ -523,7 +498,7 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
           {/* BUG PUZZLE */}
           {isBugPuzzle && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-              {/* Defuser Panel - PUZZLE ONLY */}
+              {/* Defuser Panel - PUZZLE ONLY (NO HINTS) */}
               {(isDefuser || isHost) && (
                 <Card className="border-2 border-red-700/40 bg-gradient-to-b from-stone-900/80 to-red-950/30">
                   <CardHeader className="pb-2 p-2">
@@ -533,45 +508,47 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
                   </CardHeader>
                   <CardContent className="space-y-2 p-2">
                     {Array.isArray(puzzle.defuserView?.codeLines) && (
-                      <div>
-                        <h4 className="text-stone-200 font-semibold text-xs mb-1">Kode Program</h4>
-                        <div
-                          className="bg-stone-950 rounded-lg p-1 border border-stone-700/60 overflow-y-auto"
-                          style={{ maxHeight: `${CONFIG.MAX_CODE_HEIGHT}px` }}
-                        >
-                          <pre className="text-xs">
-                            {puzzle.defuserView.codeLines.map((line, index) => {
-                              const lineNo = index + 1;
-                              return (
-                                <CodeLine
-                                  key={index}
-                                  line={line}
-                                  lineNo={lineNo}
-                                  isDefuser={isDefuser}
-                                  isActive={selectedLine === lineNo}
-                                  isChosen={foundBugs.includes(lineNo)}
-                                  onClick={() => handleLineClick(lineNo)}
-                                />
-                              );
-                            })}
-                          </pre>
+                      <>
+                        <div>
+                          <h4 className="text-stone-200 font-semibold text-xs mb-1">Kode Program</h4>
+                          <div
+                            className="bg-stone-950 rounded-lg p-1 border border-stone-700/60 overflow-y-auto"
+                            style={{ maxHeight: `${CONFIG.MAX_CODE_HEIGHT}px` }}
+                          >
+                            <pre className="text-xs">
+                              {puzzle.defuserView.codeLines.map((line, index) => {
+                                const lineNo = index + 1;
+                                return (
+                                  <CodeLine
+                                    key={index}
+                                    line={line}
+                                    lineNo={lineNo}
+                                    isDefuser={isDefuser}
+                                    isActive={selectedLine === lineNo}
+                                    isChosen={foundBugs.includes(lineNo)}
+                                    onClick={() => handleLineClick(lineNo)}
+                                  />
+                                );
+                              })}
+                            </pre>
+                          </div>
                         </div>
-                        {isDefuser && (
-                          <p className="text-xs text-stone-400 mt-1">
-                            Bug: <span className="text-red-400 font-bold text-sm">{foundBugs.length}</span>
-                          </p>
-                        )}
-                      </div>
-                    )}
 
-                    {isDefuser && (
-                      <Button
-                        onClick={handleSubmit}
-                        disabled={foundBugs.length === 0 || submitting}
-                        className="w-full bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-stone-900 font-semibold py-2 rounded-lg disabled:opacity-50 transition-all text-xs"
-                      >
-                        {submitting ? 'Mengirim...' : `✨ Kirim (${foundBugs.length})`}
-                      </Button>
+                        {isDefuser && (
+                          <>
+                            <p className="text-xs text-stone-400">
+                              Bug terpilih: <span className="text-red-400 font-bold text-sm">{foundBugs.length}</span>
+                            </p>
+                            <Button
+                              onClick={handleSubmit}
+                              disabled={foundBugs.length === 0 || submitting}
+                              className="w-full bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-stone-900 font-semibold py-2 rounded-lg disabled:opacity-50 transition-all text-xs"
+                            >
+                              {submitting ? 'Mengirim...' : `✨ Kirim (${foundBugs.length})`}
+                            </Button>
+                          </>
+                        )}
+                      </>
                     )}
                   </CardContent>
                 </Card>
@@ -586,51 +563,52 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="p-2">
-                    <Tabs defaultValue="guide" className="w-full">
+                    <Tabs defaultValue="hints" className="w-full">
                       <TabsList className="grid w-full grid-cols-2 bg-stone-900/60 h-7">
-                        <TabsTrigger value="guide" className="text-xs py-1">
-                          Panduan
-                        </TabsTrigger>
                         <TabsTrigger value="hints" className="text-xs py-1">
-                          Petunjuk
+                          💡 Petunjuk
+                        </TabsTrigger>
+                        <TabsTrigger value="guide" className="text-xs py-1">
+                          📚 Panduan
                         </TabsTrigger>
                       </TabsList>
 
-                      <TabsContent value="guide" className="space-y-1 mt-2">
-                        <div className="max-h-72 overflow-y-auto space-y-1 pr-1">
-                          <Accordion type="single" collapsible className="space-y-1">
-                            <AccordionItem value="arah" className="border-stone-700/40">
-                              <AccordionTrigger className="text-stone-200 text-xs hover:text-amber-300 py-1">
-                                Arah Penelusuran
-                              </AccordionTrigger>
-                              <AccordionContent className="text-xs text-stone-300 p-1 space-y-0.5">
-                                <p>• Lacak variabel berubah</p>
-                                <p>• Cari resource leak</p>
-                                <p>• Rekursi tanpa base case</p>
-                              </AccordionContent>
-                            </AccordionItem>
-
-                            <AccordionItem value="cek" className="border-stone-700/40">
-                              <AccordionTrigger className="text-stone-200 text-xs hover:text-amber-300 py-1">
-                                Daftar Cek
-                              </AccordionTrigger>
-                              <AccordionContent className="text-xs text-stone-300 p-1 space-y-0.5">
-                                <p>• Null/undefined checks</p>
-                                <p>• Resource leaks</p>
-                                <p>• Index out of bounds</p>
-                              </AccordionContent>
-                            </AccordionItem>
-                          </Accordion>
-                        </div>
-                      </TabsContent>
-
-                      <TabsContent value="hints" className="space-y-1 mt-2">
-                        <div className="p-2 rounded-lg bg-purple-950/40 border border-purple-700/40 max-h-72 overflow-y-auto">
+                      <TabsContent value="hints" className="mt-2">
+                        <div
+                          className="p-2 rounded-lg bg-purple-950/40 border border-purple-700/40 overflow-y-auto"
+                          style={{ maxHeight: `${CONFIG.MAX_EXPERT_CONTENT_HEIGHT}px` }}
+                        >
                           <ul className="text-xs text-purple-200/90 space-y-1 list-disc pl-3">
                             {defuserHintsBug.map((hint, i) => (
                               <li key={i}>{hint}</li>
                             ))}
                           </ul>
+                        </div>
+                      </TabsContent>
+
+                      <TabsContent value="guide" className="mt-2">
+                        <div
+                          className="space-y-1 overflow-y-auto"
+                          style={{ maxHeight: `${CONFIG.MAX_EXPERT_CONTENT_HEIGHT}px` }}
+                        >
+                          <div className="p-2 rounded-lg bg-stone-900/60 border border-stone-700/40">
+                            <h6 className="text-xs text-emerald-300 font-semibold mb-1">Checklist</h6>
+                            <ul className="text-xs text-stone-300 space-y-0.5 list-disc pl-3">
+                              <li>Null/undefined checks</li>
+                              <li>Resource leaks</li>
+                              <li>Index out of bounds</li>
+                              <li>Type mismatches</li>
+                            </ul>
+                          </div>
+
+                          <div className="p-2 rounded-lg bg-stone-900/60 border border-stone-700/40">
+                            <h6 className="text-xs text-amber-300 font-semibold mb-1">Strategi</h6>
+                            <ul className="text-xs text-stone-300 space-y-0.5 list-disc pl-3">
+                              <li>Lacak variabel yang berubah</li>
+                              <li>Cari resource leak</li>
+                              <li>Rekursi tanpa base case</li>
+                            </ul>
+                          </div>
                         </div>
                       </TabsContent>
                     </Tabs>
@@ -656,17 +634,17 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
         }
 
         .overflow-y-auto::-webkit-scrollbar {
-          width: 5px;
+          width: 4px;
         }
 
         .overflow-y-auto::-webkit-scrollbar-track {
           background: rgba(28, 25, 23, 0.5);
-          border-radius: 3px;
+          border-radius: 2px;
         }
 
         .overflow-y-auto::-webkit-scrollbar-thumb {
           background: rgba(180, 83, 9, 0.6);
-          border-radius: 3px;
+          border-radius: 2px;
         }
 
         .overflow-y-auto::-webkit-scrollbar-thumb:hover {
