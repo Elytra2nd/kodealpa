@@ -22,7 +22,7 @@ export default function Dashboard() {
                   <h2 className="text-lg font-semibold leading-tight text-amber-300 sm:text-xl">
                       Ruang Komando Dungeon
                   </h2>
-                  {/* Tombol Logout - Menggunakan Inertia router */}
+                  {/* Tombol Logout */}
                   <button
                     onClick={handleLogout}
                     className="border-2 border-red-600 text-red-300 hover:bg-red-950 hover:text-red-200 px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
@@ -98,7 +98,7 @@ export default function Dashboard() {
 
                 {/* Quest Cards */}
                 <div className="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-4">
-                  {/* Quest 1 */}
+                  {/* Quest 1 - Masuki Dungeon */}
                   <div className="group transition-all duration-500 hover:shadow-2xl hover:-translate-y-3 border-3 border-amber-600 bg-gradient-to-b from-stone-800 to-stone-900 shadow-dance hover:border-amber-400 rounded-xl">
                     <div className="p-6 pb-3 relative">
                       <div className="absolute -top-2 -right-2 text-2xl mystical-float">✨</div>
@@ -113,7 +113,7 @@ export default function Dashboard() {
                     <div className="p-6 pt-0 text-stone-200">
                       <p className="mb-4 leading-relaxed text-sm">Bergabunglah dengan guild dan hadapi tantangan teka-teki berbahaya di kedalaman dungeon CodeAlpha.</p>
                       <button
-                        onClick={() => router.visit(route('/dungeon'))}
+                        onClick={() => router.visit(route('game.lobby'))}
                         className="w-full bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-stone-900 font-bold border border-amber-500 glow px-4 py-2 rounded-lg text-sm transition-all"
                       >
                         🚪 Masuki Dungeon →
@@ -121,7 +121,7 @@ export default function Dashboard() {
                     </div>
                   </div>
 
-                  {/* Quest 2 */}
+                  {/* Quest 2 - Grimoire Pedoman */}
                   <div className="group transition-all duration-500 hover:shadow-2xl hover:-translate-y-3 border-3 border-emerald-600 bg-gradient-to-b from-stone-800 to-emerald-950 shadow-dance hover:border-emerald-400 rounded-xl">
                     <div className="p-6 pb-3 relative">
                       <div className="absolute -top-2 -right-2 text-2xl mystical-float">🌟</div>
@@ -136,7 +136,7 @@ export default function Dashboard() {
                     <div className="p-6 pt-0 text-stone-200">
                       <p className="mb-4 leading-relaxed text-sm">Buka rahasia komunikasi magis dan strategi bertahan hidup di dungeon yang berbahaya.</p>
                       <button
-                        onClick={() => router.visit(route('grimoire.index'))}
+                        onClick={() => router.visit(route('grimoire.panel'))}
                         className="w-full border-2 border-emerald-500 text-emerald-300 hover:bg-emerald-900 bg-emerald-950 px-4 py-2 rounded-lg text-sm font-semibold transition-all"
                       >
                         📖 Baca Grimoire →
@@ -144,7 +144,7 @@ export default function Dashboard() {
                     </div>
                   </div>
 
-                  {/* Quest 3 */}
+                  {/* Quest 3 - Catatan Penjelajah */}
                   <div className="group transition-all duration-500 hover:shadow-2xl hover:-translate-y-3 border-3 border-purple-600 bg-gradient-to-b from-stone-800 to-purple-950 shadow-dance hover:border-purple-400 rounded-xl">
                     <div className="p-6 pb-3 relative">
                       <div className="absolute -top-2 -right-2 text-2xl mystical-float">🔮</div>
@@ -159,7 +159,7 @@ export default function Dashboard() {
                     <div className="p-6 pt-0 text-stone-200">
                       <p className="mb-4 leading-relaxed text-sm">Telusuri riwayat ekspedisi, tingkat survival, dan analisis kemampuan dungeon crawling Anda.</p>
                       <button
-                        onClick={() => router.visit(route('records.index'))}
+                        onClick={() => router.visit(route('game.journal'))}
                         className="w-full border-2 border-purple-500 text-purple-300 hover:bg-purple-900 bg-purple-950 px-4 py-2 rounded-lg text-sm font-semibold transition-all"
                       >
                         🗒️ Buka Catatan →
@@ -167,7 +167,7 @@ export default function Dashboard() {
                     </div>
                   </div>
 
-                  {/* Quest 4 */}
+                  {/* Quest 4 - Achievements */}
                   <div className="group transition-all duration-500 hover:shadow-2xl hover:-translate-y-3 border-3 border-amber-600 bg-gradient-to-b from-stone-800 to-amber-950 shadow-dance hover:border-amber-400 rounded-xl">
                     <div className="p-6 pb-3 relative">
                       <div className="absolute -top-2 -right-2 text-2xl mystical-float">🏅</div>
@@ -182,7 +182,7 @@ export default function Dashboard() {
                     <div className="p-6 pt-0 text-stone-200">
                       <p className="mb-4 leading-relaxed text-sm">Kumpulkan pencapaian eksklusif dari setiap ekspedisi dan tantangan turnamen.</p>
                       <button
-                        onClick={() => router.visit(route('achievements.index'))}
+                        onClick={() => router.visit(route('game.achievements'))}
                         className="w-full border-2 border-amber-500 text-amber-300 hover:bg-amber-900 bg-amber-950 px-4 py-2 rounded-lg text-sm font-semibold transition-all"
                       >
                         🏅 Buka Achievements →
@@ -191,8 +191,70 @@ export default function Dashboard() {
                   </div>
                 </div>
 
-                {/* About and Tips - sisanya sama seperti sebelumnya... */}
-                {/* Saya potong untuk singkat, gunakan kode lengkap di atas */}
+                {/* About and Tips Section */}
+                <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
+                  {/* About CodeAlpha Dungeon */}
+                  <div className="border-3 border-stone-600 bg-gradient-to-br from-stone-900 to-amber-950 shadow-2xl rounded-2xl p-6">
+                      <div className="relative">
+                          <div className="absolute -top-2 -right-2 text-3xl flicker">🕯️</div>
+                          <h3 className="flex items-center text-xl sm:text-2xl text-amber-300 font-bold mb-4">
+                            <span className="text-3xl sm:text-4xl mr-4 dungeon-pulse">🏰</span>
+                            Legenda CodeAlpha Dungeon
+                          </h3>
+                      </div>
+                      <div className="space-y-4 text-stone-200">
+                          <p className="leading-relaxed">
+                            <strong className="text-amber-300">CodeAlpha Dungeon</strong> adalah sebuah <strong className="text-red-300">kuil pembelajaran kuno</strong> dimana para penjelajah berani menguji kemampuan komunikasi dan pemecahan masalah mereka.
+                          </p>
+                          <p className="leading-relaxed">
+                            Satu penjelajah mengamati simbol misterius, sementara yang lain membaca gulungan kuno berisi petunjuk.
+                          </p>
+                          <p className="leading-relaxed font-medium text-amber-200">
+                            Bekerjasama, pertahankan ketenangan, dan selamatkan dunia dari kehancuran sebelum kutukan menguat!
+                          </p>
+                          <div className="flex flex-wrap gap-3 pt-4">
+                              <span className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold bg-stone-700 text-stone-200 border-stone-500">⚔️ 2 Penjelajah</span>
+                              <span className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold bg-amber-800 text-amber-100 border-amber-600">🤝 Guild Cooperation</span>
+                              <span className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold bg-red-900 text-red-100 border-red-700">🗣️ Mantra Komunikasi</span>
+                              <span className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold bg-purple-900 text-purple-100 border-purple-700">🧙‍♂️ Akademi Sihir</span>
+                          </div>
+                      </div>
+                  </div>
+
+                  {/* Mystical Survival Tips */}
+                  <div className="border-3 border-stone-600 bg-gradient-to-br from-stone-900 to-emerald-950 shadow-2xl rounded-2xl p-6">
+                      <div className="relative">
+                          <div className="absolute -top-2 -right-2 text-3xl torch-flame">🔥</div>
+                          <h3 className="flex items-center text-xl sm:text-2xl text-emerald-300 font-bold mb-4">
+                            <span className="text-3xl sm:text-4xl mr-4 mystical-float">🧙‍♂️</span>
+                            Mantra Survival Kuno
+                          </h3>
+                      </div>
+                      <div className="space-y-4">
+                          <div className="flex items-start space-x-4 p-4 bg-gradient-to-r from-amber-900 to-stone-800 rounded-xl border-2 border-amber-700 glow">
+                              <div className="text-amber-400 font-bold text-2xl dungeon-pulse">⚡</div>
+                              <div>
+                                  <p className="font-semibold text-amber-300">Mantra Komunikasi Jernih</p>
+                                  <p className="text-amber-200 text-sm">Ucapkan dengan tepat apa yang mata lihat, jangan biarkan keraguan menguasai.</p>
+                              </div>
+                          </div>
+                          <div className="flex items-start space-x-4 p-4 bg-gradient-to-r from-blue-900 to-stone-800 rounded-xl border-2 border-blue-700">
+                              <div className="text-blue-400 font-bold text-2xl mystical-float">🛡️</div>
+                              <div>
+                                  <p className="font-semibold text-blue-300">Ritual Konfirmasi Ganda</p>
+                                  <p className="text-blue-200 text-sm">Pastikan setiap instruksi dikonfirmasi sebelum mengaktivasi mekanisme kuno.</p>
+                              </div>
+                          </div>
+                          <div className="flex items-start space-x-4 p-4 bg-gradient-to-r from-green-900 to-stone-800 rounded-xl border-2 border-green-700">
+                              <div className="text-green-400 font-bold text-2xl flicker">🧘‍♂️</div>
+                              <div>
+                                  <p className="font-semibold text-green-300">Meditasi Ketenangan</p>
+                                  <p className="text-green-200 text-sm">Panik adalah musuh terbesar, bernapas dalam dan fokuskan pikiran.</p>
+                              </div>
+                          </div>
+                      </div>
+                  </div>
+                </div>
 
                 {/* Chronicle of Adventures */}
                 <div className="border-4 border-stone-600 bg-gradient-to-br from-stone-900 via-stone-800 to-amber-950 shadow-2xl rounded-2xl">
@@ -215,7 +277,7 @@ export default function Dashboard() {
                             Jejak petualangan heroik Anda akan terukir di sini setelah menyelesaikan quest pertama.
                           </p>
                           <button
-                            onClick={() => router.visit(route('dungeon.index'))}
+                            onClick={() => router.visit(route('game.lobby'))}
                             className="bg-gradient-to-r from-amber-600 via-amber-700 to-red-600 hover:from-amber-500 hover:via-amber-600 hover:to-red-500 text-stone-900 font-bold px-8 sm:px-10 py-3 sm:py-4 text-base sm:text-lg shadow-2xl glow rounded-lg inline-flex items-center"
                           >
                               <span className="mr-2 sm:mr-3 text-xl sm:text-2xl torch-flame">⚔️</span>
@@ -226,7 +288,36 @@ export default function Dashboard() {
                   </div>
                 </div>
 
-                {/* Sisanya tetap sama... */}
+                {/* Guild Assembly Hall */}
+                <div className="bg-gradient-to-br from-stone-800 via-amber-900 to-stone-900 border-4 border-amber-600 shadow-2xl rounded-2xl">
+                  <div className="p-6 sm:p-10">
+                    <div className="text-center space-y-6">
+                      <h4 className="text-2xl sm:text-3xl font-bold text-amber-300 flicker">
+                        🏛️ Aula Perkumpulan Guild
+                      </h4>
+                      <p className="text-stone-300 max-w-3xl mx-auto text-base sm:text-lg leading-relaxed">
+                        CodeAlpha Dungeon memerlukan tim yang solid. Pastikan Anda memiliki rekan seperjuangan dan siapkan kristal komunikasi!
+                      </p>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-8 pt-8">
+                        <div className="flex flex-col items-center p-6 bg-gradient-to-b from-stone-700 to-stone-800 rounded-2xl shadow-xl border-2 border-stone-600 dungeon-pulse">
+                          <span className="text-5xl mb-4 torch-flame">🎧</span>
+                          <span className="font-bold text-amber-300 text-lg">Kristal Suara</span>
+                          <span className="text-sm text-stone-400">Sangat Direkomendasikan</span>
+                        </div>
+                        <div className="flex flex-col items-center p-6 bg-gradient-to-b from-stone-700 to-stone-800 rounded-2xl shadow-xl border-2 border-stone-600 mystical-float">
+                          <span className="text-5xl mb-4 flicker">⏳</span>
+                          <span className="font-bold text-amber-300 text-lg">Durasi Quest</span>
+                          <span className="text-sm text-stone-400">3-5 menit per ekspedisi</span>
+                        </div>
+                        <div className="flex flex-col items-center p-6 bg-gradient-to-b from-stone-700 to-stone-800 rounded-2xl shadow-xl border-2 border-stone-600 glow">
+                          <span className="text-5xl mb-4 dungeon-pulse">⚔️</span>
+                          <span className="font-bold text-amber-300 text-lg">Persatuan Guild</span>
+                          <span className="text-sm text-stone-400">Wajib Untuk Survival</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
           </div>
         </main>
