@@ -52,7 +52,6 @@ jobs:
           mkdir -p ~/.ssh
           ssh-keyscan -p $DEPLOY_PORT -H $DEPLOY_HOST > ~/.ssh/known_hosts
 
-      # ✅ FIX: Use rsync to deploy code (skip git operations)
       - name: Deploy application files
         run: |
           echo "📦 Deploying application..."
@@ -73,13 +72,15 @@ jobs:
       - name: Deploy built assets
         run: |
           echo "📦 Deploying assets..."
-          rsync -avz --delete \
+          # ✅ FIX: Use -rlvz instead of -avz to avoid permission errors.
+          # This copies files without trying to set ownership.
+          # The 'Fix permissions' step will handle ownership later as root.
+          rsync -rlvz --delete \
             -e "ssh -p $DEPLOY_PORT" \
             public/build/ \
             $DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/public/build/
           echo "✅ Assets deployed"
 
-      # Fix permissions as root
       - name: Fix permissions
         run: |
           echo "🔐 Fixing permissions..."
@@ -87,18 +88,17 @@ jobs:
             cd /var/www/kodealpa
             chown -R www-data:www-data storage bootstrap/cache public/build
             chmod -R 775 storage bootstrap/cache
-            chmod -R 755 public/build
+            # Permissions for build assets are usually more restrictive for security
+            chmod -R 755 public/build 
             echo "✅ Permissions fixed"
           ENDSSH
 
-      # Run deploy script
       - name: Run deploy script
         run: |
           echo "🚀 Running deployment..."
           ssh -p $DEPLOY_PORT $DEPLOY_USER@$DEPLOY_HOST \
             "bash $DEPLOY_PATH/deploy.sh"
 
-      # Verify
       - name: Verify deployment
         run: |
           ssh -p $DEPLOY_PORT $DEPLOY_USER@$DEPLOY_HOST \
