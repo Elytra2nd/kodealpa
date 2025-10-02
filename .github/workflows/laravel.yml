@@ -14,7 +14,6 @@ jobs:
       DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
       DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
       DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || '/var/www/kodealpa' }}
-      ROOT_USER: root  # Add this
 
     steps:
       - name: Checkout repository
@@ -35,7 +34,7 @@ jobs:
           VITE_HMR_HOST: ''
         run: npm run build
 
-      - name: Verify build output
+      - name: Verify build
         run: |
           if [ ! -f "public/build/manifest.json" ]; then
             echo "❌ Build failed"
@@ -43,7 +42,7 @@ jobs:
           fi
           echo "✅ Build verified"
 
-      - name: Start ssh-agent and add key
+      - name: Start ssh-agent
         uses: webfactory/ssh-agent@v0.5.4
         with:
           ssh-private-key: ${{ secrets.DEPLOY_KEY }}
@@ -52,77 +51,71 @@ jobs:
         run: |
           mkdir -p ~/.ssh
           ssh-keyscan -p $DEPLOY_PORT -H $DEPLOY_HOST > ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/known_hosts
 
-      # ✅ FIX PERMISSIONS BEFORE EVERYTHING (AS ROOT)
-      - name: Fix all permissions on server
+      # ✅ FIX: Use rsync to deploy code (skip git operations)
+      - name: Deploy application files
         run: |
-          echo "🔐 Fixing permissions on server..."
-          ssh -p $DEPLOY_PORT $ROOT_USER@$DEPLOY_HOST << 'ENDSSH'
-            cd /var/www/kodealpa
-            
-            # Fix ownership
-            chown -R deploy:deploy .
-            
-            # Fix specific directories
-            chown -R www-data:www-data storage bootstrap/cache
-            
-            # Set proper permissions
-            chmod -R 755 .
-            chmod -R 775 storage bootstrap/cache
-            
-            # Verify
-            ls -ld storage/ bootstrap/cache/ public/build/
-          ENDSSH
-          echo "✅ Permissions fixed"
+          echo "📦 Deploying application..."
+          rsync -avz --delete \
+            -e "ssh -p $DEPLOY_PORT" \
+            --exclude='.git/' \
+            --exclude='node_modules/' \
+            --exclude='vendor/' \
+            --exclude='.env' \
+            --exclude='storage/' \
+            --exclude='bootstrap/cache/' \
+            --exclude='public/build/' \
+            --exclude='public/hot' \
+            ./ \
+            $DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/
+          echo "✅ Code deployed"
 
-      # Deploy built assets
-      - name: Deploy built assets to server
+      - name: Deploy built assets
         run: |
           echo "📦 Deploying assets..."
           rsync -avz --delete \
             -e "ssh -p $DEPLOY_PORT" \
-            --chmod=D755,F644 \
             public/build/ \
             $DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/public/build/
           echo "✅ Assets deployed"
 
-      # Set final permissions for build
-      - name: Set build permissions
+      # Fix permissions as root
+      - name: Fix permissions
         run: |
-          ssh -p $DEPLOY_PORT $ROOT_USER@$DEPLOY_HOST \
-            "cd $DEPLOY_PATH && \
-             chown -R www-data:www-data public/build && \
-             chmod -R 755 public/build"
+          echo "🔐 Fixing permissions..."
+          ssh -p $DEPLOY_PORT root@$DEPLOY_HOST << 'ENDSSH'
+            cd /var/www/kodealpa
+            chown -R www-data:www-data storage bootstrap/cache public/build
+            chmod -R 775 storage bootstrap/cache
+            chmod -R 755 public/build
+            echo "✅ Permissions fixed"
+          ENDSSH
 
       # Run deploy script
-      - name: Run remote deploy script
+      - name: Run deploy script
         run: |
-          echo "🚀 Running deployment script..."
-          ssh -o StrictHostKeyChecking=yes \
-              -p $DEPLOY_PORT \
-              $DEPLOY_USER@$DEPLOY_HOST \
-              "bash $DEPLOY_PATH/deploy.sh"
+          echo "🚀 Running deployment..."
+          ssh -p $DEPLOY_PORT $DEPLOY_USER@$DEPLOY_HOST \
+            "bash $DEPLOY_PATH/deploy.sh"
 
-      # Verify deployment
+      # Verify
       - name: Verify deployment
         run: |
-          echo "🔍 Verifying deployment..."
           ssh -p $DEPLOY_PORT $DEPLOY_USER@$DEPLOY_HOST \
             "test -f $DEPLOY_PATH/public/build/manifest.json && \
              test ! -f $DEPLOY_PATH/public/hot && \
-             echo '✅ Deployment verified!' || \
-             (echo '❌ Verification failed' && exit 1)"
+             echo '✅ Deployment verified!'"
 
-      - name: Deployment summary
+      - name: Success summary
         if: success()
         run: |
           echo "========================================="
-          echo "🎉 Deployment Successful!"
+          echo "🎉 DEPLOYMENT SUCCESSFUL!"
           echo "========================================="
-          echo "✅ Assets built and deployed"
-          echo "✅ Server updated"
-          echo "✅ All checks passed"
+          echo "✅ Code deployed via rsync"
+          echo "✅ Assets deployed"
+          echo "✅ Permissions fixed"
+          echo "✅ Caches rebuilt"
           echo ""
-          echo "🌐 Site: https://codealpha-dungeon.tech"
+          echo "🌐 https://codealpha-dungeon.tech"
           echo "⚠️  Hard refresh: Ctrl+Shift+R"
