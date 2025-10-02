@@ -6,8 +6,9 @@ import { grimoireApi } from '@/services/grimoireApi';
 import type { GrimoireCategory, GrimoireEntry } from '@/types/grimoire';
 import GrimoireSidebar from './GrimoireSidebar';
 import { Document, Page, pdfjs } from 'react-pdf';
-import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
-import 'react-pdf/dist/esm/Page/TextLayer.css';
+import 'react-pdf/dist/Page/AnnotationLayer.css';
+import 'react-pdf/dist/Page/TextLayer.css';
+
 
 // Agar worker PDF.js bisa jalan di semua environment
 pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
