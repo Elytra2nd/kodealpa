@@ -283,34 +283,36 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
                 <CardContent className="p-3 space-y-3">
                   {Array.isArray(puzzle.defuserView?.pattern) ? (
                     <>
-                      {/* FIX: Pattern boxes - Centered with justify-center */}
-                      <div className="flex justify-center items-center flex-wrap gap-2 sm:gap-3 mb-4">
-                        {puzzle.defuserView.pattern.map((item: any, idx: number) => {
-                          const kosong = item === '?' || item == null;
-                          return (
-                            <PatternBox
-                              key={idx}
-                              item={item}
-                              index={idx}
-                              isEmpty={kosong}
-                              setPatternRef={setPatternRef}
-                            />
-                          );
-                        })}
-                        <div
-                          ref={setPatternRef(puzzle.defuserView.pattern.length)}
-                          className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl flex items-center justify-center text-xl sm:text-2xl font-extrabold border-2 border-red-600 bg-gradient-to-br from-red-900/40 to-red-950/60 text-red-200 dungeon-pulse dungeon-card-glow-red shadow-lg"
-                          title="Angka hilang yang harus ditemukan"
-                          aria-label="Angka hilang"
-                        >
-                          ?
+                      {/* FIX: Pattern boxes - GRID CENTERED */}
+                      <div className="grid place-items-center mb-4">
+                        <div className="flex flex-wrap gap-2 sm:gap-3 justify-center">
+                          {puzzle.defuserView.pattern.map((item: any, idx: number) => {
+                            const kosong = item === '?' || item == null;
+                            return (
+                              <PatternBox
+                                key={idx}
+                                item={item}
+                                index={idx}
+                                isEmpty={kosong}
+                                setPatternRef={setPatternRef}
+                              />
+                            );
+                          })}
+                          <div
+                            ref={setPatternRef(puzzle.defuserView.pattern.length)}
+                            className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl flex items-center justify-center text-xl sm:text-2xl font-extrabold border-2 border-red-600 bg-gradient-to-br from-red-900/40 to-red-950/60 text-red-200 dungeon-pulse dungeon-card-glow-red shadow-lg"
+                            title="Angka hilang yang harus ditemukan"
+                            aria-label="Angka hilang"
+                          >
+                            ?
+                          </div>
                         </div>
                       </div>
 
                       {/* Input form */}
                       {isDefuser && (
                         <form onSubmit={handleSubmit} className="space-y-3">
-                          <div className="flex justify-center">
+                          <div className="grid place-items-center">
                             <input
                               type="number"
                               value={jawaban}
@@ -395,10 +397,12 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
                               ✨ Legenda Rune
                             </AccordionTrigger>
                             <AccordionContent className="p-2 text-xs text-stone-300 space-y-1">
-                              <div className="flex flex-wrap gap-1 mb-2 justify-center">
-                                {runeLegend.slice(0, 10).map(({ num, sym }) => (
-                                  <RuneLegendBadge key={num} num={num} sym={sym} />
-                                ))}
+                              <div className="grid place-items-center mb-2">
+                                <div className="flex flex-wrap gap-1 justify-center">
+                                  {runeLegend.slice(0, 10).map(({ num, sym }) => (
+                                    <RuneLegendBadge key={num} num={num} sym={sym} />
+                                  ))}
+                                </div>
                               </div>
                               <p className="text-center">Pulihkan digit dari rune untuk analisis yang akurat</p>
                             </AccordionContent>
