@@ -258,9 +258,17 @@ export default function GamePlay({
     const puzzleType = gameState.puzzle.type || 'symbol_mapping';
     switch (puzzleType) {
       case 'code_analysis':
+        // Transform GamePuzzle to Puzzle format for CodeAnalysisView
+        const transformedPuzzle = {
+          ...gameState.puzzle,
+          expertView: gameState.puzzle.expertView ? {
+            ...gameState.puzzle.expertView,
+            bugs: gameState.puzzle.expertView.bugs?.map(bug => bug.line)
+          } : undefined
+        };
         return (
           <CodeAnalysisView
-            puzzle={gameState.puzzle}
+            puzzle={transformedPuzzle}
             role={role}
             onSubmitAttempt={handleSubmitAttempt}
             submitting={submitting}
@@ -517,7 +525,7 @@ export default function GamePlay({
                 <h5 className="text-indigo-200 font-medium mb-2">Tips Belajar Rekan</h5>
                 <ul className="text-sm text-stone-200 space-y-1 list-disc pl-5">
                   <li>Jelaskan alasan langkah, bukan hanya hasil.</li>
-                  <li>Ajukan pertanyaan “mengapa” dan “bagaimana”.</li>
+                  <li>Ajukan pertanyaan "mengapa" dan "bagaimana".</li>
                   <li>Bandingkan pendekatan untuk memperkaya strategi.</li>
                   <li>Pelajari sudut pandang rekan untuk memperluas wawasan.</li>
                 </ul>
