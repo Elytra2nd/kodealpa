@@ -19,23 +19,23 @@ class SessionController extends Controller
             'title' => 'Stage 1: Pattern Analysis',
             'type' => 'pattern_analysis',
             'maxAttempts' => 3,
-            'timeLimit' => 300, // 5 minutes
+            'timeLimit' => 300,
         ],
         2 => [
             'title' => 'Stage 2: Code Analysis',
             'type' => 'code_analysis',
             'maxAttempts' => 3,
-            'timeLimit' => 400, // 6.67 minutes
+            'timeLimit' => 400,
         ],
         3 => [
             'title' => 'Stage 3: Navigation Challenge',
             'type' => 'navigation_challenge',
             'maxAttempts' => 2,
-            'timeLimit' => 600, // 10 minutes
+            'timeLimit' => 600,
         ]
     ];
 
-    // Your existing puzzle databases remain the same...
+    // Puzzle databases remain the same...
     private $patternPuzzles = [
         ['sequence' => [2, 4, 6, 8], 'answer' => '10', 'type' => 'arithmetic', 'rule' => 'Add 2'],
         ['sequence' => [5, 10, 15, 20], 'answer' => '25', 'type' => 'arithmetic', 'rule' => 'Add 5'],
@@ -76,7 +76,7 @@ class SessionController extends Controller
     ];
 
     /**
-     * NEW: Create new session
+     * Create new session
      */
     public function create(Request $request)
     {
@@ -106,6 +106,18 @@ class SessionController extends Controller
                 'updated_at' => now()
             ]);
 
+            // Log session creation
+            activity()
+                ->causedBy(auth()->id())
+                ->performedOn($session)
+                ->withProperties([
+                    'scope' => 'session_create',
+                    'session_id' => $session->id,
+                    'team_code' => $teamCode,
+                    'stage_id' => $stageId,
+                ])
+                ->log('session_created');
+
             Log::info('Session created successfully', [
                 'session_id' => $session->id,
                 'team_code' => $teamCode,
@@ -133,7 +145,7 @@ class SessionController extends Controller
     }
 
     /**
-     * NEW: Join existing session
+     * Join existing session
      */
     public function join(Request $request)
     {
@@ -186,6 +198,19 @@ class SessionController extends Controller
                 'nickname' => $request->nickname,
                 'joined_at' => now()
             ]);
+
+            // Log participant join
+            activity()
+                ->causedBy(auth()->id())
+                ->performedOn($session)
+                ->withProperties([
+                    'scope' => 'session_join',
+                    'session_id' => $session->id,
+                    'participant_id' => $participant->id,
+                    'role' => $request->role,
+                    'nickname' => $request->nickname,
+                ])
+                ->log('participant_joined');
 
             Log::info('User joined session', [
                 'session_id' => $session->id,
@@ -292,13 +317,27 @@ class SessionController extends Controller
 
         $isCorrect = $this->validateAnswer($puzzle, $request->input);
 
-        GameAttempt::create([
+        $attempt = GameAttempt::create([
             'game_session_id' => $sessionId,
             'stage' => $currentStage,
             'input' => $request->input,
             'is_correct' => $isCorrect,
             'puzzle_key' => $request->puzzle_key ?? $puzzle['key'] ?? "stage_{$currentStage}",
         ]);
+
+        // Log attempt activity
+        activity()
+            ->causedBy(auth()->id())
+            ->performedOn($session)
+            ->withProperties([
+                'scope' => 'game_attempt',
+                'session_id' => $sessionId,
+                'attempt_id' => $attempt->id,
+                'stage' => $currentStage,
+                'is_correct' => $isCorrect,
+                'input' => $request->input,
+            ])
+            ->log($isCorrect ? 'attempt_correct' : 'attempt_incorrect');
 
         if ($isCorrect) {
             return $this->handleStageCompletion($session, $currentStage);
@@ -340,9 +379,11 @@ class SessionController extends Controller
         // Log activity: session_started
         activity()
             ->causedBy(auth()->id())
+            ->performedOn($session)
             ->withProperties([
                 'scope' => 'session_start',
                 'session_id' => $session->id,
+                'started_at' => now()->toISOString(),
             ])
             ->log('session_started');
 
@@ -353,7 +394,7 @@ class SessionController extends Controller
     }
 
     /**
-     * Force end/close a session (align with DELETE /api/sessions/{id})
+     * Force end/close a session
      */
     public function endSession($id)
     {
@@ -371,7 +412,8 @@ class SessionController extends Controller
             'completed_at' => now(),
         ]);
 
-        $this->finalizeAndJournal($session, 'ended', $session->failed_stage);
+        // FIX: Use fresh() dengan relation
+        $this->finalizeAndJournal($session->fresh('attempts'), 'ended', $session->failed_stage);
 
         return response()->json([
             'session' => $session->fresh(),
@@ -396,7 +438,6 @@ class SessionController extends Controller
                 ? $started->diffInSeconds($completed)
                 : null;
 
-            // Collaboration score already computed elsewhere; keep as-is
             $meta = [
                 'stages_completed' => $session->stages_completed ?? [],
                 'failed_stage' => $failedStage,
@@ -405,6 +446,7 @@ class SessionController extends Controller
                 'ended_by' => auth()->id(),
             ];
 
+            // Write to journal
             JournalWriter::logSessionComplete([
                 'user_id'    => auth()->id(),
                 'session_id' => $session->id,
@@ -413,12 +455,14 @@ class SessionController extends Controller
                 'score'      => $session->total_score ?? null,
                 'time_taken' => $timeTaken,
                 'accuracy'   => $accuracy,
-                'hints_used' => null, // set jika ada kolom/atribut terkait hints
+                'hints_used' => null,
                 'meta'       => $meta,
             ]);
 
+            // Log finalization activity
             activity()
                 ->causedBy(auth()->id())
+                ->performedOn($session)
                 ->withProperties([
                     'scope' => 'session_finalize',
                     'session_id' => $session->id,
@@ -426,6 +470,7 @@ class SessionController extends Controller
                     'time_taken' => $timeTaken,
                     'accuracy' => $accuracy,
                     'failed_stage' => $failedStage,
+                    'total_score' => $session->total_score,
                 ])
                 ->log('session_finalized');
         });
@@ -719,7 +764,7 @@ class SessionController extends Controller
             'failed_stage' => $stage
         ]);
 
-        // Finalize + journal
+        // Finalize + journal dengan fresh
         $this->finalizeAndJournal($session->fresh('attempts'), 'failed', $stage);
 
         return response()->json([
@@ -737,6 +782,19 @@ class SessionController extends Controller
 
         $stageScore = $this->calculateStageScore($session, $completedStage);
         $totalScore = ($session->total_score ?? 0) + $stageScore;
+
+        // Log stage completion
+        activity()
+            ->causedBy(auth()->id())
+            ->performedOn($session)
+            ->withProperties([
+                'scope' => 'stage_complete',
+                'session_id' => $session->id,
+                'stage' => $completedStage,
+                'stage_score' => $stageScore,
+                'total_score' => $totalScore,
+            ])
+            ->log('stage_completed');
 
         if ($completedStage >= count($this->stageConfigurations)) {
             // All stages completed - Game success
@@ -815,7 +873,7 @@ class SessionController extends Controller
 
         // Bonus for completing in reasonable time
         $totalTime = $session->started_at->diffInMinutes($session->completed_at ?? now());
-        if ($totalTime < 20) { // Less than 20 minutes
+        if ($totalTime < 20) {
             $collaborationScore += 25;
         }
 
