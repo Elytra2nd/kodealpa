@@ -2,157 +2,200 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\StoreGrimoireRequest;
+use App\Http\Requests\UpdateGrimoireRequest;
+use App\Http\Resources\GrimoireEntryResource;
 use App\Models\GrimoireCategory;
 use App\Models\GrimoireEntry;
+use App\Traits\ApiResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Str;
+use Illuminate\Http\JsonResponse;
 
 class GrimoireController extends Controller
 {
-    public function categories()
+    use ApiResponse;
+
+    /**
+     * Constructor - apply middleware if needed
+     */
+    public function __construct()
     {
-        $data = GrimoireCategory::orderBy('sort_order')->get();
-        // tidak perlu transform khusus
-        return response()->json(['categories' => $data]);
+        // Rate limiting untuk proteksi API
+        $this->middleware('throttle:60,1')->only(['store', 'update', 'destroy']);
+
+        // Uncomment jika perlu authentication
+        // $this->middleware('auth:sanctum')->except(['index', 'show', 'categories', 'search']);
     }
 
-    public function index(Request $req)
+    /**
+     * Get all grimoire categories
+     */
+    public function categories(): JsonResponse
     {
-        $q = GrimoireEntry::query()->published();
+        $categories = GrimoireCategory::orderBy('sort_order')->get();
 
-        // Filter kategori
-        if ($req->filled('category')) {
-            $q->forCategorySlug($req->string('category')->value());
+        return $this->successResponse($categories, 'Categories retrieved successfully');
+    }
+
+    /**
+     * Get paginated grimoire entries with filters
+     */
+    public function index(Request $request): JsonResponse
+    {
+        $query = GrimoireEntry::query()
+            ->published()
+            ->with('category');
+
+        // Filter by category
+        if ($request->filled('category')) {
+            $query->forCategorySlug($request->string('category')->value());
         }
 
-        // Filter role (defuser/expert/all)
-        if ($req->filled('role') && in_array($req->role, ['defuser', 'expert'], true)) {
-            $q->forRole($req->role);
+        // Filter by role (defuser/expert/all)
+        if ($request->filled('role') && in_array($request->role, ['defuser', 'expert'], true)) {
+            $query->forRole($request->role);
         }
 
-        // Pencarian judul/ringkasan
-        if ($req->filled('q')) {
-            $q->searchTerm($req->string('q')->value());
+        // Search by title/summary
+        if ($request->filled('q')) {
+            $query->searchTerm($request->string('q')->value());
         }
 
-        // Filter khusus PDF sesuai panel frontend: ?format=pdf
-        // Perbaikan: ambil nilai string lower-case lalu bandingkan
-        $format = $req->string('format')->lower()->value();
+        // Filter PDF only
+        $format = $request->string('format')->lower()->value();
         if ($format === 'pdf') {
-            $q->pdfOnly();
+            $query->pdfOnly();
         }
 
-        $perPage = (int) $req->input('per_page', 20);
-        $entries = $q->orderByDesc('updated_at')->paginate($perPage);
+        // Pagination
+        $perPage = min((int) $request->input('per_page', 20), 100); // Max 100 items
+        $entries = $query->orderByDesc('updated_at')->paginate($perPage);
 
-        // Sertakan atribut terhitung (file_url_web, is_pdf) ke dalam item data
-        // Pakai through() agar metadata pagination tetap utuh
-        $entries = $entries->through(function (GrimoireEntry $e) {
-            return $e->append(['file_url_web', 'is_pdf'])->load('category');
-        });
-
-        return response()->json(['entries' => $entries]);
+        return $this->successResponse(
+            GrimoireEntryResource::collection($entries)->response()->getData(true),
+            'Entries retrieved successfully'
+        );
     }
 
-    public function show($slug)
+    /**
+     * Get single grimoire entry by slug
+     */
+    public function show(string $slug): JsonResponse
     {
         $entry = GrimoireEntry::where('slug', $slug)
             ->published()
-            ->firstOrFail()
-            ->append(['file_url_web', 'is_pdf'])
-            ->load('category');
+            ->with('category')
+            ->firstOrFail();
 
-        // Mengembalikan seluruh field, termasuk file_url_web & content_type bila ada
-        return response()->json(['entry' => $entry]);
+        return $this->successResponse(
+            new GrimoireEntryResource($entry),
+            'Entry retrieved successfully'
+        );
     }
 
-    public function search(Request $req)
+    /**
+     * Search grimoire entries
+     */
+    public function search(Request $request): JsonResponse
     {
-        $term = $req->string('q')->value();
-        $q = GrimoireEntry::published()
+        $request->validate([
+            'q' => 'required|string|min:2|max:255',
+            'format' => 'nullable|string|in:pdf,html'
+        ]);
+
+        $term = $request->string('q')->value();
+        $query = GrimoireEntry::published()
+            ->with('category')
             ->searchTerm($term)
             ->orderByDesc('updated_at');
 
-        // Opsional: dukungan format=pdf juga di endpoint search
-        $format = $req->string('format')->lower()->value();
+        // Optional: support format=pdf in search endpoint
+        $format = $request->string('format')->lower()->value();
         if ($format === 'pdf') {
-            $q->pdfOnly();
+            $query->pdfOnly();
         }
 
-        $entries = $q->limit(20)->get()
-            ->each(fn (GrimoireEntry $e) => $e->append(['file_url_web', 'is_pdf'])->load('category'));
+        $entries = $query->limit(20)->get();
 
-        return response()->json(['entries' => $entries]);
+        return $this->successResponse(
+            GrimoireEntryResource::collection($entries),
+            'Search completed successfully'
+        );
     }
 
-    public function store(Request $req)
+    /**
+     * Create new grimoire entry
+     */
+    public function store(StoreGrimoireRequest $request): JsonResponse
     {
-        // Validasi: izinkan URL absolut atau root-relative PDF; atau konten HTML
-        $data = $req->validate([
-            'category_id'  => 'required|exists:grimoire_categories,id',
-            'slug'         => 'required|unique:grimoire_entries,slug',
-            'title'        => 'required|string',
-            'summary'      => 'nullable|string',
+        try {
+            $data = $request->validated();
+            $data['version'] = 1;
 
-            // Salah satu wajib: content_html atau file_url
-            'content_html' => 'required_without:file_url|string',
-            'file_url'     => [
-                'required_without:content_html',
-                'string',
-                // http(s)://...pdf atau /...pdf atau nama file .pdf (ditormalkan di mutator)
-                'regex:/^(https?:\/\/|\/)?[^\s]+\.pdf(\?.*)?$/i'
-            ],
+            $entry = GrimoireEntry::create($data);
+            $entry->load('category');
 
-            'content_type' => 'nullable|string',
-            'tags'         => 'array',
-            'role_access'  => 'required|in:defuser,expert,all',
-            'difficulty'   => 'required|in:beginner,intermediate,advanced',
-            'is_published' => 'boolean',
-        ]);
-
-        // Normalisasi otomatis terjadi di mutator model (fileUrl, contentType)
-        $entry = GrimoireEntry::create($data + ['version' => 1]);
-
-        return response()->json([
-            'entry' => $entry->append(['file_url_web', 'is_pdf'])->load('category')
-        ], 201);
+            return $this->successResponse(
+                new GrimoireEntryResource($entry),
+                'Grimoire entry created successfully',
+                201
+            );
+        } catch (\Exception $e) {
+            return $this->errorResponse(
+                'Failed to create grimoire entry: ' . $e->getMessage(),
+                500
+            );
+        }
     }
 
-    public function update($id, Request $req)
+    /**
+     * Update existing grimoire entry
+     */
+    public function update(UpdateGrimoireRequest $request, int $id): JsonResponse
     {
-        $entry = GrimoireEntry::findOrFail($id);
+        try {
+            $entry = GrimoireEntry::findOrFail($id);
 
-        $data = $req->validate([
-            'category_id'  => 'sometimes|exists:grimoire_categories,id',
-            'slug'         => "sometimes|unique:grimoire_entries,slug,{$entry->id}",
-            'title'        => 'sometimes|string',
-            'summary'      => 'nullable|string',
+            $data = $request->validated();
+            $data['version'] = (int) $entry->version + 1;
 
-            'content_html' => 'sometimes|required_without:file_url|string',
-            'file_url'     => [
-                'sometimes',
-                'required_without:content_html',
-                'string',
-                'regex:/^(https?:\/\/|\/)?[^\s]+\.pdf(\?.*)?$/i'
-            ],
+            $entry->update($data);
+            $entry->load('category');
 
-            'content_type' => 'sometimes|nullable|string',
-            'tags'         => 'array',
-            'role_access'  => 'sometimes|in:defuser,expert,all',
-            'difficulty'   => 'sometimes|in:beginner,intermediate,advanced',
-            'is_published' => 'boolean',
-        ]);
-
-        $entry->update($data + ['version' => (int) $entry->version + 1]);
-
-        return response()->json([
-            'entry' => $entry->append(['file_url_web', 'is_pdf'])->load('category')
-        ]);
+            return $this->successResponse(
+                new GrimoireEntryResource($entry),
+                'Grimoire entry updated successfully'
+            );
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return $this->errorResponse('Grimoire entry not found', 404);
+        } catch (\Exception $e) {
+            return $this->errorResponse(
+                'Failed to update grimoire entry: ' . $e->getMessage(),
+                500
+            );
+        }
     }
 
-    public function destroy($id)
+    /**
+     * Delete grimoire entry
+     */
+    public function destroy(int $id): JsonResponse
     {
-        GrimoireEntry::findOrFail($id)->delete();
-        return response()->json(['success' => true]);
+        try {
+            $entry = GrimoireEntry::findOrFail($id);
+            $entry->delete();
+
+            return $this->successResponse(
+                null,
+                'Grimoire entry deleted successfully'
+            );
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return $this->errorResponse('Grimoire entry not found', 404);
+        } catch (\Exception $e) {
+            return $this->errorResponse(
+                'Failed to delete grimoire entry: ' . $e->getMessage(),
+                500
+            );
+        }
     }
 }
