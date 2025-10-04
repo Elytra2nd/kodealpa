@@ -41,7 +41,7 @@ class TestDmDatabase extends Command
 
                 try {
                     $session = GameSession::create([
-                        'team_code' => 'DM-TEST-' . rand(1000, 9999),
+                        'team_code' => 'DM' . str_pad(rand(1, 999999), 6, '0', STR_PAD_LEFT),
                         'status' => 'active',
                         'current_stage' => 1,
                         'is_tournament_session' => false,
