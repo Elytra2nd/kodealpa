@@ -6,17 +6,27 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
+    /**
+     * Run the migrations.
+     */
     public function up(): void
     {
         Schema::table('explorer_journal', function (Blueprint $table) {
-            $table->foreignId('dm_conversation_id')->nullable()->after('id')->constrained()->nullOnDelete();
-            $table->json('metadata')->nullable()->after('content');
+            // Kolom ini sudah benar, 'id' pasti ada.
+            $table->foreignId('dm_conversation_id')->nullable()->after('id')->constrained('dm_conversations')->nullOnDelete();
+
+            // DIPERBAIKI: Menggunakan 'meta' sebagai acuan, karena kolom 'content' tidak ada.
+            $table->json('metadata')->nullable()->after('meta');
         });
     }
 
+    /**
+     * Reverse the migrations.
+     */
     public function down(): void
     {
         Schema::table('explorer_journal', function (Blueprint $table) {
+            // Method down() Anda sudah benar.
             $table->dropForeign(['dm_conversation_id']);
             $table->dropColumn(['dm_conversation_id', 'metadata']);
         });
