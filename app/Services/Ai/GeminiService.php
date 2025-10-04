@@ -16,8 +16,7 @@ class GeminiService
 
     public function __construct()
     {
-        // ⚠️ UPDATE: Ganti default model ke yang masih supported
-        $this->model = config('services.gemini.default_model', 'gemini-2.5-flash');
+        $this->model = config('services.gemini.default_model', 'gemini-2.0-flash-exp');
         $this->timeout = config('services.gemini.timeout', 30);
 
         $this->client = Gemini::factory()
@@ -34,17 +33,16 @@ class GeminiService
      */
     public function generateContent(string $prompt, array $config = []): string
     {
+        // ✅ FIX: Use withGenerationConfig() chain, not named parameter
         $response = $this->client
             ->generativeModel(model: $this->model)
-            ->generateContent(
-                $prompt,
-                generationConfig: new GenerationConfig(
-                    maxOutputTokens: $config['max_tokens'] ?? 500,
-                    temperature: $config['temperature'] ?? 0.7,
-                    topP: $config['top_p'] ?? 0.9,
-                    topK: $config['top_k'] ?? 40,
-                )
-            );
+            ->withGenerationConfig(new GenerationConfig(
+                maxOutputTokens: $config['max_tokens'] ?? 500,
+                temperature: $config['temperature'] ?? 0.7,
+                topP: $config['top_p'] ?? 0.9,
+                topK: $config['top_k'] ?? 40,
+            ))
+            ->generateContent($prompt);
 
         return $response->text();
     }
@@ -54,15 +52,16 @@ class GeminiService
      */
     public function streamGenerateContent(string $prompt, array $config = [])
     {
+        // ✅ FIX: Use withGenerationConfig() chain, not named parameter
         return $this->client
             ->generativeModel(model: $this->model)
-            ->streamGenerateContent(
-                $prompt,
-                generationConfig: new GenerationConfig(
-                    maxOutputTokens: $config['max_tokens'] ?? 500,
-                    temperature: $config['temperature'] ?? 0.7,
-                )
-            );
+            ->withGenerationConfig(new GenerationConfig(
+                maxOutputTokens: $config['max_tokens'] ?? 500,
+                temperature: $config['temperature'] ?? 0.7,
+                topP: $config['top_p'] ?? 0.9,
+                topK: $config['top_k'] ?? 40,
+            ))
+            ->streamGenerateContent($prompt);
     }
 
     /**
@@ -96,11 +95,16 @@ class GeminiService
      */
     public function countTokens(string $text): int
     {
-        $response = $this->client
-            ->generativeModel(model: $this->model)
-            ->countTokens($text);
+        try {
+            $response = $this->client
+                ->generativeModel(model: $this->model)
+                ->countTokens($text);
 
-        return $response->totalTokens;
+            return $response->totalTokens;
+        } catch (\Exception $e) {
+            // Fallback estimation: ~4 chars = 1 token
+            return (int) ceil(strlen($text) / 4);
+        }
     }
 
     /**
