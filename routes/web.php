@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\Game\AiDungeonMasterController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\StageController;
@@ -558,6 +559,27 @@ Route::middleware(['auth', 'verified'])->prefix('stream')->group(function () {
     Route::get('/session/{id}', [SessionController::class, 'streamSession'])
          ->name('stream.session')
          ->where('id', '[0-9]+');
+});
+
+Route::middleware(['auth', 'verified'])->prefix('game')->name('game.')->group(function () {
+
+    // DM Chat Page
+    Route::get('/dm', [AiDungeonMasterController::class, 'index'])
+        ->name('dm');
+
+    // DM API Endpoints
+    Route::controller(AiDungeonMasterController::class)->prefix('dm')->name('dm.')->group(function () {
+
+        // Non-streaming message (fallback/debug)
+        Route::post('/message', 'message')
+            ->middleware('throttle:ai-dm')
+            ->name('message');
+
+        // SSE streaming endpoint
+        Route::get('/stream', 'stream')
+            ->middleware('throttle:ai-dm-stream')
+            ->name('stream');
+    });
 });
 
 /*

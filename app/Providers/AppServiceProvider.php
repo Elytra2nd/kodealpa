@@ -5,6 +5,7 @@ namespace App\Providers;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\ServiceProvider;
+use App\Services\Ai\{GeminiService, GrimoireRetrieval, AiToolExecutor};
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -13,7 +14,18 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // Register AI services as singletons
+        $this->app->singleton(GeminiService::class, function ($app) {
+            return new GeminiService();
+        });
+
+        $this->app->singleton(GrimoireRetrieval::class, function ($app) {
+            return new GrimoireRetrieval();
+        });
+
+        $this->app->singleton(AiToolExecutor::class, function ($app) {
+            return new AiToolExecutor();
+        });
     }
 
     /**
@@ -31,4 +43,3 @@ class AppServiceProvider extends ServiceProvider
         Vite::prefetch(concurrency: 3);
     }
 }
-
