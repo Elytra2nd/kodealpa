@@ -4,6 +4,9 @@ namespace App\Providers;
 
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Facades\Vite;
+use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
 use Illuminate\Support\ServiceProvider;
 use App\Services\Ai\{GeminiService, GrimoireRetrieval, AiToolExecutor};
 
@@ -41,5 +44,35 @@ class AppServiceProvider extends ServiceProvider
 
         // Fungsionalitas prefetch Vite yang sudah ada sebelumnya
         Vite::prefetch(concurrency: 3);
+
+        // Configure AI DM rate limiters
+        $this->configureRateLimiting();
+    }
+
+    /**
+     * Configure rate limiting for AI DM
+     */
+    protected function configureRateLimiting(): void
+    {
+        RateLimiter::for('ai-dm', function (Request $request) {
+            return Limit::perMinute(10)
+                ->by($request->user()?->id . ':' . $request->input('session_id'))
+                ->response(function (Request $request, array $headers) {
+                    return response()->json([
+                        'message' => 'Terlalu banyak request. Tunggu sebentar.',
+                        'retry_after' => $headers['Retry-After'] ?? 60
+                    ], 429);
+                });
+        });
+
+        RateLimiter::for('ai-dm-stream', function (Request $request) {
+            return Limit::perMinute(5)
+                ->by($request->user()?->id . ':' . $request->input('session_id'));
+        });
+
+        RateLimiter::for('ai-tools', function (Request $request) {
+            return Limit::perMinute(20)
+                ->by($request->user()?->id);
+        });
     }
 }
