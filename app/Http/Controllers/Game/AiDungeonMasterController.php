@@ -105,21 +105,34 @@ class AiDungeonMasterController extends Controller
         $systemPrompt = $this->buildSystemPrompt($session);
 
         // Get recent history
-        $history = $conversation->getRecentMessages(10);
+        $history = $conversation->messages()
+            ->where('id', '!=', $userMessage->id)
+            ->whereIn('role', ['user', 'assistant'])
+            ->latest()
+            ->limit(10)
+            ->get()
+            ->reverse()
+            ->map(function ($msg) {
+                return [
+                    'role' => $msg->role === 'user' ? 'user' : 'model',
+                    'content' => $msg->content,
+                ];
+            })
+            ->toArray();
 
         // Generate response
         try {
-            $response = $this->gemini->generateContent(
-                prompt: $validated['message'],
-                config: ['max_tokens' => 500, 'temperature' => 0.7]
-            );
+            // Start chat with history
+            $chat = $this->gemini->startChat($systemPrompt, $history);
+            $response = $chat->sendMessage($validated['message']);
+            $fullResponse = $response->text();
 
             // Save AI response
             $aiMessage = DmMessage::create([
                 'dm_conversation_id' => $conversation->id,
                 'role' => 'assistant',
-                'content' => $response,
-                'tokens_used' => $this->gemini->countTokens($response),
+                'content' => $fullResponse,
+                'tokens_used' => $this->gemini->countTokens($fullResponse),
             ]);
 
             // Update conversation stats
@@ -183,6 +196,7 @@ class AiDungeonMasterController extends Controller
                 // Get recent conversation history (exclude current message)
                 $history = $conversation->messages()
                     ->where('id', '!=', $userMessage->id)
+                    ->whereIn('role', ['user', 'assistant'])
                     ->latest()
                     ->limit(10)
                     ->get()
@@ -198,23 +212,27 @@ class AiDungeonMasterController extends Controller
                 // Start chat with system instruction & history
                 $chat = $this->gemini->startChat($systemPrompt, $history);
 
-                // Send message and stream response
-                $streamResponse = $chat->sendMessage($validated['message']);
+                // Get single response (sendMessage returns Response object, not stream)
+                $response = $chat->sendMessage($validated['message']);
 
-                $fullResponse = '';
+                // Extract full text
+                $fullResponse = $response->text();
 
-                foreach ($streamResponse as $chunk) {
+                // Chunk the response manually for streaming effect
+                $chunkSize = 30; // Characters per chunk
+                $chunks = mb_str_split($fullResponse, $chunkSize);
+
+                foreach ($chunks as $chunk) {
                     if (connection_aborted()) break;
 
-                    $text = $chunk->text();
-                    $fullResponse .= $text;
-
-                    if (!empty($text)) {
+                    if (!empty($chunk)) {
                         echo "event: message\n";
-                        echo 'data: ' . json_encode(['content' => $text]) . "\n\n";
+                        echo 'data: ' . json_encode(['content' => $chunk]) . "\n\n";
 
                         if (ob_get_level() > 0) ob_flush();
                         flush();
+
+                        usleep(30000); // 0.03 second delay per chunk for natural feel
                     }
                 }
 
