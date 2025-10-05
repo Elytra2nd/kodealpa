@@ -73,17 +73,26 @@ class GeminiService
 
         // Convert history ke format Gemini Content
         foreach ($history as $message) {
+            $role = $message['role'] === 'user' ? Role::USER : Role::MODEL;
             $contents[] = Content::parse(
                 part: $message['content'],
-                role: $message['role'] === 'user' ? Role::USER : Role::MODEL
+                role: $role
             );
         }
 
         $generativeModel = $this->client->generativeModel(model: $this->model);
 
+        // Add generation config
+        $generativeModel = $generativeModel->withGenerationConfig(new GenerationConfig(
+            maxOutputTokens: 1000, // Increase untuk response lebih panjang
+            temperature: 0.8,
+            topP: 0.95,
+            topK: 40,
+        ));
+
         if ($systemPrompt) {
             $generativeModel = $generativeModel->withSystemInstruction(
-                Content::parse($systemPrompt)
+                Content::parse($systemPrompt, Role::USER)
             );
         }
 

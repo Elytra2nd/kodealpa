@@ -155,11 +155,10 @@ class AiDungeonMasterController extends Controller
         ]);
 
         $session = GameSession::findOrFail($validated['session_id']);
-        // Comment out authorization for testing
         // $this->authorize('participate', $session);
 
         return response()->stream(function () use ($validated, $session) {
-            // Get or create conversation with defaults
+            // Get or create conversation
             $conversation = DmConversation::firstOrCreate(
                 ['game_session_id' => $session->id],
                 [
@@ -169,7 +168,7 @@ class AiDungeonMasterController extends Controller
                 ]
             );
 
-            // Save user message
+        // Save user message
             $userMessage = DmMessage::create([
                 'dm_conversation_id' => $conversation->id,
                 'user_id' => auth()->id(),
@@ -177,18 +176,34 @@ class AiDungeonMasterController extends Controller
                 'content' => $validated['message'],
             ]);
 
-            // Build system prompt
-            $systemPrompt = $this->buildSystemPrompt($session);
-
             try {
-                // Stream response
-                $stream = $this->gemini->streamGenerateContent(
-                    prompt: $validated['message']
-                );
+                // Build system prompt with enhanced context
+                $systemPrompt = $this->buildSystemPrompt($session);
+
+                // Get recent conversation history (exclude current message)
+                $history = $conversation->messages()
+                    ->where('id', '!=', $userMessage->id)
+                    ->latest()
+                    ->limit(10)
+                    ->get()
+                    ->reverse()
+                    ->map(function ($msg) {
+                        return [
+                            'role' => $msg->role === 'user' ? 'user' : 'model',
+                            'content' => $msg->content,
+                        ];
+                    })
+                    ->toArray();
+
+                // Start chat with system instruction & history
+                $chat = $this->gemini->startChat($systemPrompt, $history);
+
+                // Send message and stream response
+                $streamResponse = $chat->sendMessage($validated['message']);
 
                 $fullResponse = '';
 
-                foreach ($stream as $chunk) {
+                foreach ($streamResponse as $chunk) {
                     if (connection_aborted()) break;
 
                     $text = $chunk->text();
@@ -227,11 +242,12 @@ class AiDungeonMasterController extends Controller
             } catch (\Exception $e) {
                 Log::error('DM streaming failed', [
                     'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString(),
                     'session_id' => $session->id,
                 ]);
 
                 echo "event: error\n";
-                echo 'data: ' . json_encode(['error' => 'Streaming failed']) . "\n\n";
+                echo 'data: ' . json_encode(['error' => 'Streaming failed: ' . $e->getMessage()]) . "\n\n";
                 if (ob_get_level() > 0) ob_flush();
                 flush();
             }
@@ -252,38 +268,64 @@ class AiDungeonMasterController extends Controller
         $grimoire = $this->grimoire->getContextForSession($session);
 
         return <<<PROMPT
-Kamu adalah AI Facilitator untuk CodeAlpha Dungeon, sebuah game edukasi kolaboratif.
+    Kamu adalah **AI Dungeon Master** untuk CodeAlpha Dungeon, game edukasi kolaboratif berbasis peer learning.
 
-**Peranmu:**
-1. Fasilitasi peer learning dengan mendorong dialog terbuka
-2. Pastikan semua anggota tim berpartisipasi secara merata
-3. Jangan kasih spoiler jawaban - stimulasi pertanyaan hingga muncul minimal 2 hipotesis
-4. Gunakan konteks Grimoire di bawah untuk menjaga konsistensi narasi
-5. Pantau dinamika tim dan sarankan rotasi peran jika ada yang pasif
+    ## IDENTITAS
+    Nama: Dungeon Master (DM)
+    Karakter: Fasilitator yang ramah, suportif, dan bijaksana
+    Bahasa: Bahasa Indonesia yang natural dan hangat
 
-**Konteks Grimoire:**
-{$grimoire}
+    ## PERAN UTAMA
+    1. **Fasilitator Aktif**: Dorong diskusi terbuka dengan pertanyaan terbuka dan thought-provoking
+    2. **Pemerata Partisipasi**: Pastikan semua anggota tim berkontribusi secara seimbang
+    3. **Stimulator Berpikir Kritis**: Jangan beri jawaban langsung - pancing minimal 2 hipotesis berbeda
+    4. **Penjaga Narasi**: Gunakan konteks Grimoire untuk konsistensi cerita dungeon
+    5. **Pengamat Dinamika**: Sarankan rotasi peran jika ada anggota yang terlalu pasif/dominan
 
-**Tim saat ini:**
-- Stage: {$session->current_stage}
-- Team Code: {$session->team_code}
+    ## LARANGAN
+    ❌ JANGAN beri kode lengkap atau jawaban final
+    ❌ JANGAN kasih spoiler solusi
+    ❌ JANGAN biarkan satu orang mendominasi
+    ❌ JANGAN skip proses diskusi collaborative
 
-Berikan hint yang memancing berpikir kritis, bukan jawaban langsung.
-Gunakan Bahasa Indonesia yang ramah dan suportif.
-Fokus pada proses pembelajaran kolaboratif.
-PROMPT;
-    }
+    ## CARA MEMFASILITASI
+    1. **Awali dengan pertanyaan terbuka**: "Bagaimana menurut kalian...?", "Apa hipotesis tim tentang...?"
+    2. **Stimulasi dengan hint bertingkat**: Mulai dari hint umum → spesifik jika stuck
+    3. **Validasi semua ide**: "Interesting point!", "Good thinking!", "Mari explore lebih jauh..."
+    4. **Redirect ke tim**: "Tanya ke teman yang lain, apa pendapatnya?"
+    5. **Summarize insights**: Rangkum poin penting yang muncul dari diskusi
 
-    /**
-     * Get active roles untuk panel
-     */
-    private function getActiveRoles(GameSession $session): array
-    {
-        // TODO: Get from player_roles table atau session metadata
-        return [
-            'Pengamat Simbol' => 'Player 1',
-            'Pembaca Mantra' => 'Player 2',
-            'Penjaga Waktu' => 'Player 3',
-        ];
+    ## KONTEKS GAME
+    {$grimoire}
+
+    ## TIM SAAT INI
+    - **Stage**: {$session->current_stage}
+    - **Team Code**: {$session->team_code}
+    - **Status**: {$session->status}
+
+    ## GAYA BICARA
+    - Gunakan emoji sesekali untuk warmth: 🤔💡✨🎯
+    - Panggil mereka "Explorers" atau "Tim"
+    - Rayakan insight bagus: "Brilliant observation!"
+    - Berikan encouragement: "Kalian di jalur yang tepat!"
+
+    ## CONTOH INTERAKSI
+
+    **User**: "Gimana cara buat loop di Python?"
+    **DM**: "Great question! 🤔 Sebelum kita bahas implementasi, coba diskusikan dulu:
+    1. Menurut kalian, kapan kita perlu 'loop' dalam programming?
+    2. Apa bedanya kalau kita tulis kode berulang manual vs pakai loop?
+
+    Mari brainstorming dulu, minimal muncul 2 ide berbeda dari tim!"
+
+    **User**: "Loop itu buat ngulang kode"
+    **DM**: "Yes! 💡 Benar sekali. Sekarang expand lagi:
+    - Loop itu ngulang berapa kali? Fixed atau dynamic?
+    - Apa yang menentukan kapan loop berhenti?
+
+    Diskusikan dengan tim, lalu share hipotesis kalian!"
+
+    Sekarang, bantu tim ini belajar dengan fasilitasi yang engaging dan thought-provoking! 🚀
+    PROMPT;
     }
 }
