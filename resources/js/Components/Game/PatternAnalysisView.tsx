@@ -47,6 +47,13 @@ const OBFUSCATION_PATTERNS = [
 // ============================================
 // TYPE DEFINITIONS
 // ============================================
+interface TreeNode {
+  value: number | string;
+  children?: TreeNode[];
+  isActive?: boolean;
+}
+
+
 interface Props {
   puzzle: any;
   role?: 'defuser' | 'expert' | 'host';
@@ -78,12 +85,64 @@ const dungeonizeRule = (rule?: string): string => {
 };
 
 
+// Convert flat array to tree structure for visualization
+const buildTreeStructure = (pattern: any[]): TreeNode => {
+  if (!Array.isArray(pattern) || pattern.length === 0) {
+    return { value: '?', children: [] };
+  }
+
+
+  // Simple binary tree structure: root with left and right children
+  const root: TreeNode = {
+    value: pattern[0] ?? '?',
+    children: [],
+  };
+
+
+  // Level-order insertion for binary tree
+  const queue: TreeNode[] = [root];
+  let index = 1;
+
+
+  while (queue.length > 0 && index < pattern.length) {
+    const current = queue.shift()!;
+    current.children = [];
+
+
+    // Left child
+    if (index < pattern.length) {
+      const leftChild: TreeNode = {
+        value: pattern[index] ?? '?',
+        children: [],
+      };
+      current.children.push(leftChild);
+      queue.push(leftChild);
+      index++;
+    }
+
+
+    // Right child
+    if (index < pattern.length) {
+      const rightChild: TreeNode = {
+        value: pattern[index] ?? '?',
+        children: [],
+      };
+      current.children.push(rightChild);
+      queue.push(rightChild);
+      index++;
+    }
+  }
+
+
+  return root;
+};
+
+
 // ============================================
 // CUSTOM HOOKS
 // ============================================
 const useDungeonAtmosphere = () => {
   const torchRefs = useRef<(HTMLElement | null)[]>([]);
-  const patternRefs = useRef<(HTMLElement | null)[]>([]);
 
 
   useEffect(() => {
@@ -104,77 +163,56 @@ const useDungeonAtmosphere = () => {
   }, []);
 
 
-  useEffect(() => {
-    const validPatterns = patternRefs.current.filter((p): p is HTMLElement => p !== null);
-    if (validPatterns.length > 0) {
-      gsap.fromTo(
-        validPatterns,
-        {
-          opacity: 0,
-          scale: 0.5,
-          rotateY: 180,
-        },
-        {
-          opacity: 1,
-          scale: 1,
-          rotateY: 0,
-          duration: CONFIG.PATTERN_ENTRANCE_DURATION,
-          stagger: CONFIG.PATTERN_STAGGER,
-          ease: 'back.out(1.7)',
-        }
-      );
-    }
-  }, []);
+  const setTorchRef = useCallback(
+    (index: number) => (el: HTMLDivElement | null) => {
+      torchRefs.current[index] = el;
+    },
+    []
+  );
 
 
-  const setTorchRef = useCallback((index: number) => (el: HTMLDivElement | null) => {
-    torchRefs.current[index] = el;
-  }, []);
-
-
-  const setPatternRef = useCallback((index: number) => (el: HTMLDivElement | null) => {
-    patternRefs.current[index] = el;
-  }, []);
-
-
-  return { setTorchRef, setPatternRef };
+  return { setTorchRef };
 };
+
+
+// ============================================
+// TREE NODE COMPONENT
+// ============================================
+const TreeNodeComponent = memo(({ node }: { node: TreeNode }) => {
+  const isEmpty = node.value === '?' || node.value == null;
+
+
+  return (
+    <li className="tree-node">
+      <div
+        className={`node-content ${
+          isEmpty
+            ? 'border-red-600/60 bg-gradient-to-br from-red-900/40 to-red-950/60 text-red-200'
+            : 'border-emerald-600/60 bg-gradient-to-br from-emerald-900/40 to-emerald-950/60 text-emerald-200'
+        }`}
+      >
+        <span className="node-value">{isEmpty ? '?' : node.value}</span>
+      </div>
+
+
+      {node.children && node.children.length > 0 && (
+        <ul className="tree-children">
+          {node.children.map((child, idx) => (
+            <TreeNodeComponent key={idx} node={child} />
+          ))}
+        </ul>
+      )}
+    </li>
+  );
+});
+
+
+TreeNodeComponent.displayName = 'TreeNodeComponent';
 
 
 // ============================================
 // MEMOIZED COMPONENTS
 // ============================================
-const PatternBox = memo(
-  ({
-    item,
-    index,
-    isEmpty,
-    setPatternRef,
-  }: {
-    item: any;
-    index: number;
-    isEmpty: boolean;
-    setPatternRef: (index: number) => (el: HTMLDivElement | null) => void;
-  }) => (
-    <div
-      ref={setPatternRef(index)}
-      className={`w-14 h-14 sm:w-16 sm:h-16 rounded-xl flex items-center justify-center text-xl sm:text-2xl font-extrabold border-2 shadow-lg transition-all duration-300 hover:scale-110 ${
-        isEmpty
-          ? 'border-red-600/60 bg-gradient-to-br from-red-900/40 to-red-950/60 text-red-200 dungeon-pulse dungeon-card-glow-red'
-          : 'border-blue-600/60 bg-gradient-to-br from-blue-900/40 to-blue-950/60 text-blue-200 dungeon-rune-float dungeon-card-glow-blue'
-      }`}
-      title={isEmpty ? 'Angka hilang' : `Angka ke-${index + 1}: ${item}`}
-      aria-label={isEmpty ? 'Angka hilang' : `Angka ${item}`}
-    >
-      {isEmpty ? '?' : item}
-    </div>
-  )
-);
-
-
-PatternBox.displayName = 'PatternBox';
-
-
 const RuneLegendBadge = memo(({ num, sym }: { num: string; sym: string }) => (
   <Badge className="bg-stone-800 text-amber-100 border border-amber-700/60 dungeon-badge-glow text-xs">
     {sym}={num}
@@ -199,7 +237,7 @@ LoadingState.displayName = 'LoadingState';
 // MAIN COMPONENT
 // ============================================
 export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, submitting }: Props) {
-  const { setTorchRef, setPatternRef } = useDungeonAtmosphere();
+  const { setTorchRef } = useDungeonAtmosphere();
 
 
   const [jawaban, setJawaban] = useState('');
@@ -211,6 +249,14 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
 
 
   const runeLegend = useMemo(() => Object.entries(RUNE_MAP).map(([num, sym]) => ({ num, sym })), []);
+
+
+  const treeData = useMemo(() => {
+    if (Array.isArray(puzzle?.defuserView?.pattern)) {
+      return buildTreeStructure(puzzle.defuserView.pattern);
+    }
+    return null;
+  }, [puzzle?.defuserView?.pattern]);
 
 
   const transformedHints = useMemo(() => {
@@ -307,35 +353,33 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
               <Card className="border-2 border-amber-600/40 bg-gradient-to-b from-stone-900/80 to-stone-800/40 backdrop-blur-sm dungeon-card-glow-blue">
                 <CardHeader className="pb-2 p-3">
                   <CardTitle className="text-sm text-amber-300 text-center dungeon-glow-text">
-                    🔢 Panel Defuser
+                    🌳 Visualisasi Pohon
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="p-3 space-y-3">
-                  {Array.isArray(puzzle.defuserView?.pattern) ? (
+                  {treeData ? (
                     <>
-                      {/* Pattern boxes - CENTERED GRID */}
-                      <div className="flex justify-center mb-4">
-                        <div className="flex flex-wrap gap-2 sm:gap-3 justify-center max-w-2xl">
-                          {puzzle.defuserView.pattern.map((item: any, idx: number) => {
-                            const kosong = item === '?' || item == null;
-                            return (
-                              <PatternBox
-                                key={idx}
-                                item={item}
-                                index={idx}
-                                isEmpty={kosong}
-                                setPatternRef={setPatternRef}
-                              />
-                            );
-                          })}
-                          <div
-                            ref={setPatternRef(puzzle.defuserView.pattern.length)}
-                            className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl flex items-center justify-center text-xl sm:text-2xl font-extrabold border-2 border-red-600 bg-gradient-to-br from-red-900/40 to-red-950/60 text-red-200 dungeon-pulse dungeon-card-glow-red shadow-lg"
-                            title="Angka hilang yang harus ditemukan"
-                            aria-label="Angka hilang"
-                          >
-                            ?
-                          </div>
+                      {/* Tree Visualization with connecting lines */}
+                      <div className="tree-container overflow-x-auto pb-4">
+                        <ul className="tree-root">
+                          <TreeNodeComponent node={treeData} />
+                        </ul>
+                      </div>
+
+
+                      {/* Legenda */}
+                      <div className="flex flex-wrap gap-2 justify-center text-xs">
+                        <div className="flex items-center gap-2 px-2 py-1 rounded bg-emerald-900/30 border border-emerald-700/40">
+                          <div className="w-3 h-3 rounded border-2 border-emerald-600 bg-emerald-900/40"></div>
+                          <span className="text-emerald-200">Node tersorot (jejak aktif)</span>
+                        </div>
+                        <div className="flex items-center gap-2 px-2 py-1 rounded bg-red-900/30 border border-red-700/40">
+                          <div className="w-3 h-3 rounded border-2 border-red-600 bg-red-900/40"></div>
+                          <span className="text-red-200">Angka hilang</span>
+                        </div>
+                        <div className="flex items-center gap-2 px-2 py-1 rounded bg-stone-800/30 border border-stone-700/40">
+                          <div className="w-6 h-0.5 bg-amber-600"></div>
+                          <span className="text-stone-300">Koneksi cabang</span>
                         </div>
                       </div>
 
@@ -455,6 +499,18 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
                           </AccordionItem>
 
 
+                          <AccordionItem value="struktur" className="border-stone-700/40">
+                            <AccordionTrigger className="text-stone-200 text-xs hover:text-amber-300 py-2">
+                              🌳 Struktur Pohon
+                            </AccordionTrigger>
+                            <AccordionContent className="p-2 text-xs text-stone-300 space-y-1">
+                              <p>• Jejak depth: akar → cabang → daun</p>
+                              <p>• Level order: baca per tingkat dari atas</p>
+                              <p>• Relasi parent-child membentuk pola</p>
+                            </AccordionContent>
+                          </AccordionItem>
+
+
                           <AccordionItem value="strategi" className="border-stone-700/40">
                             <AccordionTrigger className="text-stone-200 text-xs hover:text-amber-300 py-2">
                               🎯 Strategi
@@ -477,6 +533,7 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
                           <li>Uji modulo kecil (2, 3, 5) untuk siklus</li>
                           <li>Lonjakan tajam → penggandaan/pangkat</li>
                           <li>Validasi dengan suku berikutnya</li>
+                          <li>Perhatikan posisi dalam struktur pohon</li>
                         </ul>
                       </div>
 
@@ -487,6 +544,7 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
                           <li>Pandu pada transformasi, bukan angka</li>
                           <li>Minta hipotesis dan verifikasi</li>
                           <li>Jaga ritme: amati → analisis → validasi</li>
+                          <li>Bantu mengidentifikasi relasi antar-level</li>
                         </ul>
                       </div>
                     </TabsContent>
@@ -497,7 +555,7 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
           </div>
 
 
-          {/* Collaboration tips - Compact accordion */}
+          {/* Collaboration tips */}
           <Card className="border border-purple-700/40 bg-purple-950/20 backdrop-blur-sm">
             <CardContent className="p-3">
               <Accordion type="single" collapsible>
@@ -507,12 +565,12 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
                   </AccordionTrigger>
                   <AccordionContent className="p-2 text-xs text-stone-300 space-y-2">
                     <div>
-                      <span className="font-semibold text-amber-300">Defuser:</span> Telusuri selisih, uji
-                      progresi, minta validasi tanpa mengungkap final
+                      <span className="font-semibold text-amber-300">Defuser:</span> Telusuri selisih antar-level,
+                      uji pola parent-child, minta validasi tanpa mengungkap final
                     </div>
                     <div>
                       <span className="font-semibold text-blue-300">Expert:</span> Mulai observasi kualitatif,
-                      batasi petunjuk pada bentuk transformasi
+                      batasi petunjuk pada bentuk transformasi dan struktur hierarki
                     </div>
                   </AccordionContent>
                 </AccordionItem>
@@ -523,27 +581,135 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
       </Card>
 
 
-      {/* CUSTOM DUNGEON STYLES */}
+      {/* CUSTOM STYLES - Tree View with connecting lines */}
       <style>{`
+        /* Tree Container */
+        .tree-container {
+          min-height: 200px;
+          display: flex;
+          justify-content: center;
+          align-items: flex-start;
+          padding: 20px 10px;
+        }
+
+
+        /* Tree root - no bullets */
+        .tree-root {
+          list-style-type: none;
+          padding: 0;
+          margin: 0;
+          position: relative;
+        }
+
+
+        /* Tree node */
+        .tree-node {
+          list-style-type: none;
+          position: relative;
+          padding: 10px 5px 0 5px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+        }
+
+
+        /* Node content - the circle/box */
+        .node-content {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 48px;
+          height: 48px;
+          border-radius: 12px;
+          border: 2px solid;
+          font-weight: 800;
+          font-size: 1.125rem;
+          transition: all 0.3s ease;
+          z-index: 2;
+          position: relative;
+        }
+
+
+        .node-content:hover {
+          transform: scale(1.1);
+          box-shadow: 0 0 20px rgba(251, 191, 36, 0.6);
+        }
+
+
+        .node-value {
+          user-select: none;
+        }
+
+
+        /* Tree children container */
+        .tree-children {
+          list-style-type: none;
+          padding: 30px 0 0 0;
+          margin: 0;
+          display: flex;
+          gap: 20px;
+          position: relative;
+        }
+
+
+        /* Vertical line from parent to children */
+        .tree-node .tree-children::before {
+          content: '';
+          position: absolute;
+          top: 0;
+          left: 50%;
+          width: 2px;
+          height: 30px;
+          background: linear-gradient(to bottom, rgba(251, 191, 36, 0.6), rgba(251, 191, 36, 0.3));
+          transform: translateX(-50%);
+        }
+
+
+        /* Horizontal line connecting children */
+        .tree-node .tree-children::after {
+          content: '';
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          height: 2px;
+          background: linear-gradient(to right,
+            transparent 0%,
+            rgba(251, 191, 36, 0.6) 25%,
+            rgba(251, 191, 36, 0.6) 75%,
+            transparent 100%
+          );
+        }
+
+
+        /* Remove horizontal line if only one child */
+        .tree-node .tree-children:has(> .tree-node:only-child)::after {
+          display: none;
+        }
+
+
+        /* Vertical line from horizontal line to each child */
+        .tree-children > .tree-node::before {
+          content: '';
+          position: absolute;
+          top: -30px;
+          left: 50%;
+          width: 2px;
+          height: 30px;
+          background: linear-gradient(to bottom, rgba(251, 191, 36, 0.3), rgba(251, 191, 36, 0.6));
+          transform: translateX(-50%);
+        }
+
+
+        /* Hide vertical line for root node */
+        .tree-root > .tree-node::before {
+          display: none;
+        }
+
+
+        /* Dungeon Atmosphere */
         .dungeon-torch-flicker {
           display: inline-block;
-        }
-
-
-        .dungeon-rune-float {
-          display: inline-block;
-          animation: runeFloat 3.6s ease-in-out infinite;
-        }
-
-
-        @keyframes runeFloat {
-          0%,
-          100% {
-            transform: translateY(0);
-          }
-          50% {
-            transform: translateY(-6px);
-          }
         }
 
 
@@ -577,46 +743,48 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
         }
 
 
-        .dungeon-pulse {
-          animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-        }
-
-
-        @keyframes pulse {
-          0%,
-          100% {
-            opacity: 1;
-          }
-          50% {
-            opacity: 0.7;
-          }
-        }
-
-
         /* Custom scrollbar */
-        .overflow-y-auto::-webkit-scrollbar {
+        .overflow-y-auto::-webkit-scrollbar,
+        .overflow-x-auto::-webkit-scrollbar {
           width: 6px;
+          height: 6px;
         }
 
 
-        .overflow-y-auto::-webkit-scrollbar-track {
+        .overflow-y-auto::-webkit-scrollbar-track,
+        .overflow-x-auto::-webkit-scrollbar-track {
           background: rgba(28, 25, 23, 0.5);
           border-radius: 3px;
         }
 
 
-        .overflow-y-auto::-webkit-scrollbar-thumb {
+        .overflow-y-auto::-webkit-scrollbar-thumb,
+        .overflow-x-auto::-webkit-scrollbar-thumb {
           background: rgba(180, 83, 9, 0.6);
           border-radius: 3px;
         }
 
 
-        .overflow-y-auto::-webkit-scrollbar-thumb:hover {
+        .overflow-y-auto::-webkit-scrollbar-thumb:hover,
+        .overflow-x-auto::-webkit-scrollbar-thumb:hover {
           background: rgba(180, 83, 9, 0.8);
         }
 
 
+        /* Responsive adjustments */
         @media (max-width: 768px) {
+          .node-content {
+            width: 40px;
+            height: 40px;
+            font-size: 1rem;
+          }
+
+
+          .tree-children {
+            gap: 15px;
+          }
+
+
           .dungeon-card-glow,
           .dungeon-card-glow-blue,
           .dungeon-card-glow-green,
