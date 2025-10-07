@@ -10,10 +10,10 @@ import { gsap } from 'gsap';
 // ============================================
 const CONFIG = {
   TORCH_FLICKER_INTERVAL: 2200,
-  MAX_TREE_HEIGHT: 400,
-  NODE_SIZE: 32,
-  LEVEL_HEIGHT: 70,
-  NODE_SPACING: 45,
+  MAX_TREE_HEIGHT: 450,
+  NODE_SIZE: 40,
+  LEVEL_HEIGHT: 85,
+  NODE_SPACING: 60,
 } as const;
 
 // ============================================
@@ -127,11 +127,11 @@ const useDungeonAtmosphere = () => {
 };
 
 // ============================================
-// SVG BINARY TREE COMPONENT
+// SVG BINARY TREE COMPONENT - LARGER VERSION
 // ============================================
 const SvgBinaryTree = memo(({ array }: { array: any[] }) => {
   if (!Array.isArray(array) || array.length === 0) {
-    return <div className="text-stone-400 italic text-xs text-center p-4">Pohon kosong</div>;
+    return <div className="text-stone-400 italic text-sm text-center p-6">Pohon kosong</div>;
   }
 
   const levels = Math.ceil(Math.log2(array.length + 1));
@@ -171,17 +171,18 @@ const SvgBinaryTree = memo(({ array }: { array: any[] }) => {
     }
   }
 
-  const svgW = Math.max(300, Math.pow(2, levels) * CONFIG.NODE_SPACING);
+  const svgW = Math.max(400, Math.pow(2, levels) * CONFIG.NODE_SPACING);
   const svgH = levels * CONFIG.LEVEL_HEIGHT + CONFIG.NODE_SIZE * 2;
 
   return (
     <div className="w-full overflow-x-auto">
       <svg
-        width={svgW}
+        width="100%"
         height={svgH}
         viewBox={`0 0 ${svgW} ${svgH}`}
         preserveAspectRatio="xMidYMid meet"
-        className="mx-auto"
+        className="mx-auto min-w-full"
+        style={{ minHeight: '300px' }}
       >
         {edges.map((e, idx) => (
           <line
@@ -191,7 +192,7 @@ const SvgBinaryTree = memo(({ array }: { array: any[] }) => {
             x2={e.x2}
             y2={e.y2}
             stroke="#fbbf24"
-            strokeWidth={2.5}
+            strokeWidth={3}
             strokeLinecap="round"
           />
         ))}
@@ -202,15 +203,15 @@ const SvgBinaryTree = memo(({ array }: { array: any[] }) => {
               y={n.y - CONFIG.NODE_SIZE / 2}
               width={CONFIG.NODE_SIZE}
               height={CONFIG.NODE_SIZE}
-              rx={8}
+              rx={10}
               fill="#042f2e"
               stroke="#14b8a6"
-              strokeWidth={2.5}
+              strokeWidth={3}
             />
             <text
               x={n.x}
               y={n.y}
-              fontSize="14"
+              fontSize="16"
               fontWeight={700}
               fill="#a7f3d0"
               textAnchor="middle"
@@ -596,7 +597,7 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
             {/* EXPERT PANEL - BENTO GRID LAYOUT - 5 cols */}
             {(isExpert || role === 'host') && (
               <div className="lg:col-span-5 bento-grid-wide">
-                {/* Tree Visualization */}
+                {/* Tree Visualization - LARGER VERSION */}
                 <Card className="bento-tree-wide border border-emerald-700/40 bg-gradient-to-b from-stone-900/60 to-emerald-950/40">
                   <CardHeader className="pb-2 pt-2 px-3">
                     <CardTitle className="text-sm text-emerald-300 flex items-center gap-1.5">
@@ -610,7 +611,7 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
                   <CardContent className="p-3">
                     {treeArray && treeArray.length > 0 ? (
                       <div
-                        className="rounded-lg p-2 bg-stone-950 border border-stone-700/40 overflow-y-auto"
+                        className="rounded-lg p-3 bg-stone-950 border border-stone-700/40 overflow-y-auto"
                         style={{ maxHeight: CONFIG.MAX_TREE_HEIGHT }}
                       >
                         <SvgBinaryTree array={treeArray} />
