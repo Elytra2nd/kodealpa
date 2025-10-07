@@ -422,7 +422,7 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
   }
 
   return (
-    <div className="space-y-4 relative max-w-[1600px] mx-auto">
+    <div className="space-y-4 relative max-w-[1800px] mx-auto">
       <Card className="overflow-hidden border border-amber-700/40 bg-gradient-to-br from-stone-900 via-stone-800 to-amber-950 dungeon-card-glow">
         <CardHeader className="relative p-3 sm:p-4">
           <div className="absolute top-2 left-2 text-lg sm:text-xl">
@@ -467,145 +467,147 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
             </Alert>
           )}
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-            {/* DEFUSER PANEL */}
+          <div className="grid grid-cols-1 lg:grid-cols-7 gap-3">
+            {/* DEFUSER PANEL - 2 cols */}
             {(isDefuser || role === 'host') && (
-              <Card className="border border-amber-600/40 bg-gradient-to-b from-stone-900/60 to-stone-800/40">
-                <CardHeader className="p-3 pb-2">
-                  <CardTitle className="text-sm text-amber-300 flex items-center gap-2">
-                    <span>🗺️</span>
-                    <span>Panel Defuser</span>
-                  </CardTitle>
-                </CardHeader>
+              <div className="lg:col-span-2">
+                <Card className="border border-amber-600/40 bg-gradient-to-b from-stone-900/60 to-stone-800/40 h-full">
+                  <CardHeader className="p-3 pb-2">
+                    <CardTitle className="text-sm text-amber-300 flex items-center gap-2">
+                      <span>🗺️</span>
+                      <span>Panel Defuser</span>
+                    </CardTitle>
+                  </CardHeader>
 
-                <CardContent className="space-y-3 p-3">
-                  <div className="rounded-lg p-2 border border-stone-700/40 bg-stone-800/40">
-                    <h5 className="text-stone-200 font-semibold mb-1 text-xs">📜 Arahan Misi</h5>
-                    <p className="text-stone-300 text-[10px] leading-relaxed">
-                      {obfuscate(
-                        puzzle.defuserView?.task ||
-                          'Susun urutan langkah dari altar menuju ruang tujuan.'
-                      )}
-                    </p>
-                  </div>
+                  <CardContent className="space-y-3 p-3">
+                    <div className="rounded-lg p-2 border border-stone-700/40 bg-stone-800/40">
+                      <h5 className="text-stone-200 font-semibold mb-1 text-xs">📜 Arahan Misi</h5>
+                      <p className="text-stone-300 text-[10px] leading-relaxed">
+                        {obfuscate(
+                          puzzle.defuserView?.task ||
+                            'Susun urutan langkah dari altar menuju ruang tujuan.'
+                        )}
+                      </p>
+                    </div>
 
-                  <div>
-                    <h5 className="text-stone-200 font-semibold mb-2 text-xs">🧭 Kontrol Navigasi</h5>
-                    <div className="grid grid-cols-2 gap-1.5">
-                      <DirectionButton
-                        direction="up"
-                        label={pickLabel('up')}
-                        onClick={removeLastStep}
-                        disabled={path.length === 0 || submitting}
-                        variant="outline"
-                      />
-
-                      <DirectionButton
-                        direction="down"
-                        label={pickLabel('down')}
-                        onClick={descendOne}
-                        disabled={submitting || availableDirections.length !== 1}
-                        variant="outline"
-                      />
-
-                      {availableDirections.includes('left') && (
+                    <div>
+                      <h5 className="text-stone-200 font-semibold mb-2 text-xs">🧭 Kontrol Navigasi</h5>
+                      <div className="grid grid-cols-2 gap-1.5">
                         <DirectionButton
-                          direction="left"
-                          label={pickLabel('left')}
-                          onClick={() => addDirection('left')}
-                          onMouseEnter={() => setHoverNext('left')}
-                          onMouseLeave={() => setHoverNext(null)}
-                          disabled={submitting}
+                          direction="up"
+                          label={pickLabel('up')}
+                          onClick={removeLastStep}
+                          disabled={path.length === 0 || submitting}
+                          variant="outline"
                         />
-                      )}
 
-                      {availableDirections.includes('right') && (
                         <DirectionButton
-                          direction="right"
-                          label={pickLabel('right')}
-                          onClick={() => addDirection('right')}
-                          onMouseEnter={() => setHoverNext('right')}
-                          onMouseLeave={() => setHoverNext(null)}
-                          disabled={submitting}
+                          direction="down"
+                          label={pickLabel('down')}
+                          onClick={descendOne}
+                          disabled={submitting || availableDirections.length !== 1}
+                          variant="outline"
                         />
+
+                        {availableDirections.includes('left') && (
+                          <DirectionButton
+                            direction="left"
+                            label={pickLabel('left')}
+                            onClick={() => addDirection('left')}
+                            onMouseEnter={() => setHoverNext('left')}
+                            onMouseLeave={() => setHoverNext(null)}
+                            disabled={submitting}
+                          />
+                        )}
+
+                        {availableDirections.includes('right') && (
+                          <DirectionButton
+                            direction="right"
+                            label={pickLabel('right')}
+                            onClick={() => addDirection('right')}
+                            onMouseEnter={() => setHoverNext('right')}
+                            onMouseLeave={() => setHoverNext(null)}
+                            disabled={submitting}
+                          />
+                        )}
+                      </div>
+
+                      {availableDirections.length === 0 && (
+                        <Badge className="bg-red-800 text-red-100 border border-red-700/60 mt-2 text-xs">
+                          Tidak ada cabang
+                        </Badge>
                       )}
                     </div>
 
-                    {availableDirections.length === 0 && (
-                      <Badge className="bg-red-800 text-red-100 border border-red-700/60 mt-2 text-xs">
-                        Tidak ada cabang
-                      </Badge>
+                    <div>
+                      <h5 className="text-stone-200 font-semibold mb-1.5 text-xs">🛤️ Jejak Saat Ini</h5>
+                      <PathDisplay path={path} />
+
+                      <div className="flex gap-1.5 mt-2">
+                        <Button
+                          onClick={removeLastStep}
+                          disabled={path.length === 0 || submitting}
+                          variant="outline"
+                          size="sm"
+                          className="border-amber-600/60 text-amber-300 hover:bg-amber-900/30 text-xs flex-1"
+                        >
+                          Hapus
+                        </Button>
+                        <Button
+                          onClick={clearPath}
+                          disabled={path.length === 0 || submitting}
+                          variant="outline"
+                          size="sm"
+                          className="border-red-600/60 text-red-300 hover:bg-red-900/30 text-xs flex-1"
+                        >
+                          Reset
+                        </Button>
+                      </div>
+                    </div>
+
+                    <form onSubmit={handleSubmit}>
+                      <Button
+                        type="submit"
+                        disabled={path.length === 0 || submitting}
+                        className="w-full bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-stone-900 font-semibold text-xs py-2"
+                      >
+                        {submitting ? '⚙️ Mengirim...' : '✨ Kirim Jejak'}
+                      </Button>
+                    </form>
+
+                    {defuserHints.length > 0 && (
+                      <div className="p-2 rounded-lg border border-blue-700/40 bg-gradient-to-r from-blue-950/40 to-stone-900/30">
+                        <h5 className="text-blue-200 font-medium mb-1 text-xs flex items-center gap-1">
+                          <span>💡</span>
+                          <span>Petunjuk</span>
+                        </h5>
+                        <ul className="text-[9px] text-blue-200/90 space-y-0.5 list-disc pl-3">
+                          {defuserHints.map((h, i) => (
+                            <li key={i}>{h}</li>
+                          ))}
+                        </ul>
+                      </div>
                     )}
-                  </div>
-
-                  <div>
-                    <h5 className="text-stone-200 font-semibold mb-1.5 text-xs">🛤️ Jejak Saat Ini</h5>
-                    <PathDisplay path={path} />
-
-                    <div className="flex gap-1.5 mt-2">
-                      <Button
-                        onClick={removeLastStep}
-                        disabled={path.length === 0 || submitting}
-                        variant="outline"
-                        size="sm"
-                        className="border-amber-600/60 text-amber-300 hover:bg-amber-900/30 text-xs flex-1"
-                      >
-                        Hapus
-                      </Button>
-                      <Button
-                        onClick={clearPath}
-                        disabled={path.length === 0 || submitting}
-                        variant="outline"
-                        size="sm"
-                        className="border-red-600/60 text-red-300 hover:bg-red-900/30 text-xs flex-1"
-                      >
-                        Reset
-                      </Button>
-                    </div>
-                  </div>
-
-                  <form onSubmit={handleSubmit}>
-                    <Button
-                      type="submit"
-                      disabled={path.length === 0 || submitting}
-                      className="w-full bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-stone-900 font-semibold text-xs py-2"
-                    >
-                      {submitting ? '⚙️ Mengirim...' : '✨ Kirim Jejak'}
-                    </Button>
-                  </form>
-
-                  {defuserHints.length > 0 && (
-                    <div className="p-2 rounded-lg border border-blue-700/40 bg-gradient-to-r from-blue-950/40 to-stone-900/30">
-                      <h5 className="text-blue-200 font-medium mb-1 text-xs flex items-center gap-1">
-                        <span>💡</span>
-                        <span>Petunjuk</span>
-                      </h5>
-                      <ul className="text-[9px] text-blue-200/90 space-y-0.5 list-disc pl-3">
-                        {defuserHints.map((h, i) => (
-                          <li key={i}>{h}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
+              </div>
             )}
 
-            {/* EXPERT PANEL - BENTO GRID LAYOUT */}
+            {/* EXPERT PANEL - BENTO GRID LAYOUT - 5 cols */}
             {(isExpert || role === 'host') && (
-              <div className="bento-grid">
-                {/* Tree Visualization - Spans 2 rows, left side */}
-                <Card className="bento-tree border border-emerald-700/40 bg-gradient-to-b from-stone-900/60 to-emerald-950/40">
+              <div className="lg:col-span-5 bento-grid-wide">
+                {/* Tree Visualization */}
+                <Card className="bento-tree-wide border border-emerald-700/40 bg-gradient-to-b from-stone-900/60 to-emerald-950/40">
                   <CardHeader className="pb-2 pt-2 px-3">
-                    <CardTitle className="text-xs text-emerald-300 flex items-center gap-1.5">
+                    <CardTitle className="text-sm text-emerald-300 flex items-center gap-1.5">
                       <span>🎄</span>
                       <span>Visualisasi Pohon</span>
                     </CardTitle>
-                    <CardDescription className="text-stone-400 text-[9px]">
+                    <CardDescription className="text-stone-400 text-[10px]">
                       Lihat langsung struktur & cabang node
                     </CardDescription>
                   </CardHeader>
-                  <CardContent className="p-2">
+                  <CardContent className="p-3">
                     {treeArray && treeArray.length > 0 ? (
                       <div
                         className="rounded-lg p-2 bg-stone-950 border border-stone-700/40 overflow-y-auto"
@@ -618,72 +620,76 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
                         Data pohon tidak tersedia
                       </div>
                     )}
-                    <div className="mt-1.5 flex flex-wrap gap-1">
-                      <Badge className="bg-emerald-800 text-emerald-100 border border-emerald-700/40 text-[9px]">
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      <Badge className="bg-emerald-800 text-emerald-100 border border-emerald-700/40 text-xs">
                         Node
                       </Badge>
-                      <Badge className="bg-amber-800 text-amber-100 border border-amber-700/40 text-[9px]">
+                      <Badge className="bg-amber-800 text-amber-100 border border-amber-700/40 text-xs">
                         Koneksi
                       </Badge>
                     </div>
                   </CardContent>
                 </Card>
 
-                {/* Prinsip Pembimbingan - Top right */}
-                <Card className="bento-prinsip p-2.5 rounded-lg border border-emerald-700/50 bg-gradient-to-r from-emerald-950/40 to-stone-900/30">
-                  <h5 className="text-emerald-200 font-semibold mb-1.5 text-xs flex items-center gap-1">
+                {/* Prinsip Pembimbingan */}
+                <Card className="bento-prinsip-wide p-3 rounded-lg border border-emerald-700/50 bg-gradient-to-r from-emerald-950/40 to-stone-900/30">
+                  <h5 className="text-emerald-200 font-semibold mb-2 text-sm flex items-center gap-1.5">
                     <span>🧭</span>
                     <span>Prinsip Pembimbingan</span>
                   </h5>
-                  <ul className="text-[9px] text-emerald-200/90 space-y-0.5 list-disc pl-3">
+                  <ul className="text-[10px] text-emerald-200/90 space-y-1 list-disc pl-4">
                     <li>Ajukan pertanyaan terbuka untuk memancing analisis Defuser</li>
                     <li>Gunakan metode Socratic: biarkan mereka menemukan pola sendiri</li>
                     <li>Fokus pada proses berpikir, bukan jawaban langsung</li>
+                    <li>Berikan petunjuk bertingkat: umum → spesifik</li>
                   </ul>
                 </Card>
 
-                {/* Konsep Binary Tree - Right middle */}
-                <Card className="bento-konsep p-2.5 rounded-lg border border-purple-700/50 bg-gradient-to-r from-purple-950/40 to-stone-900/30">
-                  <h5 className="text-purple-200 font-semibold mb-1.5 text-xs flex items-center gap-1">
+                {/* Konsep Binary Tree */}
+                <Card className="bento-konsep-wide p-3 rounded-lg border border-purple-700/50 bg-gradient-to-r from-purple-950/40 to-stone-900/30">
+                  <h5 className="text-purple-200 font-semibold mb-2 text-sm flex items-center gap-1.5">
                     <span>📚</span>
                     <span>Konsep Binary Tree</span>
                   </h5>
-                  <ul className="text-[9px] text-purple-200/90 space-y-0.5 list-disc pl-3">
+                  <ul className="text-[10px] text-purple-200/90 space-y-1 list-disc pl-4">
                     <li>Binary Tree: setiap node maksimal 2 anak (left & right)</li>
                     <li>BST: left {'<'} parent {'<'} right untuk setiap subtree</li>
                     <li>Leaf node: tidak memiliki anak (endpoint)</li>
+                    <li>Root: node tertinggi, titik mulai penelusuran</li>
                   </ul>
                 </Card>
 
-                {/* Strategi Traversal - Bottom left (spans 2 cols) */}
-                <Card className="bento-strategi p-2.5 rounded-lg border border-blue-700/50 bg-gradient-to-r from-blue-950/40 to-stone-900/30">
-                  <h5 className="text-blue-200 font-semibold mb-1.5 text-xs flex items-center gap-1">
+                {/* Strategi Traversal */}
+                <Card className="bento-strategi-wide p-3 rounded-lg border border-blue-700/50 bg-gradient-to-r from-blue-950/40 to-stone-900/30">
+                  <h5 className="text-blue-200 font-semibold mb-2 text-sm flex items-center gap-1.5">
                     <span>🔍</span>
                     <span>Strategi Traversal</span>
                   </h5>
-                  <ul className="text-[9px] text-blue-200/90 space-y-0.5 list-disc pl-3">
+                  <ul className="text-[10px] text-blue-200/90 space-y-1 list-disc pl-4">
                     <li><strong>Inorder</strong>: Left-Root-Right (urutan terurut pada BST)</li>
                     <li><strong>Preorder</strong>: Root-Left-Right (copy struktur pohon)</li>
                     <li><strong>Postorder</strong>: Left-Right-Root (evaluasi bottom-up)</li>
+                    <li><strong>Level-order</strong>: BFS per level untuk jarak minimum</li>
                   </ul>
                 </Card>
 
-                {/* Validasi BST - Bottom right */}
-                <Card className="bento-validasi p-2.5 rounded-lg border border-teal-700/50 bg-gradient-to-r from-teal-950/40 to-stone-900/30">
-                  <h5 className="text-teal-200 font-semibold mb-1.5 text-xs flex items-center gap-1">
+                {/* Validasi BST */}
+                <Card className="bento-validasi-wide p-3 rounded-lg border border-teal-700/50 bg-gradient-to-r from-teal-950/40 to-stone-900/30">
+                  <h5 className="text-teal-200 font-semibold mb-2 text-sm flex items-center gap-1.5">
                     <span>✅</span>
                     <span>Validasi BST</span>
                   </h5>
-                  <ul className="text-[9px] text-teal-200/90 space-y-0.5 list-disc pl-3">
+                  <ul className="text-[10px] text-teal-200/90 space-y-1 list-disc pl-4">
                     <li>Inorder traversal harus menghasilkan urutan menaik</li>
                     <li>Gunakan range checking: update min/max saat turun</li>
+                    <li>Kompleksitas: O(log n) balanced, O(n) worst case</li>
                   </ul>
                 </Card>
 
-                {/* Metode Traversal - Full width at bottom */}
+                {/* Metode Traversal */}
                 {puzzle.expertView?.traversalMethods && (
-                  <Card className="bento-metode p-2.5 rounded-lg border border-indigo-700/50 bg-gradient-to-r from-indigo-950/40 to-stone-900/30">
-                    <h5 className="text-indigo-200 font-semibold mb-1.5 text-xs flex items-center gap-1">
+                  <Card className="bento-metode-wide p-3 rounded-lg border border-indigo-700/50 bg-gradient-to-r from-indigo-950/40 to-stone-900/30">
+                    <h5 className="text-indigo-200 font-semibold mb-2 text-sm flex items-center gap-1.5">
                       <span>🔮</span>
                       <span>Metode Traversal Tersedia</span>
                     </h5>
@@ -691,7 +697,7 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
                       {Object.keys(puzzle.expertView.traversalMethods).map((name) => (
                         <Badge
                           key={name}
-                          className="bg-indigo-800 text-indigo-100 border border-indigo-700/60 text-[9px]"
+                          className="bg-indigo-800 text-indigo-100 border border-indigo-700/60 text-xs"
                         >
                           {name}
                         </Badge>
@@ -705,7 +711,7 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
         </CardContent>
       </Card>
 
-      {/* BENTO GRID STYLES */}
+      {/* BENTO GRID STYLES - WIDER VERSION */}
       <style>{`
         .dungeon-torch-flicker {
           display: inline-block;
@@ -719,57 +725,57 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
           text-shadow: 0 0 15px rgba(251, 191, 36, 0.5);
         }
 
-        /* BENTO GRID LAYOUT - Asymmetric Design */
-        .bento-grid {
+        /* BENTO GRID LAYOUT - WIDER & MORE SPACIOUS */
+        .bento-grid-wide {
           display: grid;
-          grid-template-columns: repeat(4, 1fr);
-          grid-template-rows: repeat(3, auto);
+          grid-template-columns: repeat(6, 1fr);
+          grid-template-rows: repeat(4, auto);
           gap: 12px;
         }
 
-        .bento-tree {
-          grid-column: 1 / 3;
-          grid-row: 1 / 4;
+        .bento-tree-wide {
+          grid-column: 1 / 4;
+          grid-row: 1 / 5;
         }
 
-        .bento-prinsip {
-          grid-column: 3 / 5;
+        .bento-prinsip-wide {
+          grid-column: 4 / 7;
           grid-row: 1 / 2;
         }
 
-        .bento-konsep {
-          grid-column: 3 / 5;
+        .bento-konsep-wide {
+          grid-column: 4 / 7;
           grid-row: 2 / 3;
         }
 
-        .bento-strategi {
-          grid-column: 3 / 5;
+        .bento-strategi-wide {
+          grid-column: 4 / 7;
           grid-row: 3 / 4;
         }
 
-        .bento-validasi {
-          grid-column: 3 / 5;
+        .bento-validasi-wide {
+          grid-column: 4 / 7;
           grid-row: 4 / 5;
         }
 
-        .bento-metode {
-          grid-column: 1 / 5;
-          grid-row: 4 / 5;
+        .bento-metode-wide {
+          grid-column: 1 / 7;
+          grid-row: 5 / 6;
         }
 
-        /* Responsive Bento Grid */
-        @media (max-width: 1024px) {
-          .bento-grid {
+        /* Responsive */
+        @media (max-width: 1280px) {
+          .bento-grid-wide {
             grid-template-columns: 1fr;
             grid-template-rows: auto;
           }
 
-          .bento-tree,
-          .bento-prinsip,
-          .bento-konsep,
-          .bento-strategi,
-          .bento-validasi,
-          .bento-metode {
+          .bento-tree-wide,
+          .bento-prinsip-wide,
+          .bento-konsep-wide,
+          .bento-strategi-wide,
+          .bento-validasi-wide,
+          .bento-metode-wide {
             grid-column: 1 / 2;
             grid-row: auto;
           }
