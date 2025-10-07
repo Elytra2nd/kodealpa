@@ -10,7 +10,7 @@ import { gsap } from 'gsap';
 // ============================================
 const CONFIG = {
   TORCH_FLICKER_INTERVAL: 2200,
-  MAX_TREE_HEIGHT: 350,
+  MAX_TREE_HEIGHT: 380,
   NODE_SIZE: 32,
   LEVEL_HEIGHT: 70,
   NODE_SPACING: 45,
@@ -429,7 +429,7 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
   }
 
   return (
-    <div className="space-y-4 relative">
+    <div className="space-y-4 relative max-w-[1600px] mx-auto">
       <Card className="overflow-hidden border border-amber-700/40 bg-gradient-to-br from-stone-900 via-stone-800 to-amber-950 dungeon-card-glow">
         <CardHeader className="relative p-3 sm:p-4">
           <div className="absolute top-2 left-2 text-lg sm:text-xl">
@@ -474,134 +474,136 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
             </Alert>
           )}
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-            {/* DEFUSER PANEL */}
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-3">
+            {/* DEFUSER PANEL - 2 cols */}
             {(isDefuser || role === 'host') && (
-              <Card className="border border-amber-600/40 bg-gradient-to-b from-stone-900/60 to-stone-800/40">
-                <CardHeader className="p-3">
-                  <CardTitle className="text-sm text-amber-300 flex items-center gap-2">
-                    <span>🗺️</span>
-                    <span>Panel Defuser</span>
-                  </CardTitle>
-                </CardHeader>
+              <div className="lg:col-span-2">
+                <Card className="border border-amber-600/40 bg-gradient-to-b from-stone-900/60 to-stone-800/40 h-full">
+                  <CardHeader className="p-3 pb-2">
+                    <CardTitle className="text-sm text-amber-300 flex items-center gap-2">
+                      <span>🗺️</span>
+                      <span>Panel Defuser</span>
+                    </CardTitle>
+                  </CardHeader>
 
-                <CardContent className="space-y-3 p-3">
-                  <div className="rounded-lg p-2 border border-stone-700/40 bg-stone-800/40">
-                    <h5 className="text-stone-200 font-semibold mb-1 text-xs">📜 Arahan Misi</h5>
-                    <p className="text-stone-300 text-[10px] leading-relaxed">
-                      {obfuscate(
-                        puzzle.defuserView?.task ||
-                          'Susun urutan langkah dari altar menuju ruang tujuan.'
-                      )}
-                    </p>
-                  </div>
+                  <CardContent className="space-y-3 p-3">
+                    <div className="rounded-lg p-2 border border-stone-700/40 bg-stone-800/40">
+                      <h5 className="text-stone-200 font-semibold mb-1 text-xs">📜 Arahan Misi</h5>
+                      <p className="text-stone-300 text-[10px] leading-relaxed">
+                        {obfuscate(
+                          puzzle.defuserView?.task ||
+                            'Susun urutan langkah dari altar menuju ruang tujuan.'
+                        )}
+                      </p>
+                    </div>
 
-                  <div>
-                    <h5 className="text-stone-200 font-semibold mb-2 text-xs">🧭 Kontrol Navigasi</h5>
-                    <div className="grid grid-cols-2 gap-1.5">
-                      <DirectionButton
-                        direction="up"
-                        label={pickLabel('up')}
-                        onClick={removeLastStep}
-                        disabled={path.length === 0 || submitting}
-                        variant="outline"
-                      />
-
-                      <DirectionButton
-                        direction="down"
-                        label={pickLabel('down')}
-                        onClick={descendOne}
-                        disabled={submitting || availableDirections.length !== 1}
-                        variant="outline"
-                      />
-
-                      {availableDirections.includes('left') && (
+                    <div>
+                      <h5 className="text-stone-200 font-semibold mb-2 text-xs">🧭 Kontrol Navigasi</h5>
+                      <div className="grid grid-cols-2 gap-1.5">
                         <DirectionButton
-                          direction="left"
-                          label={pickLabel('left')}
-                          onClick={() => addDirection('left')}
-                          onMouseEnter={() => setHoverNext('left')}
-                          onMouseLeave={() => setHoverNext(null)}
-                          disabled={submitting}
+                          direction="up"
+                          label={pickLabel('up')}
+                          onClick={removeLastStep}
+                          disabled={path.length === 0 || submitting}
+                          variant="outline"
                         />
-                      )}
 
-                      {availableDirections.includes('right') && (
                         <DirectionButton
-                          direction="right"
-                          label={pickLabel('right')}
-                          onClick={() => addDirection('right')}
-                          onMouseEnter={() => setHoverNext('right')}
-                          onMouseLeave={() => setHoverNext(null)}
-                          disabled={submitting}
+                          direction="down"
+                          label={pickLabel('down')}
+                          onClick={descendOne}
+                          disabled={submitting || availableDirections.length !== 1}
+                          variant="outline"
                         />
+
+                        {availableDirections.includes('left') && (
+                          <DirectionButton
+                            direction="left"
+                            label={pickLabel('left')}
+                            onClick={() => addDirection('left')}
+                            onMouseEnter={() => setHoverNext('left')}
+                            onMouseLeave={() => setHoverNext(null)}
+                            disabled={submitting}
+                          />
+                        )}
+
+                        {availableDirections.includes('right') && (
+                          <DirectionButton
+                            direction="right"
+                            label={pickLabel('right')}
+                            onClick={() => addDirection('right')}
+                            onMouseEnter={() => setHoverNext('right')}
+                            onMouseLeave={() => setHoverNext(null)}
+                            disabled={submitting}
+                          />
+                        )}
+                      </div>
+
+                      {availableDirections.length === 0 && (
+                        <Badge className="bg-red-800 text-red-100 border border-red-700/60 mt-2 text-xs">
+                          Tidak ada cabang
+                        </Badge>
                       )}
                     </div>
 
-                    {availableDirections.length === 0 && (
-                      <Badge className="bg-red-800 text-red-100 border border-red-700/60 mt-2 text-xs">
-                        Tidak ada cabang
-                      </Badge>
+                    <div>
+                      <h5 className="text-stone-200 font-semibold mb-1.5 text-xs">🛤️ Jejak Saat Ini</h5>
+                      <PathDisplay path={path} />
+
+                      <div className="flex gap-1.5 mt-2">
+                        <Button
+                          onClick={removeLastStep}
+                          disabled={path.length === 0 || submitting}
+                          variant="outline"
+                          size="sm"
+                          className="border-amber-600/60 text-amber-300 hover:bg-amber-900/30 text-xs flex-1"
+                        >
+                          Hapus
+                        </Button>
+                        <Button
+                          onClick={clearPath}
+                          disabled={path.length === 0 || submitting}
+                          variant="outline"
+                          size="sm"
+                          className="border-red-600/60 text-red-300 hover:bg-red-900/30 text-xs flex-1"
+                        >
+                          Reset
+                        </Button>
+                      </div>
+                    </div>
+
+                    <form onSubmit={handleSubmit}>
+                      <Button
+                        type="submit"
+                        disabled={path.length === 0 || submitting}
+                        className="w-full bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-stone-900 font-semibold text-xs py-2"
+                      >
+                        {submitting ? '⚙️ Mengirim...' : '✨ Kirim Jejak'}
+                      </Button>
+                    </form>
+
+                    {defuserHints.length > 0 && (
+                      <div className="p-2 rounded-lg border border-blue-700/40 bg-gradient-to-r from-blue-950/40 to-stone-900/30">
+                        <h5 className="text-blue-200 font-medium mb-1 text-xs flex items-center gap-1">
+                          <span>💡</span>
+                          <span>Petunjuk</span>
+                        </h5>
+                        <ul className="text-[9px] text-blue-200/90 space-y-0.5 list-disc pl-3">
+                          {defuserHints.map((h, i) => (
+                            <li key={i}>{h}</li>
+                          ))}
+                        </ul>
+                      </div>
                     )}
-                  </div>
-
-                  <div>
-                    <h5 className="text-stone-200 font-semibold mb-1.5 text-xs">🛤️ Jejak Saat Ini</h5>
-                    <PathDisplay path={path} />
-
-                    <div className="flex gap-1.5 mt-2">
-                      <Button
-                        onClick={removeLastStep}
-                        disabled={path.length === 0 || submitting}
-                        variant="outline"
-                        size="sm"
-                        className="border-amber-600/60 text-amber-300 hover:bg-amber-900/30 text-xs flex-1"
-                      >
-                        Hapus
-                      </Button>
-                      <Button
-                        onClick={clearPath}
-                        disabled={path.length === 0 || submitting}
-                        variant="outline"
-                        size="sm"
-                        className="border-red-600/60 text-red-300 hover:bg-red-900/30 text-xs flex-1"
-                      >
-                        Reset
-                      </Button>
-                    </div>
-                  </div>
-
-                  <form onSubmit={handleSubmit}>
-                    <Button
-                      type="submit"
-                      disabled={path.length === 0 || submitting}
-                      className="w-full bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-stone-900 font-semibold text-xs py-2"
-                    >
-                      {submitting ? '⚙️ Mengirim...' : '✨ Kirim Jejak'}
-                    </Button>
-                  </form>
-
-                  {defuserHints.length > 0 && (
-                    <div className="p-2 rounded-lg border border-blue-700/40 bg-gradient-to-r from-blue-950/40 to-stone-900/30">
-                      <h5 className="text-blue-200 font-medium mb-1 text-xs flex items-center gap-1">
-                        <span>💡</span>
-                        <span>Petunjuk</span>
-                      </h5>
-                      <ul className="text-[9px] text-blue-200/90 space-y-0.5 list-disc pl-3">
-                        {defuserHints.map((h, i) => (
-                          <li key={i}>{h}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
+              </div>
             )}
 
-            {/* EXPERT PANEL */}
+            {/* EXPERT PANEL - 3 cols */}
             {(isExpert || role === 'host') && (
-              <div className="space-y-3">
-                {/* Tree Visualization */}
+              <div className="lg:col-span-3 space-y-3">
+                {/* Tree Visualization - Full Width */}
                 <Card className="border border-emerald-700/40 bg-gradient-to-b from-stone-900/60 to-emerald-950/40">
                   <CardHeader className="pb-2 pt-2 px-3">
                     <CardTitle className="text-xs text-emerald-300 flex items-center gap-1.5">
@@ -638,63 +640,66 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
 
                 {/* Guidance Cards Grid - 2x2 */}
                 <div className="grid grid-cols-2 gap-2">
-                  <Card className="p-2 rounded-lg border border-emerald-700/50 bg-gradient-to-r from-emerald-950/40 to-stone-900/30">
-                    <h5 className="text-emerald-200 font-semibold mb-1 text-[10px] flex items-center gap-1">
+                  <Card className="p-2.5 rounded-lg border border-emerald-700/50 bg-gradient-to-r from-emerald-950/40 to-stone-900/30">
+                    <h5 className="text-emerald-200 font-semibold mb-1.5 text-xs flex items-center gap-1">
                       <span>🧭</span>
                       <span>Prinsip Pembimbingan</span>
                     </h5>
-                    <ul className="text-[8px] text-emerald-200/90 space-y-0.5 list-disc pl-3">
+                    <ul className="text-[9px] text-emerald-200/90 space-y-0.5 list-disc pl-3">
                       <li>Ajukan pertanyaan terbuka untuk memancing analisis Defuser</li>
                       <li>Gunakan metode Socratic: biarkan mereka menemukan pola sendiri</li>
                       <li>Fokus pada proses berpikir, bukan jawaban langsung</li>
+                      <li>Berikan petunjuk bertingkat: umum → spesifik</li>
                     </ul>
                   </Card>
 
-                  <Card className="p-2 rounded-lg border border-purple-700/50 bg-gradient-to-r from-purple-950/40 to-stone-900/30">
-                    <h5 className="text-purple-200 font-semibold mb-1 text-[10px] flex items-center gap-1">
+                  <Card className="p-2.5 rounded-lg border border-purple-700/50 bg-gradient-to-r from-purple-950/40 to-stone-900/30">
+                    <h5 className="text-purple-200 font-semibold mb-1.5 text-xs flex items-center gap-1">
                       <span>📚</span>
                       <span>Konsep Binary Tree</span>
                     </h5>
-                    <ul className="text-[8px] text-purple-200/90 space-y-0.5 list-disc pl-3">
-                      <li>Binary Tree: setiap node max 2 anak (left & right)</li>
+                    <ul className="text-[9px] text-purple-200/90 space-y-0.5 list-disc pl-3">
+                      <li>Binary Tree: setiap node maksimal 2 anak (left & right)</li>
                       <li>BST: left {'<'} parent {'<'} right untuk setiap subtree</li>
                       <li>Leaf node: tidak memiliki anak (endpoint)</li>
+                      <li>Root: node tertinggi, titik mulai penelusuran</li>
                     </ul>
                   </Card>
 
-                  <Card className="p-2 rounded-lg border border-blue-700/50 bg-gradient-to-r from-blue-950/40 to-stone-900/30">
-                    <h5 className="text-blue-200 font-semibold mb-1 text-[10px] flex items-center gap-1">
+                  <Card className="p-2.5 rounded-lg border border-blue-700/50 bg-gradient-to-r from-blue-950/40 to-stone-900/30">
+                    <h5 className="text-blue-200 font-semibold mb-1.5 text-xs flex items-center gap-1">
                       <span>🔍</span>
                       <span>Strategi Traversal</span>
                     </h5>
-                    <ul className="text-[8px] text-blue-200/90 space-y-0.5 list-disc pl-3">
-                      <li><strong>Inorder</strong>: L-Root-R (urutan terurut BST)</li>
-                      <li><strong>Preorder</strong>: Root-L-R (copy struktur)</li>
-                      <li><strong>Postorder</strong>: L-R-Root (eval bottom-up)</li>
+                    <ul className="text-[9px] text-blue-200/90 space-y-0.5 list-disc pl-3">
+                      <li><strong>Inorder</strong>: Left-Root-Right (urutan terurut pada BST)</li>
+                      <li><strong>Preorder</strong>: Root-Left-Right (copy struktur pohon)</li>
+                      <li><strong>Postorder</strong>: Left-Right-Root (evaluasi bottom-up)</li>
+                      <li><strong>Level-order</strong>: BFS per level untuk jarak minimum</li>
                     </ul>
                   </Card>
 
-                  <Card className="p-2 rounded-lg border border-teal-700/50 bg-gradient-to-r from-teal-950/40 to-stone-900/30">
-                    <h5 className="text-teal-200 font-semibold mb-1 text-[10px] flex items-center gap-1">
+                  <Card className="p-2.5 rounded-lg border border-teal-700/50 bg-gradient-to-r from-teal-950/40 to-stone-900/30">
+                    <h5 className="text-teal-200 font-semibold mb-1.5 text-xs flex items-center gap-1">
                       <span>✅</span>
                       <span>Validasi BST</span>
                     </h5>
-                    <ul className="text-[8px] text-teal-200/90 space-y-0.5 list-disc pl-3">
-                      <li>Inorder traversal harus urutan menaik</li>
+                    <ul className="text-[9px] text-teal-200/90 space-y-0.5 list-disc pl-3">
+                      <li>Inorder traversal harus menghasilkan urutan menaik</li>
                       <li>Gunakan range checking: update min/max saat turun</li>
-                      <li>Kompleksitas: O(log n) balanced, O(n) worst</li>
+                      <li>Kompleksitas: O(log n) balanced, O(n) worst case</li>
                     </ul>
                   </Card>
                 </div>
 
                 {/* Metode Traversal */}
                 {puzzle.expertView?.traversalMethods && (
-                  <Card className="p-2 rounded-lg border border-indigo-700/50 bg-gradient-to-r from-indigo-950/40 to-stone-900/30">
-                    <h5 className="text-indigo-200 font-semibold mb-1 text-[10px] flex items-center gap-1">
+                  <Card className="p-2.5 rounded-lg border border-indigo-700/50 bg-gradient-to-r from-indigo-950/40 to-stone-900/30">
+                    <h5 className="text-indigo-200 font-semibold mb-1.5 text-xs flex items-center gap-1">
                       <span>🔮</span>
                       <span>Metode Traversal Tersedia</span>
                     </h5>
-                    <div className="flex flex-wrap gap-1">
+                    <div className="flex flex-wrap gap-1.5">
                       {Object.keys(puzzle.expertView.traversalMethods).map((name) => (
                         <Badge
                           key={name}
