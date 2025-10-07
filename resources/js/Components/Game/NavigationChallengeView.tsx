@@ -10,21 +10,11 @@ import { gsap } from 'gsap';
 // ============================================
 const CONFIG = {
   TORCH_FLICKER_INTERVAL: 2200,
-  RUNE_FLOAT_DURATION: 3200,
-  MAX_TREE_HEIGHT: 400,
-  NODE_SIZE: 30,
-  LEVEL_HEIGHT: 62,
-  NODE_SPACING: 60,
+  MAX_TREE_HEIGHT: 350,
+  NODE_SIZE: 32,
+  LEVEL_HEIGHT: 70,
+  NODE_SPACING: 45,
 } as const;
-
-const DEPTH_COLORS = [
-  'text-emerald-300',
-  'text-amber-300',
-  'text-purple-300',
-  'text-indigo-300',
-  'text-blue-300',
-  'text-rose-300',
-] as const;
 
 // ============================================
 // TYPE DEFINITIONS
@@ -81,10 +71,6 @@ const normalizeStep = (step: string): Direction | null => {
   return null;
 };
 
-const depthColor = (depth: number): string => {
-  return DEPTH_COLORS[depth % DEPTH_COLORS.length];
-};
-
 // Build tree array from TreeNode structure
 const buildArrayFromTree = (root: TreeNode | null | undefined): any[] => {
   if (!root) return [];
@@ -94,7 +80,6 @@ const buildArrayFromTree = (root: TreeNode | null | undefined): any[] => {
   while (queue.length > 0) {
     const { node, index } = queue.shift()!;
 
-    // Extend array if needed
     while (result.length <= index) {
       result.push(null);
     }
@@ -154,14 +139,17 @@ const SvgBinaryTree = memo(({ array }: { array: any[] }) => {
   const nodes: Array<{ val: any, x: number, y: number, i: number }> = [];
   const edges: Array<{ x1: number, y1: number, x2: number, y2: number }> = [];
 
+  // Calculate positions
   for (let i = 0; i < array.length; i++) {
     if (array[i] === null || array[i] === undefined) continue;
 
     const depth = Math.floor(Math.log2(i + 1));
     const posInLevel = i - (Math.pow(2, depth) - 1);
-    const xSpace = CONFIG.NODE_SPACING * Math.pow(2, levels - depth - 1);
-    const x = xSpace + posInLevel * xSpace * 2 + CONFIG.NODE_SIZE * 1.1;
-    const y = depth * CONFIG.LEVEL_HEIGHT + 40;
+    const nodesInLevel = Math.pow(2, depth);
+    const levelWidth = Math.pow(2, levels - depth - 1) * CONFIG.NODE_SPACING;
+
+    const x = levelWidth + posInLevel * levelWidth * 2;
+    const y = depth * CONFIG.LEVEL_HEIGHT + CONFIG.NODE_SIZE;
 
     nodes.push({ val: array[i], x, y, i });
 
@@ -170,9 +158,9 @@ const SvgBinaryTree = memo(({ array }: { array: any[] }) => {
     if (left < array.length && array[left] != null) {
       const ld = Math.floor(Math.log2(left + 1));
       const lp = left - (Math.pow(2, ld) - 1);
-      const lxSpace = CONFIG.NODE_SPACING * Math.pow(2, levels - ld - 1);
-      const lx = lxSpace + lp * lxSpace * 2 + CONFIG.NODE_SIZE * 1.1;
-      const ly = ld * CONFIG.LEVEL_HEIGHT + 40;
+      const lLevelWidth = Math.pow(2, levels - ld - 1) * CONFIG.NODE_SPACING;
+      const lx = lLevelWidth + lp * lLevelWidth * 2;
+      const ly = ld * CONFIG.LEVEL_HEIGHT + CONFIG.NODE_SIZE;
       edges.push({ x1: x, y1: y, x2: lx, y2: ly });
     }
 
@@ -181,58 +169,66 @@ const SvgBinaryTree = memo(({ array }: { array: any[] }) => {
     if (right < array.length && array[right] != null) {
       const rd = Math.floor(Math.log2(right + 1));
       const rp = right - (Math.pow(2, rd) - 1);
-      const rxSpace = CONFIG.NODE_SPACING * Math.pow(2, levels - rd - 1);
-      const rx = rxSpace + rp * rxSpace * 2 + CONFIG.NODE_SIZE * 1.1;
-      const ry = rd * CONFIG.LEVEL_HEIGHT + 40;
+      const rLevelWidth = Math.pow(2, levels - rd - 1) * CONFIG.NODE_SPACING;
+      const rx = rLevelWidth + rp * rLevelWidth * 2;
+      const ry = rd * CONFIG.LEVEL_HEIGHT + CONFIG.NODE_SIZE;
       edges.push({ x1: x, y1: y, x2: rx, y2: ry });
     }
   }
 
-  const svgW = Math.max(330, Math.pow(2, levels - 1) * 100);
-  const svgH = levels * CONFIG.LEVEL_HEIGHT + 50;
+  const svgW = Math.max(300, Math.pow(2, levels) * CONFIG.NODE_SPACING);
+  const svgH = levels * CONFIG.LEVEL_HEIGHT + CONFIG.NODE_SIZE * 2;
 
   return (
-    <svg width={svgW} height={svgH} style={{ display: 'block', margin: 'auto', width: '100%' }}>
-      {/* Draw edges first (behind nodes) */}
-      {edges.map((e, idx) => (
-        <line
-          key={`edge-${idx}`}
-          x1={e.x1}
-          y1={e.y1}
-          x2={e.x2}
-          y2={e.y2}
-          stroke="#fbbf24"
-          strokeWidth={2}
-          strokeLinecap="round"
-        />
-      ))}
-      {/* Draw nodes */}
-      {nodes.map((n, idx) => (
-        <g key={`node-${idx}`}>
-          <rect
-            x={n.x - CONFIG.NODE_SIZE / 2}
-            y={n.y - CONFIG.NODE_SIZE / 2}
-            width={CONFIG.NODE_SIZE}
-            height={CONFIG.NODE_SIZE}
-            rx={8}
-            fill="#042f2e"
-            stroke="#14b8a6"
-            strokeWidth={2}
+    <div className="w-full overflow-x-auto">
+      <svg
+        width={svgW}
+        height={svgH}
+        viewBox={`0 0 ${svgW} ${svgH}`}
+        preserveAspectRatio="xMidYMid meet"
+        className="mx-auto"
+      >
+        {/* Draw edges */}
+        {edges.map((e, idx) => (
+          <line
+            key={`edge-${idx}`}
+            x1={e.x1}
+            y1={e.y1}
+            x2={e.x2}
+            y2={e.y2}
+            stroke="#fbbf24"
+            strokeWidth={2.5}
+            strokeLinecap="round"
           />
-          <text
-            x={n.x}
-            y={n.y + 2}
-            fontSize="13"
-            fontWeight={700}
-            fill="#a7f3d0"
-            textAnchor="middle"
-            dominantBaseline="central"
-          >
-            {String(n.val)}
-          </text>
-        </g>
-      ))}
-    </svg>
+        ))}
+        {/* Draw nodes */}
+        {nodes.map((n) => (
+          <g key={`node-${n.i}`}>
+            <rect
+              x={n.x - CONFIG.NODE_SIZE / 2}
+              y={n.y - CONFIG.NODE_SIZE / 2}
+              width={CONFIG.NODE_SIZE}
+              height={CONFIG.NODE_SIZE}
+              rx={8}
+              fill="#042f2e"
+              stroke="#14b8a6"
+              strokeWidth={2.5}
+            />
+            <text
+              x={n.x}
+              y={n.y}
+              fontSize="14"
+              fontWeight={700}
+              fill="#a7f3d0"
+              textAnchor="middle"
+              dominantBaseline="central"
+            >
+              {String(n.val)}
+            </text>
+          </g>
+        ))}
+      </svg>
+    </div>
   );
 });
 
@@ -278,7 +274,7 @@ const DirectionButton = memo(
         onClick={onClick}
         disabled={disabled}
         size="sm"
-        className={`${classes} transition-all duration-300`}
+        className={`${classes} transition-all duration-300 text-xs`}
       >
         {icons[direction]} {label}
       </Button>
@@ -289,13 +285,13 @@ const DirectionButton = memo(
 DirectionButton.displayName = 'DirectionButton';
 
 const PathDisplay = memo(({ path }: { path: string[] }) => (
-  <div className="min-h-[60px] rounded-xl p-4 border border-amber-700/50 bg-stone-900/70 flex items-center backdrop-blur-sm">
+  <div className="min-h-[50px] rounded-lg p-3 border border-amber-700/50 bg-stone-900/70 flex items-center backdrop-blur-sm">
     {path.length > 0 ? (
-      <span className="font-mono text-sm text-amber-300 dungeon-rune-float break-all">
+      <span className="font-mono text-xs text-amber-300 break-all">
         {path.join(' → ')}
       </span>
     ) : (
-      <span className="text-stone-400 italic text-sm">Belum ada jejak yang tercatat</span>
+      <span className="text-stone-400 italic text-xs">Belum ada jejak yang tercatat</span>
     )}
   </div>
 ));
@@ -314,7 +310,6 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
   const isDefuser = role === 'defuser';
   const isExpert = role === 'expert';
 
-  // Get button label for direction
   const pickLabel = useCallback(
     (dir: 'left' | 'right' | 'up' | 'down'): string => {
       const traversalOptions = toArray(puzzle?.defuserView?.traversalOptions);
@@ -334,10 +329,8 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
     [puzzle]
   );
 
-  // Get tree root
   const root: TreeNode | undefined = puzzle?.expertView?.tree?.root;
 
-  // Build tree array for visualization
   const treeArray = useMemo(() => {
     if (puzzle?.expertView?.arrayTree) {
       return puzzle.expertView.arrayTree;
@@ -345,7 +338,6 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
     return buildArrayFromTree(root);
   }, [root, puzzle?.expertView?.arrayTree]);
 
-  // Current node based on path
   const currentNode = useMemo(() => {
     let current: TreeNode | null | undefined = root;
 
@@ -361,7 +353,6 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
     return current ?? null;
   }, [root, path]);
 
-  // Available directions at current node
   const availableDirections = useMemo((): Direction[] => {
     const dirs: Direction[] = [];
     if (currentNode && typeof currentNode === 'object') {
@@ -371,7 +362,6 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
     return dirs;
   }, [currentNode]);
 
-  // Detect synchronization issues
   const syncIssue = useMemo(() => {
     if (!currentNode) return root ? null : 'Struktur pohon belum tersedia dari grimoire.';
 
@@ -388,19 +378,15 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
       : null;
   }, [currentNode, puzzle, root]);
 
-  // Defuser hints
   const defuserHints = useMemo(() => {
     const base = toArray(puzzle?.defuserView?.hints);
     const extra = [
       'Jejak runik tak selalu lurus; teguk napas di tiap persimpangan dan amati penjaga gerbangnya.',
       'Bandingkan nilai penjaga sebelum memilih barat atau timur; namun jangan terperangkap fatamorgana keseimbangan semu.',
-      'Bila dua lorong tampak setara, dengarkan bisik selisih—ia membimbing tanpa menunjuk langsung.',
-      'Pilih ritus penelusuran yang menyingkap makna paling banyak, bukan yang terdengar paling nyaring.',
     ];
-    return [...base, ...extra].map(obfuscate);
+    return [...base, ...extra].slice(0, 3).map(obfuscate);
   }, [puzzle]);
 
-  // Path management functions
   const addDirection = useCallback(
     (dir: Direction) => {
       const label = pickLabel(dir);
@@ -443,86 +429,76 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
   }
 
   return (
-    <div className="space-y-6 relative">
+    <div className="space-y-4 relative">
       <Card className="overflow-hidden border border-amber-700/40 bg-gradient-to-br from-stone-900 via-stone-800 to-amber-950 dungeon-card-glow">
-        <CardHeader className="relative p-4 sm:p-6">
-          <div className="absolute top-3 left-3 text-xl sm:text-2xl">
-            <span ref={setTorchRef(0)} className="dungeon-torch-flicker">
-              🔥
-            </span>
+        <CardHeader className="relative p-3 sm:p-4">
+          <div className="absolute top-2 left-2 text-lg sm:text-xl">
+            <span ref={setTorchRef(0)} className="dungeon-torch-flicker">🔥</span>
           </div>
-          <div className="absolute top-3 right-3 text-xl sm:text-2xl">
-            <span ref={setTorchRef(1)} className="dungeon-torch-flicker">
-              🔥
-            </span>
+          <div className="absolute top-2 right-2 text-lg sm:text-xl">
+            <span ref={setTorchRef(1)} className="dungeon-torch-flicker">🔥</span>
           </div>
-          <CardTitle className="text-amber-300 text-xl sm:text-2xl relative z-10 dungeon-glow-text">
-            {puzzle.title || 'Tantangan Navigasi Dungeon'}
+          <CardTitle className="text-amber-300 text-lg sm:text-xl relative z-10 dungeon-glow-text">
+            {puzzle.title || 'Navigasi Tantangan'}
           </CardTitle>
-          <CardDescription className="text-stone-300 text-sm sm:text-base relative z-10">
-            {puzzle.description || 'Menelusuri struktur pohon di lorong CodeAlpha Dungeon.'}
+          <CardDescription className="text-stone-300 text-xs sm:text-sm relative z-10">
+            {puzzle.description || 'Temukan jalan dalam struktur tree!'}
           </CardDescription>
 
-          <div className="pt-2 flex flex-wrap gap-2 relative z-10">
-            <Badge className="bg-amber-800 text-amber-100 border border-amber-700/50 dungeon-badge-glow">
+          <div className="pt-2 flex flex-wrap gap-1.5 relative z-10">
+            <Badge className="bg-amber-800 text-amber-100 border border-amber-700/50 text-xs">
               🏰 Mode Dungeon
             </Badge>
-            <Badge className="bg-stone-700 text-stone-200 border border-stone-600/50 dungeon-badge-glow">
+            <Badge className="bg-stone-700 text-stone-200 border border-stone-600/50 text-xs">
               🧭 Navigasi Pohon
             </Badge>
             {role && (
-              <Badge className="bg-purple-800 text-purple-100 border border-purple-700/50 dungeon-badge-glow">
-                🎭 Peran: {role}
+              <Badge className="bg-purple-800 text-purple-100 border border-purple-700/50 text-xs">
+                🎭 {role}
               </Badge>
             )}
             {puzzle?.defuserView?.targetValue != null && (
-              <Badge className="bg-indigo-800 text-indigo-100 border border-indigo-700/50 dungeon-badge-glow">
+              <Badge className="bg-indigo-800 text-indigo-100 border border-indigo-700/50 text-xs">
                 Target: {obfuscate(String(puzzle.defuserView.targetValue))}
               </Badge>
             )}
           </div>
         </CardHeader>
 
-        <CardContent className="space-y-6 p-4 sm:p-6">
-          {/* Sync Warning */}
+        <CardContent className="space-y-3 p-3 sm:p-4">
           {(isDefuser || isExpert) && syncIssue && (
-            <Alert className="border-amber-700/40 bg-gradient-to-r from-amber-900/40 to-stone-900/40 backdrop-blur-sm">
-              <AlertDescription className="text-amber-200 text-sm">
+            <Alert className="border-amber-700/40 bg-gradient-to-r from-amber-900/40 to-stone-900/40 backdrop-blur-sm p-2">
+              <AlertDescription className="text-amber-200 text-xs">
                 ⚠️ {syncIssue}
               </AlertDescription>
             </Alert>
           )}
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-            {/* === DEFUSER PANEL === */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            {/* DEFUSER PANEL */}
             {(isDefuser || role === 'host') && (
-              <Card className="border border-amber-600/40 bg-gradient-to-b from-stone-900/60 to-stone-800/40 backdrop-blur-sm dungeon-card-glow">
-                <CardHeader className="p-4 sm:p-6">
-                  <CardTitle className="text-base sm:text-lg text-amber-300 flex items-center gap-2 dungeon-glow-text">
+              <Card className="border border-amber-600/40 bg-gradient-to-b from-stone-900/60 to-stone-800/40">
+                <CardHeader className="p-3">
+                  <CardTitle className="text-sm text-amber-300 flex items-center gap-2">
                     <span>🗺️</span>
-                    <span>Arahan Misi</span>
+                    <span>Panel Defuser</span>
                   </CardTitle>
-                  <CardDescription className="text-stone-300 text-sm">
-                    Susun jejak runik langkah demi langkah
-                  </CardDescription>
                 </CardHeader>
 
-                <CardContent className="space-y-4 sm:space-y-5 p-4 sm:p-6">
-                  {/* Mission Description */}
-                  <div className="rounded-xl p-4 border border-stone-700/40 bg-stone-800/40 backdrop-blur-sm">
-                    <h5 className="text-stone-200 font-semibold mb-2 text-sm">📜 Arahan Misi</h5>
-                    <p className="text-stone-300 text-xs sm:text-sm leading-relaxed">
+                <CardContent className="space-y-3 p-3">
+                  <div className="rounded-lg p-2 border border-stone-700/40 bg-stone-800/40">
+                    <h5 className="text-stone-200 font-semibold mb-1 text-xs">📜 Arahan Misi</h5>
+                    <p className="text-stone-300 text-[10px] leading-relaxed">
                       {obfuscate(
                         puzzle.defuserView?.task ||
-                          'Susun urutan langkah dari altar menuju ruang tujuan tanpa menyingkap mantra tersembunyi.'
+                          'Susun urutan langkah dari altar menuju ruang tujuan.'
                       )}
                     </p>
                   </div>
 
-                  {/* Navigation Controls */}
                   <div>
-                    <h5 className="text-stone-200 font-semibold mb-3 text-sm">🧭 Kontrol Navigasi</h5>
-                    <div className="grid grid-cols-2 gap-2">
+                    <h5 className="text-stone-200 font-semibold mb-2 text-xs">🧭 Kontrol Navigasi</h5>
+                    <div className="grid grid-cols-2 gap-1.5">
                       <DirectionButton
                         direction="up"
                         label={pickLabel('up')}
@@ -563,58 +539,55 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
                     </div>
 
                     {availableDirections.length === 0 && (
-                      <Badge className="bg-red-800 text-red-100 border border-red-700/60 mt-2">
-                        Tidak ada cabang di simpul ini
+                      <Badge className="bg-red-800 text-red-100 border border-red-700/60 mt-2 text-xs">
+                        Tidak ada cabang
                       </Badge>
                     )}
                   </div>
 
-                  {/* Current Path Display */}
                   <div>
-                    <h5 className="text-stone-200 font-semibold mb-2 text-sm">🛤️ Jejak Saat Ini</h5>
+                    <h5 className="text-stone-200 font-semibold mb-1.5 text-xs">🛤️ Jejak Saat Ini</h5>
                     <PathDisplay path={path} />
 
-                    <div className="flex gap-2 mt-3">
+                    <div className="flex gap-1.5 mt-2">
                       <Button
                         onClick={removeLastStep}
                         disabled={path.length === 0 || submitting}
                         variant="outline"
                         size="sm"
-                        className="border-amber-600/60 text-amber-300 hover:bg-amber-900/30 transition-all duration-300"
+                        className="border-amber-600/60 text-amber-300 hover:bg-amber-900/30 text-xs flex-1"
                       >
-                        Hapus Terakhir
+                        Hapus
                       </Button>
                       <Button
                         onClick={clearPath}
                         disabled={path.length === 0 || submitting}
                         variant="outline"
                         size="sm"
-                        className="border-red-600/60 text-red-300 hover:bg-red-900/30 transition-all duration-300"
+                        className="border-red-600/60 text-red-300 hover:bg-red-900/30 text-xs flex-1"
                       >
-                        Bersihkan Semua
+                        Reset
                       </Button>
                     </div>
                   </div>
 
-                  {/* Submit */}
                   <form onSubmit={handleSubmit}>
                     <Button
                       type="submit"
                       disabled={path.length === 0 || submitting}
-                      className="w-full bg-gradient-to-r from-amber-600 via-amber-700 to-red-600 hover:from-amber-500 hover:via-amber-600 hover:to-red-500 text-stone-900 font-semibold transition-all duration-300"
+                      className="w-full bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-stone-900 font-semibold text-xs py-2"
                     >
-                      {submitting ? 'Mengirim...' : '✨ Kirim Jejak Runik'}
+                      {submitting ? '⚙️ Mengirim...' : '✨ Kirim Jejak'}
                     </Button>
                   </form>
 
-                  {/* Defuser Hints */}
                   {defuserHints.length > 0 && (
-                    <div className="p-4 rounded-xl border border-blue-700/40 bg-gradient-to-r from-blue-950/40 to-stone-900/30 backdrop-blur-sm">
-                      <h5 className="text-blue-200 font-medium mb-2 text-sm flex items-center gap-2">
+                    <div className="p-2 rounded-lg border border-blue-700/40 bg-gradient-to-r from-blue-950/40 to-stone-900/30">
+                      <h5 className="text-blue-200 font-medium mb-1 text-xs flex items-center gap-1">
                         <span>💡</span>
-                        <span>Bisik-bisik Lorong</span>
+                        <span>Petunjuk</span>
                       </h5>
-                      <ul className="text-xs text-blue-200/90 space-y-1.5 list-disc pl-5">
+                      <ul className="text-[9px] text-blue-200/90 space-y-0.5 list-disc pl-3">
                         {defuserHints.map((h, i) => (
                           <li key={i}>{h}</li>
                         ))}
@@ -625,114 +598,107 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
               </Card>
             )}
 
-            {/* === EXPERT PANEL === */}
+            {/* EXPERT PANEL */}
             {(isExpert || role === 'host') && (
-              <div className="space-y-4">
-                {/* Tree Visualization Card */}
-                <Card className="border border-emerald-700/40 bg-gradient-to-b from-stone-900/60 to-emerald-950/40 backdrop-blur-sm dungeon-card-glow-green">
-                  <CardHeader className="pb-2 pt-3 px-4">
-                    <CardTitle className="text-sm text-emerald-300 flex items-center gap-2 dungeon-glow-text">
+              <div className="space-y-3">
+                {/* Tree Visualization */}
+                <Card className="border border-emerald-700/40 bg-gradient-to-b from-stone-900/60 to-emerald-950/40">
+                  <CardHeader className="pb-2 pt-2 px-3">
+                    <CardTitle className="text-xs text-emerald-300 flex items-center gap-1.5">
                       <span>🎄</span>
                       <span>Visualisasi Pohon</span>
                     </CardTitle>
-                    <CardDescription className="text-stone-400 text-xs">
+                    <CardDescription className="text-stone-400 text-[9px]">
                       Lihat langsung struktur & cabang node
                     </CardDescription>
                   </CardHeader>
-                  <CardContent className="p-3">
+                  <CardContent className="p-2">
                     {treeArray && treeArray.length > 0 ? (
                       <div
-                        className="rounded-lg p-2 bg-stone-950 border border-stone-700/40 overflow-x-auto"
+                        className="rounded-lg p-2 bg-stone-950 border border-stone-700/40 overflow-y-auto"
                         style={{ maxHeight: CONFIG.MAX_TREE_HEIGHT }}
                       >
                         <SvgBinaryTree array={treeArray} />
                       </div>
                     ) : (
-                      <div className="text-stone-400 italic text-xs text-center p-4">
+                      <div className="text-stone-400 italic text-xs text-center p-3">
                         Data pohon tidak tersedia
                       </div>
                     )}
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      <Badge className="bg-emerald-800 text-emerald-100 border border-emerald-700/40 text-xs">
+                    <div className="mt-1.5 flex flex-wrap gap-1">
+                      <Badge className="bg-emerald-800 text-emerald-100 border border-emerald-700/40 text-[9px]">
                         Node
                       </Badge>
-                      <Badge className="bg-amber-800 text-amber-100 border border-amber-700/40 text-xs">
+                      <Badge className="bg-amber-800 text-amber-100 border border-amber-700/40 text-[9px]">
                         Koneksi
                       </Badge>
                     </div>
                   </CardContent>
                 </Card>
 
-                {/* Guidance Cards Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {/* Prinsip Pembimbingan */}
-                  <Card className="p-3 rounded-xl border border-emerald-700/50 bg-gradient-to-r from-emerald-950/40 to-stone-900/30 backdrop-blur-sm">
-                    <h5 className="text-emerald-200 font-semibold mb-2 text-xs flex items-center gap-2">
+                {/* Guidance Cards Grid - 2x2 */}
+                <div className="grid grid-cols-2 gap-2">
+                  <Card className="p-2 rounded-lg border border-emerald-700/50 bg-gradient-to-r from-emerald-950/40 to-stone-900/30">
+                    <h5 className="text-emerald-200 font-semibold mb-1 text-[10px] flex items-center gap-1">
                       <span>🧭</span>
                       <span>Prinsip Pembimbingan</span>
                     </h5>
-                    <ul className="text-[10px] text-emerald-200/90 space-y-1 list-disc pl-4">
+                    <ul className="text-[8px] text-emerald-200/90 space-y-0.5 list-disc pl-3">
                       <li>Ajukan pertanyaan terbuka untuk memancing analisis Defuser</li>
                       <li>Gunakan metode Socratic: biarkan mereka menemukan pola sendiri</li>
                       <li>Fokus pada proses berpikir, bukan jawaban langsung</li>
-                      <li>Berikan petunjuk bertingkat: umum → spesifik</li>
                     </ul>
                   </Card>
 
-                  {/* Konsep Binary Tree */}
-                  <Card className="p-3 rounded-xl border border-purple-700/50 bg-gradient-to-r from-purple-950/40 to-stone-900/30 backdrop-blur-sm">
-                    <h5 className="text-purple-200 font-semibold mb-2 text-xs flex items-center gap-2">
+                  <Card className="p-2 rounded-lg border border-purple-700/50 bg-gradient-to-r from-purple-950/40 to-stone-900/30">
+                    <h5 className="text-purple-200 font-semibold mb-1 text-[10px] flex items-center gap-1">
                       <span>📚</span>
                       <span>Konsep Binary Tree</span>
                     </h5>
-                    <ul className="text-[10px] text-purple-200/90 space-y-1 list-disc pl-4">
-                      <li>Binary Tree: setiap node maksimal 2 anak (left & right)</li>
+                    <ul className="text-[8px] text-purple-200/90 space-y-0.5 list-disc pl-3">
+                      <li>Binary Tree: setiap node max 2 anak (left & right)</li>
                       <li>BST: left {'<'} parent {'<'} right untuk setiap subtree</li>
                       <li>Leaf node: tidak memiliki anak (endpoint)</li>
-                      <li>Root: node tertinggi, titik mulai penelusuran</li>
                     </ul>
                   </Card>
 
-                  {/* Strategi Traversal */}
-                  <Card className="p-3 rounded-xl border border-blue-700/50 bg-gradient-to-r from-blue-950/40 to-stone-900/30 backdrop-blur-sm">
-                    <h5 className="text-blue-200 font-semibold mb-2 text-xs flex items-center gap-2">
+                  <Card className="p-2 rounded-lg border border-blue-700/50 bg-gradient-to-r from-blue-950/40 to-stone-900/30">
+                    <h5 className="text-blue-200 font-semibold mb-1 text-[10px] flex items-center gap-1">
                       <span>🔍</span>
                       <span>Strategi Traversal</span>
                     </h5>
-                    <ul className="text-[10px] text-blue-200/90 space-y-1 list-disc pl-4">
-                      <li><strong>Inorder</strong>: Left-Root-Right (urutan terurut pada BST)</li>
-                      <li><strong>Preorder</strong>: Root-Left-Right (copy struktur pohon)</li>
-                      <li><strong>Postorder</strong>: Left-Right-Root (evaluasi bottom-up)</li>
-                      <li><strong>Level-order</strong>: BFS per level untuk jarak minimum</li>
+                    <ul className="text-[8px] text-blue-200/90 space-y-0.5 list-disc pl-3">
+                      <li><strong>Inorder</strong>: L-Root-R (urutan terurut BST)</li>
+                      <li><strong>Preorder</strong>: Root-L-R (copy struktur)</li>
+                      <li><strong>Postorder</strong>: L-R-Root (eval bottom-up)</li>
                     </ul>
                   </Card>
 
-                  {/* Validasi BST */}
-                  <Card className="p-3 rounded-xl border border-teal-700/50 bg-gradient-to-r from-teal-950/40 to-stone-900/30 backdrop-blur-sm">
-                    <h5 className="text-teal-200 font-semibold mb-2 text-xs flex items-center gap-2">
+                  <Card className="p-2 rounded-lg border border-teal-700/50 bg-gradient-to-r from-teal-950/40 to-stone-900/30">
+                    <h5 className="text-teal-200 font-semibold mb-1 text-[10px] flex items-center gap-1">
                       <span>✅</span>
                       <span>Validasi BST</span>
                     </h5>
-                    <ul className="text-[10px] text-teal-200/90 space-y-1 list-disc pl-4">
-                      <li>Inorder traversal harus menghasilkan urutan menaik</li>
+                    <ul className="text-[8px] text-teal-200/90 space-y-0.5 list-disc pl-3">
+                      <li>Inorder traversal harus urutan menaik</li>
                       <li>Gunakan range checking: update min/max saat turun</li>
-                      <li>Kompleksitas: O(log n) balanced, O(n) worst case</li>
+                      <li>Kompleksitas: O(log n) balanced, O(n) worst</li>
                     </ul>
                   </Card>
                 </div>
 
-                {/* Metode Traversal Tersedia */}
+                {/* Metode Traversal */}
                 {puzzle.expertView?.traversalMethods && (
-                  <Card className="p-3 rounded-xl border border-indigo-700/50 bg-gradient-to-r from-indigo-950/40 to-stone-900/30 backdrop-blur-sm">
-                    <h5 className="text-indigo-200 font-semibold mb-2 text-xs flex items-center gap-2">
+                  <Card className="p-2 rounded-lg border border-indigo-700/50 bg-gradient-to-r from-indigo-950/40 to-stone-900/30">
+                    <h5 className="text-indigo-200 font-semibold mb-1 text-[10px] flex items-center gap-1">
                       <span>🔮</span>
                       <span>Metode Traversal Tersedia</span>
                     </h5>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-wrap gap-1">
                       {Object.keys(puzzle.expertView.traversalMethods).map((name) => (
                         <Badge
                           key={name}
-                          className="bg-indigo-800 text-indigo-100 border border-indigo-700/60 text-xs"
+                          className="bg-indigo-800 text-indigo-100 border border-indigo-700/60 text-[9px]"
                         >
                           {name}
                         </Badge>
@@ -746,42 +712,23 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
         </CardContent>
       </Card>
 
-      {/* CUSTOM DUNGEON STYLES */}
+      {/* STYLES */}
       <style>{`
         .dungeon-torch-flicker {
           display: inline-block;
         }
 
-        .dungeon-rune-float {
-          display: inline-block;
-          animation: runeFloat 3.2s ease-in-out infinite;
-        }
-
-        @keyframes runeFloat {
-          0%, 100% { transform: translateY(0); }
-          50% { transform: translateY(-4px); }
-        }
-
         .dungeon-card-glow {
-          box-shadow: 0 0 20px rgba(120, 113, 108, 0.4);
-        }
-
-        .dungeon-card-glow-green {
-          box-shadow: 0 0 20px rgba(34, 197, 94, 0.4);
-        }
-
-        .dungeon-badge-glow {
-          filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.4));
+          box-shadow: 0 0 15px rgba(120, 113, 108, 0.35);
         }
 
         .dungeon-glow-text {
-          text-shadow: 0 0 20px rgba(251, 191, 36, 0.6), 0 0 40px rgba(251, 191, 36, 0.4);
+          text-shadow: 0 0 15px rgba(251, 191, 36, 0.5);
         }
 
         @media (max-width: 768px) {
-          .dungeon-card-glow,
-          .dungeon-card-glow-green {
-            box-shadow: 0 0 15px rgba(120, 113, 108, 0.3);
+          .dungeon-card-glow {
+            box-shadow: 0 0 10px rgba(120, 113, 108, 0.25);
           }
         }
       `}</style>
