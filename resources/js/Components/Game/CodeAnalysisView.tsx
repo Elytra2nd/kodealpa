@@ -5,6 +5,7 @@ import { Badge } from '@/Components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/Components/ui/tabs';
 import { gsap } from 'gsap';
 
+
 // ============================================
 // CONSTANTS & CONFIGURATIONS
 // ============================================
@@ -16,6 +17,7 @@ const CONFIG = {
   MAX_CODE_HEIGHT: 420,
   MAX_EXPERT_CONTENT_HEIGHT: 340,
 } as const;
+
 
 const RUNE_MAP: Record<string, string> = {
   '0': '◇',
@@ -30,6 +32,7 @@ const RUNE_MAP: Record<string, string> = {
   '9': '★',
 } as const;
 
+
 const OBFUSCATION_PATTERNS = [
   { pattern: /\d/g, replacer: (d: string) => RUNE_MAP[d] ?? d },
   { pattern: /\b(shift|geser)\b/gi, replacer: () => 'pergeseran sigil' },
@@ -41,6 +44,7 @@ const OBFUSCATION_PATTERNS = [
   { pattern: /\b(pangkat|eksponen)\b/gi, replacer: () => 'sigil eksponensial' },
 ] as const;
 
+
 // ============================================
 // TYPE DEFINITIONS
 // ============================================
@@ -50,12 +54,14 @@ interface PuzzleDefuserView {
   codeLines?: string[];
 }
 
+
 interface PuzzleExpertView {
   cipher_type?: string;
   shift?: number;
   category?: string;
   bugs?: number[];
 }
+
 
 interface Puzzle {
   title?: string;
@@ -64,6 +70,7 @@ interface Puzzle {
   expertView?: PuzzleExpertView;
 }
 
+
 interface Props {
   puzzle: Puzzle | null;
   role?: 'defuser' | 'expert' | 'host';
@@ -71,11 +78,13 @@ interface Props {
   submitting: boolean;
 }
 
+
 // ============================================
 // CUSTOM HOOKS
 // ============================================
 const useDungeonAtmosphere = () => {
   const torchRefs = useRef<(HTMLElement | null)[]>([]);
+
 
   useEffect(() => {
     const torchInterval = setInterval(() => {
@@ -90,15 +99,19 @@ const useDungeonAtmosphere = () => {
       });
     }, CONFIG.TORCH_FLICKER_INTERVAL);
 
+
     return () => clearInterval(torchInterval);
   }, []);
+
 
   const setTorchRef = (index: number) => (el: HTMLDivElement | null) => {
     torchRefs.current[index] = el;
   };
 
+
   return { setTorchRef };
 };
+
 
 // ============================================
 // UTILITY FUNCTIONS
@@ -116,6 +129,7 @@ const obfuscateText = (text: string): string => {
   }
 };
 
+
 // ============================================
 // MEMOIZED COMPONENTS
 // ============================================
@@ -125,7 +139,9 @@ const LoadingState = memo(() => (
   </div>
 ));
 
+
 LoadingState.displayName = 'LoadingState';
+
 
 const ErrorState = memo(() => (
   <div className="min-h-[180px] flex items-center justify-center bg-gradient-to-br from-stone-900 to-red-950 border-2 border-red-700/60 rounded-xl">
@@ -133,7 +149,9 @@ const ErrorState = memo(() => (
   </div>
 ));
 
+
 ErrorState.displayName = 'ErrorState';
+
 
 const CodeLine = memo(
   ({
@@ -153,6 +171,7 @@ const CodeLine = memo(
   }) => {
     const lineRef = useRef<HTMLDivElement>(null);
 
+
     useEffect(() => {
       if (lineRef.current && isActive) {
         gsap.to(lineRef.current, {
@@ -160,6 +179,7 @@ const CodeLine = memo(
           duration: CONFIG.LINE_HOVER_DURATION,
           ease: 'power2.out',
         });
+
 
         return () => {
           if (lineRef.current) {
@@ -172,6 +192,7 @@ const CodeLine = memo(
         };
       }
     }, [isActive]);
+
 
     return (
       <div
@@ -199,7 +220,9 @@ const CodeLine = memo(
   }
 );
 
+
 CodeLine.displayName = 'CodeLine';
+
 
 // ============================================
 // MAIN COMPONENT
@@ -207,28 +230,35 @@ CodeLine.displayName = 'CodeLine';
 export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAttempt, submitting }: Props) {
   const { setTorchRef } = useDungeonAtmosphere();
 
+
   const [foundBugs, setFoundBugs] = useState<number[]>([]);
   const [selectedLine, setSelectedLine] = useState<number | null>(null);
   const [input, setInput] = useState('');
+
 
   const isCipherPuzzle = useMemo(
     () => !!(puzzle?.defuserView?.cipher || puzzle?.expertView?.cipher_type),
     [puzzle]
   );
 
+
   const isBugPuzzle = useMemo(
     () => !!(puzzle?.expertView?.bugs || puzzle?.defuserView?.codeLines),
     [puzzle]
   );
 
+
   const isDefuser = role === 'defuser';
   const isExpert = role === 'expert';
   const isHost = role === 'host';
 
+
   const runeLegend = useMemo(() => Object.entries(RUNE_MAP).map(([num, sym]) => ({ num, sym })), []);
+
 
   const cipherType = puzzle?.expertView?.cipher_type;
   const isCaesarCipher = cipherType === 'caesar';
+
 
   const numericShift = useMemo(() => {
     if (!isCaesarCipher || typeof puzzle?.expertView?.shift !== 'number') {
@@ -237,19 +267,23 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
     return Math.abs(puzzle.expertView.shift % 26);
   }, [isCaesarCipher, puzzle?.expertView?.shift]);
 
+
   const caesarRuneHint = useMemo(() => {
     if (numericShift == null) return null;
     const digits = String(numericShift).split('');
     return digits.map((d) => RUNE_MAP[d] ?? d).join('');
   }, [numericShift]);
 
+
   const alphabet = useMemo(() => 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split(''), []);
+
 
   const rotated = useMemo(() => {
     if (numericShift == null) return alphabet;
     const k = numericShift % 26;
     return alphabet.map((_, i) => alphabet[(i + k) % 26]);
   }, [alphabet, numericShift]);
+
 
   const defuserHintsCipher = useMemo(() => {
     if (!isCipherPuzzle) return [];
@@ -262,6 +296,7 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
     return [...base, ...extra].slice(0, 3).map(obfuscateText);
   }, [isCipherPuzzle, puzzle?.defuserView?.hints]);
 
+
   const defuserHintsBug = useMemo(() => {
     if (!isBugPuzzle) return [];
     const base = Array.isArray(puzzle?.defuserView?.hints) ? puzzle.defuserView.hints : [];
@@ -272,6 +307,7 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
     ];
     return [...base, ...extra].slice(0, 3).map(obfuscateText);
   }, [isBugPuzzle, puzzle?.defuserView?.hints]);
+
 
   const handleSubmit = useCallback(() => {
     try {
@@ -292,6 +328,7 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
     }
   }, [isCipherPuzzle, isBugPuzzle, input, foundBugs, onSubmitAttempt]);
 
+
   const handleLineClick = useCallback(
     (lineNumber: number) => {
       if (!isDefuser || !isBugPuzzle) return;
@@ -307,6 +344,7 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
     [isDefuser, isBugPuzzle]
   );
 
+
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     try {
       const value = e.target.value.toUpperCase();
@@ -318,13 +356,16 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
     }
   }, []);
 
+
   if (!puzzle) {
     return <ErrorState />;
   }
 
+
   if (!puzzle.defuserView && !puzzle.expertView) {
     return <LoadingState />;
   }
+
 
   return (
     <div className="space-y-3">
@@ -343,6 +384,7 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
             {puzzle.description || 'Selesaikan teka-teki di lorong CodeAlpha Dungeon.'}
           </CardDescription>
 
+
           {(isExpert || isHost) && puzzle.expertView && (
             <div className="pt-2 flex flex-wrap gap-1 justify-center">
               <Badge className="bg-stone-800 text-stone-200 border border-stone-700/60 text-xs">
@@ -351,6 +393,7 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
             </div>
           )}
         </CardHeader>
+
 
         <CardContent className="p-3 space-y-3">
           {/* CIPHER PUZZLE */}
@@ -376,6 +419,7 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
                       </div>
                     )}
 
+
                     {/* SHIFT HINT - Moved to Defuser */}
                     {isDefuser && isCaesarCipher && caesarRuneHint && (
                       <div className="p-2 rounded-lg bg-amber-900/30 border border-amber-700/50">
@@ -387,6 +431,7 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
                         </div>
                       </div>
                     )}
+
 
                     {isDefuser && (
                       <>
@@ -418,7 +463,8 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
                 </Card>
               )}
 
-              {/* Expert Panel - WITHOUT SHIFT HINT */}
+
+              {/* Expert Panel - WITH TABLE FORMAT */}
               {(isExpert || isHost) && (
                 <Card className="border-2 border-emerald-700/40 bg-gradient-to-b from-stone-900/80 to-emerald-950/40">
                   <CardHeader className="pb-2 p-2">
@@ -437,6 +483,7 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
                         </TabsTrigger>
                       </TabsList>
 
+
                       <TabsContent value="hints" className="mt-2">
                         <div
                           className="p-2 rounded-lg bg-blue-950/40 border border-blue-700/40 overflow-y-auto"
@@ -450,42 +497,78 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
                         </div>
                       </TabsContent>
 
+
                       <TabsContent value="tools" className="mt-2">
                         <div
                           className="space-y-2 overflow-y-auto"
                           style={{ maxHeight: `${CONFIG.MAX_EXPERT_CONTENT_HEIGHT}px` }}
                         >
-                          {/* Caesar Alphabet Table - WITHOUT SHIFT DISPLAY */}
+                          {/* Caesar Cipher Table - PROPER HTML TABLE */}
                           {isCaesarCipher && (
                             <div className="p-2 rounded-lg bg-stone-900/60 border border-stone-700/40">
-                              <h6 className="text-xs text-stone-300 mb-1 font-semibold">Caesar Cipher Table</h6>
-                              <div className="text-xs text-stone-300 space-y-1">
-                                <div className="grid grid-cols-13 gap-0.5">
-                                  {alphabet.slice(0, 13).map((ch) => (
-                                    <Badge key={ch} className="bg-stone-800 text-stone-100 text-[10px] p-0.5">
-                                      {ch}
-                                    </Badge>
-                                  ))}
-                                </div>
-                                <div className="grid grid-cols-13 gap-0.5">
-                                  {rotated.slice(0, 13).map((ch) => (
-                                    <Badge key={ch} className="bg-stone-900 text-amber-300 text-[10px] p-0.5">
-                                      {ch}
-                                    </Badge>
-                                  ))}
-                                </div>
+                              <h6 className="text-xs text-stone-300 mb-2 font-semibold">Caesar Cipher Mapping</h6>
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-xs border-collapse">
+                                  <thead>
+                                    <tr className="bg-stone-800/80">
+                                      <th className="border border-stone-700/60 px-1 py-1 text-amber-200 font-semibold">
+                                        Plain
+                                      </th>
+                                      {alphabet.map((ch) => (
+                                        <th
+                                          key={ch}
+                                          className="border border-stone-700/60 px-1 py-1 text-stone-100 font-mono text-[10px]"
+                                        >
+                                          {ch}
+                                        </th>
+                                      ))}
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    <tr className="bg-stone-900/80">
+                                      <td className="border border-stone-700/60 px-1 py-1 text-amber-200 font-semibold">
+                                        Cipher
+                                      </td>
+                                      {rotated.map((ch, idx) => (
+                                        <td
+                                          key={idx}
+                                          className="border border-stone-700/60 px-1 py-1 text-amber-300 font-mono text-[10px] text-center bg-amber-950/30"
+                                        >
+                                          {ch}
+                                        </td>
+                                      ))}
+                                    </tr>
+                                  </tbody>
+                                </table>
                               </div>
                             </div>
                           )}
 
+
+                          {/* Rune Legend Table */}
                           <div className="p-2 rounded-lg bg-stone-900/60 border border-stone-700/40">
-                            <h6 className="text-xs text-stone-300 mb-1 font-semibold">Rune Legend</h6>
-                            <div className="grid grid-cols-5 gap-0.5">
-                              {runeLegend.map(({ num, sym }) => (
-                                <Badge key={num} className="bg-stone-800 text-amber-100 text-[10px] p-0.5">
-                                  {sym}={num}
-                                </Badge>
-                              ))}
+                            <h6 className="text-xs text-stone-300 mb-2 font-semibold">Rune Legend</h6>
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-xs border-collapse">
+                                <thead>
+                                  <tr className="bg-stone-800/80">
+                                    <th className="border border-stone-700/60 px-2 py-1 text-amber-200">Rune</th>
+                                    <th className="border border-stone-700/60 px-2 py-1 text-amber-200">Value</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {runeLegend.map(({ num, sym }) => (
+                                    <tr key={num} className="hover:bg-stone-800/40 transition-colors">
+                                      <td className="border border-stone-700/60 px-2 py-1 text-center text-amber-100 font-bold">
+                                        {sym}
+                                      </td>
+                                      <td className="border border-stone-700/60 px-2 py-1 text-center text-stone-300">
+                                        {num}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
                             </div>
                           </div>
                         </div>
@@ -496,6 +579,7 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
               )}
             </div>
           )}
+
 
           {/* BUG PUZZLE */}
           {isBugPuzzle && (
@@ -533,6 +617,7 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
                           </pre>
                         </div>
 
+
                         <Button
                           onClick={handleSubmit}
                           disabled={foundBugs.length === 0 || submitting}
@@ -545,6 +630,7 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
                   </CardContent>
                 </Card>
               )}
+
 
               {/* Expert Panel */}
               {(isExpert || isHost) && (
@@ -565,6 +651,7 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
                         </TabsTrigger>
                       </TabsList>
 
+
                       <TabsContent value="hints" className="mt-2">
                         <div
                           className="p-2 rounded-lg bg-purple-950/40 border border-purple-700/40 overflow-y-auto"
@@ -577,6 +664,7 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
                           </ul>
                         </div>
                       </TabsContent>
+
 
                       <TabsContent value="guide" className="mt-2">
                         <div
@@ -592,6 +680,7 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
                               <li>Type mismatches</li>
                             </ul>
                           </div>
+
 
                           <div className="p-2 rounded-lg bg-stone-900/60 border border-stone-700/40">
                             <h6 className="text-xs text-amber-300 font-semibold mb-1">Strategi</h6>
@@ -612,32 +701,39 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
         </CardContent>
       </Card>
 
+
       <style>{`
         .dungeon-torch-flicker {
           display: inline-block;
         }
 
+
         .dungeon-line-glow {
           box-shadow: 0 0 15px rgba(251, 191, 36, 0.5);
         }
+
 
         .dungeon-glow-text {
           text-shadow: 0 0 20px rgba(251, 191, 36, 0.6);
         }
 
+
         .overflow-y-auto::-webkit-scrollbar {
           width: 4px;
         }
+
 
         .overflow-y-auto::-webkit-scrollbar-track {
           background: rgba(28, 25, 23, 0.5);
           border-radius: 2px;
         }
 
+
         .overflow-y-auto::-webkit-scrollbar-thumb {
           background: rgba(180, 83, 9, 0.6);
           border-radius: 2px;
         }
+
 
         .overflow-y-auto::-webkit-scrollbar-thumb:hover {
           background: rgba(180, 83, 9, 0.8);
