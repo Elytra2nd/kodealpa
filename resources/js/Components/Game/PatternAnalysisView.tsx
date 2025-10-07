@@ -6,25 +6,30 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/Components/ui/tabs';
 import { gsap } from 'gsap';
 
-
 // ============================================
 // CONSTANTS & CONFIGURATIONS
 // ============================================
 const CONFIG = {
   TORCH_FLICKER_INTERVAL: 2200,
+  RUNE_FLOAT_DURATION: 3600,
+  PATTERN_ENTRANCE_DURATION: 0.6,
+  PATTERN_STAGGER: 0.1,
   MAX_INPUT_LENGTH: 20,
-  MAX_ACCORDION_HEIGHT: 200,
-  NODE_SIZE: 36,
-  LEVEL_HEIGHT: 70,
-  NODE_SPACING: 50,
+  MAX_ACCORDION_HEIGHT: 300,
 } as const;
-
 
 const RUNE_MAP: Record<string, string> = {
-  '0': '◇', '1': '†', '2': '♁', '3': '♆', '4': '♄',
-  '5': '♃', '6': '☿', '7': '☼', '8': '◈', '9': '★',
+  '0': '◇',
+  '1': '†',
+  '2': '♁',
+  '3': '♆',
+  '4': '♄',
+  '5': '♃',
+  '6': '☿',
+  '7': '☼',
+  '8': '◈',
+  '9': '★',
 } as const;
-
 
 const OBFUSCATION_PATTERNS = [
   { pattern: /\d/g, replacer: (d: string) => RUNE_MAP[d] ?? d },
@@ -35,33 +40,15 @@ const OBFUSCATION_PATTERNS = [
   { pattern: /\b(pangkat|eksponen)\b/gi, replacer: () => 'sigil eksponensial' },
 ] as const;
 
-
 // ============================================
 // TYPE DEFINITIONS
 // ============================================
-interface TreeNodeData {
-  value: any;
-  x: number;
-  y: number;
-  index: number;
-}
-
-
-interface TreeConnection {
-  x1: number;
-  y1: number;
-  x2: number;
-  y2: number;
-}
-
-
 interface Props {
   puzzle: any;
   role?: 'defuser' | 'expert' | 'host';
   onSubmitAttempt: (input: string) => void;
   submitting: boolean;
 }
-
 
 // ============================================
 // UTILITY FUNCTIONS
@@ -79,68 +66,17 @@ const obfuscateText = (text: string): string => {
   }
 };
 
-
 const dungeonizeRule = (rule?: string): string => {
   const base = rule ? String(rule) : 'Jejak perubahan antar-suku menuntun peziarah angka';
   return obfuscateText(`Petuah lorong: ${base}`);
 };
-
-
-// Calculate positions for tree nodes and connections
-const calculateTreeLayout = (arr: any[]): { nodes: TreeNodeData[]; connections: TreeConnection[] } => {
-  const nodes: TreeNodeData[] = [];
-  const connections: TreeConnection[] = [];
-
-  const maxDepth = Math.floor(Math.log2(arr.length)) + 1;
-  const maxWidth = Math.pow(2, maxDepth - 1) * CONFIG.NODE_SPACING;
-
-  arr.forEach((value, index) => {
-    if (value == null) return;
-
-    const level = Math.floor(Math.log2(index + 1));
-    const positionInLevel = index - (Math.pow(2, level) - 1);
-    const nodesInLevel = Math.pow(2, level);
-
-    const x = maxWidth / 2 + (positionInLevel - nodesInLevel / 2 + 0.5) * (maxWidth / nodesInLevel);
-    const y = level * CONFIG.LEVEL_HEIGHT + 30;
-
-    nodes.push({ value, x, y, index });
-
-    // Add connections to children
-    const leftChildIndex = 2 * index + 1;
-    const rightChildIndex = 2 * index + 2;
-
-    if (leftChildIndex < arr.length && arr[leftChildIndex] != null) {
-      const leftLevel = Math.floor(Math.log2(leftChildIndex + 1));
-      const leftPosInLevel = leftChildIndex - (Math.pow(2, leftLevel) - 1);
-      const leftNodesInLevel = Math.pow(2, leftLevel);
-      const leftX = maxWidth / 2 + (leftPosInLevel - leftNodesInLevel / 2 + 0.5) * (maxWidth / leftNodesInLevel);
-      const leftY = leftLevel * CONFIG.LEVEL_HEIGHT + 30;
-
-      connections.push({ x1: x, y1: y + CONFIG.NODE_SIZE / 2, x2: leftX, y2: leftY - CONFIG.NODE_SIZE / 2 });
-    }
-
-    if (rightChildIndex < arr.length && arr[rightChildIndex] != null) {
-      const rightLevel = Math.floor(Math.log2(rightChildIndex + 1));
-      const rightPosInLevel = rightChildIndex - (Math.pow(2, rightLevel) - 1);
-      const rightNodesInLevel = Math.pow(2, rightLevel);
-      const rightX = maxWidth / 2 + (rightPosInLevel - rightNodesInLevel / 2 + 0.5) * (maxWidth / rightNodesInLevel);
-      const rightY = rightLevel * CONFIG.LEVEL_HEIGHT + 30;
-
-      connections.push({ x1: x, y1: y + CONFIG.NODE_SIZE / 2, x2: rightX, y2: rightY - CONFIG.NODE_SIZE / 2 });
-    }
-  });
-
-  return { nodes, connections };
-};
-
 
 // ============================================
 // CUSTOM HOOKS
 // ============================================
 const useDungeonAtmosphere = () => {
   const torchRefs = useRef<(HTMLElement | null)[]>([]);
-
+  const patternRefs = useRef<(HTMLElement | null)[]>([]);
 
   useEffect(() => {
     const torchInterval = setInterval(() => {
@@ -155,81 +91,125 @@ const useDungeonAtmosphere = () => {
       });
     }, CONFIG.TORCH_FLICKER_INTERVAL);
 
-
     return () => clearInterval(torchInterval);
   }, []);
 
-
-  const setTorchRef = useCallback((index: number) => (el: HTMLDivElement | null) => {
-    torchRefs.current[index] = el;
+  useEffect(() => {
+    const validPatterns = patternRefs.current.filter((p): p is HTMLElement => p !== null);
+    if (validPatterns.length > 0) {
+      gsap.fromTo(
+        validPatterns,
+        {
+          opacity: 0,
+          scale: 0.5,
+          rotateY: 180,
+        },
+        {
+          opacity: 1,
+          scale: 1,
+          rotateY: 0,
+          duration: CONFIG.PATTERN_ENTRANCE_DURATION,
+          stagger: CONFIG.PATTERN_STAGGER,
+          ease: 'back.out(1.7)',
+        }
+      );
+    }
   }, []);
 
+  const setTorchRef = (index: number) => (el: HTMLDivElement | null) => {
+    torchRefs.current[index] = el;
+  };
 
-  return { setTorchRef };
+  const setPatternRef = (index: number) => (el: HTMLDivElement | null) => {
+    patternRefs.current[index] = el;
+  };
+
+  return { setTorchRef, setPatternRef };
 };
-
 
 // ============================================
 // MEMOIZED COMPONENTS
 // ============================================
+const PatternBox = memo(
+  ({
+    item,
+    index,
+    isEmpty,
+    setPatternRef,
+  }: {
+    item: any;
+    index: number;
+    isEmpty: boolean;
+    setPatternRef: (index: number) => (el: HTMLDivElement | null) => void;
+  }) => (
+    <div
+      ref={setPatternRef(index)}
+      className={`w-14 h-14 sm:w-16 sm:h-16 rounded-xl flex items-center justify-center text-xl sm:text-2xl font-extrabold border-2 shadow-lg transition-all duration-300 hover:scale-110 ${
+        isEmpty
+          ? 'border-red-600/60 bg-gradient-to-br from-red-900/40 to-red-950/60 text-red-200 dungeon-pulse dungeon-card-glow-red'
+          : 'border-blue-600/60 bg-gradient-to-br from-blue-900/40 to-blue-950/60 text-blue-200 dungeon-rune-float dungeon-card-glow-blue'
+      }`}
+      title={isEmpty ? 'Angka hilang' : `Angka ke-${index + 1}: ${item}`}
+      aria-label={isEmpty ? 'Angka hilang' : `Angka ${item}`}
+    >
+      {isEmpty ? '?' : item}
+    </div>
+  )
+);
+
+PatternBox.displayName = 'PatternBox';
+
 const RuneLegendBadge = memo(({ num, sym }: { num: string; sym: string }) => (
-  <Badge className="bg-stone-800 text-amber-100 border border-amber-700/60 text-[9px] px-1 py-0">
+  <Badge className="bg-stone-800 text-amber-100 border border-amber-700/60 dungeon-badge-glow text-xs">
     {sym}={num}
   </Badge>
 ));
+
 RuneLegendBadge.displayName = 'RuneLegendBadge';
 
-
 const LoadingState = memo(() => (
-  <div className="min-h-[200px] flex items-center justify-center bg-gradient-to-br from-stone-900 to-red-950 border-2 border-red-700/60 rounded-xl">
+  <div className="min-h-[200px] flex items-center justify-center bg-gradient-to-br from-stone-900 to-red-950 border-2 border-red-700/60 rounded-xl dungeon-card-glow-red">
     <p className="text-red-200 font-medium text-lg">Data teka-teki tidak tersedia</p>
   </div>
 ));
-LoadingState.displayName = 'LoadingState';
 
+LoadingState.displayName = 'LoadingState';
 
 // ============================================
 // MAIN COMPONENT
 // ============================================
 export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, submitting }: Props) {
-  const { setTorchRef } = useDungeonAtmosphere();
-  const [jawaban, setJawaban] = useState('');
+  const { setTorchRef, setPatternRef } = useDungeonAtmosphere();
 
+  const [jawaban, setJawaban] = useState('');
 
   const isDefuser = role === 'defuser';
   const isExpert = role === 'expert';
   const isHost = role === 'host';
 
-
   const runeLegend = useMemo(() => Object.entries(RUNE_MAP).map(([num, sym]) => ({ num, sym })), []);
-
-
-  const treeLayout = useMemo(() => {
-    if (Array.isArray(puzzle?.defuserView?.pattern)) {
-      return calculateTreeLayout(puzzle.defuserView.pattern);
-    }
-    return { nodes: [], connections: [] };
-  }, [puzzle?.defuserView?.pattern]);
-
 
   const transformedHints = useMemo(() => {
     const base = Array.isArray(puzzle?.defuserView?.hints) ? puzzle.defuserView.hints : [];
     const extra = [
       'Amati selisih yang tidak selalu tetap; terkadang ia berulang dalam siklus kabur.',
       'Jejak perubahan bisa bertumpuk: selisih dari selisih kerap membisikkan pola.',
+      'Cermati lonjakan drastis; itu bisa pertanda ritual penggandaan terselubung.',
+      'Bila aturan tampak tersembunyi, periksa residu ketika dipecah oleh bilangan kecil.',
     ];
-    return [...base, ...extra].slice(0, 2).map(obfuscateText);
+    return [...base, ...extra].slice(0, 4).map(obfuscateText);
   }, [puzzle]);
 
-
-  const handleSubmit = useCallback((e: React.FormEvent) => {
-    e.preventDefault();
-    const trimmed = jawaban.trim();
-    if (!trimmed) return;
-    onSubmitAttempt(trimmed);
-    setJawaban('');
-  }, [jawaban, onSubmitAttempt]);
-
+  const handleSubmit = useCallback(
+    (e: React.FormEvent) => {
+      e.preventDefault();
+      const trimmed = jawaban.trim();
+      if (!trimmed) return;
+      onSubmitAttempt(trimmed);
+      setJawaban('');
+    },
+    [jawaban, onSubmitAttempt]
+  );
 
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
@@ -238,164 +218,138 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
     }
   }, []);
 
-
   if (!puzzle) {
     return <LoadingState />;
   }
 
-
-  const svgHeight = treeLayout.nodes.length > 0
-    ? Math.max(...treeLayout.nodes.map(n => n.y)) + 50
-    : 200;
-  const svgWidth = 400;
-
-
   return (
-    <div className="space-y-2 max-w-7xl mx-auto">
-      <Card className="overflow-hidden border-2 border-amber-700/40 bg-gradient-to-br from-stone-900 via-stone-800 to-amber-950">
-        <CardHeader className="relative p-2">
-          <div ref={setTorchRef(0)} className="absolute top-1 left-2 text-base">🔥</div>
-          <div ref={setTorchRef(1)} className="absolute top-1 right-2 text-base">🔥</div>
-          <CardTitle className="text-amber-300 text-sm sm:text-base text-center relative z-10">
+    <div className="space-y-4 relative">
+      <Card className="overflow-hidden border-2 border-amber-700/40 bg-gradient-to-br from-stone-900 via-stone-800 to-amber-950 shadow-2xl dungeon-card-glow">
+        <CardHeader className="relative p-4">
+          <div ref={setTorchRef(0)} className="absolute top-3 left-3 text-xl sm:text-2xl dungeon-torch-flicker">
+            🔥
+          </div>
+          <div ref={setTorchRef(1)} className="absolute top-3 right-3 text-xl sm:text-2xl dungeon-torch-flicker">
+            🔥
+          </div>
+          <CardTitle className="text-amber-300 text-xl sm:text-2xl text-center dungeon-glow-text relative z-10">
             {puzzle.title || 'Analisis Pola Mistis'}
           </CardTitle>
-          <CardDescription className="text-stone-300 text-[9px] sm:text-[10px] text-center relative z-10">
-            {puzzle.description || 'Temukan pola tersembunyi'}
+          <CardDescription className="text-stone-300 text-sm text-center relative z-10">
+            {puzzle.description || 'Temukan pola tersembunyi dalam urutan angka dungeon'}
           </CardDescription>
+          <div className="pt-2 flex flex-wrap gap-2 justify-center relative z-10">
+            <Badge className="bg-amber-800 text-amber-100 border border-amber-700/50 dungeon-badge-glow">
+              🏰 Mode Dungeon
+            </Badge>
+            <Badge className="bg-stone-700 text-stone-200 border border-stone-600/50 dungeon-badge-glow">
+              🧩 Analisis Pola
+            </Badge>
+            {role && (
+              <Badge className="bg-purple-800 text-purple-100 border border-purple-700/50 dungeon-badge-glow">
+                🎭 Peran: {role}
+              </Badge>
+            )}
+            {puzzle?.expertView?.category && (
+              <Badge className="bg-emerald-800 text-emerald-100 border border-emerald-700/50 dungeon-badge-glow">
+                {String(puzzle.expertView.category)}
+              </Badge>
+            )}
+          </div>
         </CardHeader>
 
-
-        <CardContent className="p-2 space-y-2">
-          {/* Rule hint */}
+        <CardContent className="space-y-4 p-4">
+          {/* Rule hint for expert/host */}
           {(isExpert || isHost) && puzzle.expertView?.rule && (
-            <div className="p-1 rounded border border-stone-700/40 bg-stone-800/40">
-              <p className="text-stone-300 italic text-[9px] text-center">
-                "{dungeonizeRule(puzzle.expertView.rule)}"
-              </p>
-            </div>
+            <Card className="border border-stone-700/40 bg-stone-800/40 backdrop-blur-sm">
+              <CardContent className="p-3">
+                <p className="text-stone-300 italic text-xs sm:text-sm leading-relaxed text-center">
+                  "{dungeonizeRule(puzzle.expertView.rule)}"
+                </p>
+              </CardContent>
+            </Card>
           )}
 
-
-          {/* MAIN GRID - 3 columns: Defuser | Expert Panel 1 | Expert Panel 2 */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-2">
+          {/* MAIN GRID - Side by side layout */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* DEFUSER PANEL */}
             {(isDefuser || isHost) && (
-              <Card className="border border-blue-700/40 bg-gradient-to-b from-stone-900/90 to-blue-950/30">
-                <CardHeader className="p-1.5 pb-1">
-                  <CardTitle className="text-[10px] text-blue-300 text-center">
-                    🌳 Panel Defuser
+              <Card className="border-2 border-amber-600/40 bg-gradient-to-b from-stone-900/80 to-stone-800/40 backdrop-blur-sm dungeon-card-glow-blue">
+                <CardHeader className="pb-2 p-3">
+                  <CardTitle className="text-sm text-amber-300 text-center dungeon-glow-text">
+                    🔢 Panel Defuser
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="p-1.5 space-y-1.5">
-                  {treeLayout.nodes.length > 0 ? (
+                <CardContent className="p-3 space-y-3">
+                  {Array.isArray(puzzle.defuserView?.pattern) ? (
                     <>
-                      {/* SVG TREE WITH VISIBLE LINES */}
-                      <div className="tree-svg-container">
-                        <svg
-                          width="100%"
-                          height={svgHeight}
-                          viewBox={`0 0 ${svgWidth} ${svgHeight}`}
-                          className="tree-svg"
-                        >
-                          {/* Draw connections first (behind nodes) */}
-                          {treeLayout.connections.map((conn, idx) => (
-                            <line
-                              key={`conn-${idx}`}
-                              x1={conn.x1}
-                              y1={conn.y1}
-                              x2={conn.x2}
-                              y2={conn.y2}
-                              stroke="rgba(251, 191, 36, 0.7)"
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                            />
-                          ))}
-
-                          {/* Draw nodes */}
-                          {treeLayout.nodes.map((node) => {
-                            const isEmpty = node.value === '?' || node.value == null;
+                      {/* FIX: Pattern boxes - GRID CENTERED */}
+                      <div className="grid place-items-center mb-4">
+                        <div className="flex flex-wrap gap-2 sm:gap-3 justify-center">
+                          {puzzle.defuserView.pattern.map((item: any, idx: number) => {
+                            const kosong = item === '?' || item == null;
                             return (
-                              <g key={node.index}>
-                                <rect
-                                  x={node.x - CONFIG.NODE_SIZE / 2}
-                                  y={node.y - CONFIG.NODE_SIZE / 2}
-                                  width={CONFIG.NODE_SIZE}
-                                  height={CONFIG.NODE_SIZE}
-                                  rx="6"
-                                  fill={isEmpty ? 'rgba(127, 29, 29, 0.6)' : 'rgba(6, 78, 59, 0.6)'}
-                                  stroke={isEmpty ? 'rgb(220, 38, 38)' : 'rgb(5, 150, 105)'}
-                                  strokeWidth="2"
-                                  className="tree-node-rect"
-                                />
-                                <text
-                                  x={node.x}
-                                  y={node.y}
-                                  textAnchor="middle"
-                                  dominantBaseline="central"
-                                  fill={isEmpty ? 'rgb(254, 202, 202)' : 'rgb(167, 243, 208)'}
-                                  fontSize="13"
-                                  fontWeight="700"
-                                  className="tree-node-text"
-                                >
-                                  {isEmpty ? '?' : node.value}
-                                </text>
-                              </g>
+                              <PatternBox
+                                key={idx}
+                                item={item}
+                                index={idx}
+                                isEmpty={kosong}
+                                setPatternRef={setPatternRef}
+                              />
                             );
                           })}
-                        </svg>
-                      </div>
-
-
-                      {/* Legend - ultra compact */}
-                      <div className="flex gap-1.5 text-[8px] justify-center">
-                        <div className="flex items-center gap-0.5">
-                          <div className="w-1.5 h-1.5 rounded border border-emerald-600 bg-emerald-900/40"></div>
-                          <span className="text-emerald-300">Node</span>
-                        </div>
-                        <div className="flex items-center gap-0.5">
-                          <div className="w-1.5 h-1.5 rounded border border-red-600 bg-red-900/40"></div>
-                          <span className="text-red-300">Missing</span>
-                        </div>
-                        <div className="flex items-center gap-0.5">
-                          <div className="w-2 h-0.5 bg-amber-500"></div>
-                          <span className="text-amber-300">Edge</span>
+                          <div
+                            ref={setPatternRef(puzzle.defuserView.pattern.length)}
+                            className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl flex items-center justify-center text-xl sm:text-2xl font-extrabold border-2 border-red-600 bg-gradient-to-br from-red-900/40 to-red-950/60 text-red-200 dungeon-pulse dungeon-card-glow-red shadow-lg"
+                            title="Angka hilang yang harus ditemukan"
+                            aria-label="Angka hilang"
+                          >
+                            ?
+                          </div>
                         </div>
                       </div>
 
-
-                      {/* Input form - ultra compact */}
+                      {/* Input form */}
                       {isDefuser && (
-                        <form onSubmit={handleSubmit} className="space-y-1">
-                          <input
-                            type="number"
-                            value={jawaban}
-                            onChange={handleInputChange}
-                            placeholder="Angka..."
-                            className="w-full h-8 text-center text-xs font-bold bg-stone-900/70 border border-amber-600/60 rounded-md text-amber-200 placeholder-amber-500/50 focus:outline-none focus:ring-1 focus:ring-amber-500"
-                            disabled={submitting}
-                            maxLength={CONFIG.MAX_INPUT_LENGTH}
-                          />
+                        <form onSubmit={handleSubmit} className="space-y-3">
+                          <div className="grid place-items-center">
+                            <input
+                              type="number"
+                              value={jawaban}
+                              onChange={handleInputChange}
+                              placeholder="Masukkan angka..."
+                              className="w-full max-w-xs h-11 text-center text-lg font-bold bg-stone-900/70 border-2 border-amber-600/60 rounded-xl text-amber-200 placeholder-amber-500/50 focus:outline-none focus:ring-2 focus:ring-amber-500 transition-all"
+                              disabled={submitting}
+                              maxLength={CONFIG.MAX_INPUT_LENGTH}
+                            />
+                          </div>
                           <Button
                             type="submit"
                             disabled={!jawaban.trim() || submitting}
-                            className="w-full bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-stone-900 font-semibold py-1 rounded-md disabled:opacity-50 text-[9px] h-7"
+                            className="w-full bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-stone-900 font-semibold py-2.5 rounded-xl disabled:opacity-50 transition-all"
                           >
-                            {submitting ? '⚙️' : '✨'} Kirim
+                            {submitting ? (
+                              <span className="flex items-center justify-center gap-2">
+                                <span className="animate-spin">⚙️</span>
+                                Mengirim...
+                              </span>
+                            ) : (
+                              '✨ Kirim Jawaban'
+                            )}
                           </Button>
 
-
-                          {/* Hints - ultra compact */}
+                          {/* Hints accordion */}
                           {transformedHints.length > 0 && (
                             <Accordion type="single" collapsible>
                               <AccordionItem value="hints" className="border-blue-700/40">
-                                <AccordionTrigger className="text-blue-200 text-[9px] hover:text-blue-300 py-0.5">
-                                  💡 Petunjuk
+                                <AccordionTrigger className="text-blue-200 text-xs hover:text-blue-300 py-2">
+                                  💡 Petunjuk Terselubung
                                 </AccordionTrigger>
                                 <AccordionContent
-                                  className="p-1 rounded bg-blue-950/40 overflow-y-auto"
+                                  className="p-2 rounded-lg bg-blue-950/40 max-h-60 overflow-y-auto"
                                   style={{ maxHeight: `${CONFIG.MAX_ACCORDION_HEIGHT}px` }}
                                 >
-                                  <ul className="text-[8px] text-blue-200/90 space-y-0.5 list-disc pl-2">
+                                  <ul className="text-xs text-blue-200/90 space-y-1.5 list-disc pl-4">
                                     {transformedHints.map((hint, i) => (
                                       <li key={i}>{hint}</li>
                                     ))}
@@ -408,175 +362,214 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
                       )}
                     </>
                   ) : (
-                    <div className="p-1.5 rounded border border-red-700/40 bg-red-950/40 text-red-200 text-center text-[9px]">
-                      Data tidak ditemukan
+                    <div className="p-3 rounded-xl border border-red-700/40 bg-red-950/40 text-red-200 text-center text-sm">
+                      Data urutan tidak ditemukan
                     </div>
                   )}
                 </CardContent>
               </Card>
             )}
 
-
-            {/* EXPERT PANEL 1 - Panduan & Rune */}
+            {/* EXPERT PANEL */}
             {(isExpert || isHost) && puzzle.expertView && (
-              <Card className="border border-emerald-700/40 bg-gradient-to-b from-stone-900/90 to-emerald-950/30">
-                <CardHeader className="p-1.5 pb-1">
-                  <CardTitle className="text-[10px] text-emerald-300 text-center">
-                    📖 Panel Expert - Panduan
+              <Card className="border-2 border-emerald-700/40 bg-gradient-to-b from-stone-900/80 to-emerald-950/40 backdrop-blur-sm dungeon-card-glow-green">
+                <CardHeader className="pb-2 p-3">
+                  <CardTitle className="text-sm text-emerald-300 text-center dungeon-glow-text">
+                    📖 Panel Expert
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="p-1.5 space-y-1">
-                  <Accordion type="single" collapsible className="space-y-0.5">
-                    <AccordionItem value="runes" className="border-stone-700/40">
-                      <AccordionTrigger className="text-stone-200 text-[9px] py-0.5">
-                        ✨ Legenda Rune
-                      </AccordionTrigger>
-                      <AccordionContent className="p-1">
-                        <div className="flex flex-wrap gap-0.5 justify-center">
-                          {runeLegend.slice(0, 10).map(({ num, sym }) => (
-                            <RuneLegendBadge key={num} num={num} sym={sym} />
-                          ))}
-                        </div>
-                      </AccordionContent>
-                    </AccordionItem>
+                <CardContent className="p-3">
+                  <Tabs defaultValue="guide" className="w-full">
+                    <TabsList className="grid w-full grid-cols-2 bg-stone-900/60">
+                      <TabsTrigger value="guide" className="text-xs">
+                        Panduan
+                      </TabsTrigger>
+                      <TabsTrigger value="tools" className="text-xs">
+                        Tools
+                      </TabsTrigger>
+                    </TabsList>
 
+                    <TabsContent value="guide" className="space-y-2 mt-2">
+                      <div className="max-h-80 overflow-y-auto space-y-2 pr-1">
+                        <Accordion type="single" collapsible className="space-y-2">
+                          <AccordionItem value="runes" className="border-stone-700/40">
+                            <AccordionTrigger className="text-stone-200 text-xs hover:text-amber-300 py-2">
+                              ✨ Legenda Rune
+                            </AccordionTrigger>
+                            <AccordionContent className="p-2 text-xs text-stone-300 space-y-1">
+                              <div className="grid place-items-center mb-2">
+                                <div className="flex flex-wrap gap-1 justify-center">
+                                  {runeLegend.slice(0, 10).map(({ num, sym }) => (
+                                    <RuneLegendBadge key={num} num={num} sym={sym} />
+                                  ))}
+                                </div>
+                              </div>
+                              <p className="text-center">Pulihkan digit dari rune untuk analisis yang akurat</p>
+                            </AccordionContent>
+                          </AccordionItem>
 
-                    <AccordionItem value="konsep" className="border-stone-700/40">
-                      <AccordionTrigger className="text-stone-200 text-[9px] py-0.5">
-                        📚 Konsep Binary Tree
-                      </AccordionTrigger>
-                      <AccordionContent className="p-1 text-[8px] text-stone-300 space-y-0.5">
-                        <p>• Root: node teratas</p>
-                        <p>• Parent → Left & Right child</p>
-                        <p>• Leaf: node tanpa child</p>
-                        <p>• Level: kedalaman dari root</p>
-                      </AccordionContent>
-                    </AccordionItem>
+                          <AccordionItem value="deteksi" className="border-stone-700/40">
+                            <AccordionTrigger className="text-stone-200 text-xs hover:text-amber-300 py-2">
+                              🔍 Deteksi Pola
+                            </AccordionTrigger>
+                            <AccordionContent className="p-2 text-xs text-stone-300 space-y-1">
+                              <p>• Selisih konstan → aritmetika</p>
+                              <p>• Rasio konstan → geometri</p>
+                              <p>• Uji selisih tingkat-2 jika tidak konstan</p>
+                            </AccordionContent>
+                          </AccordionItem>
 
+                          <AccordionItem value="strategi" className="border-stone-700/40">
+                            <AccordionTrigger className="text-stone-200 text-xs hover:text-amber-300 py-2">
+                              🎯 Strategi
+                            </AccordionTrigger>
+                            <AccordionContent className="p-2 text-xs text-stone-300 space-y-1">
+                              <p>• Validasi hipotesis pada 2-3 suku</p>
+                              <p>• Bimbing dengan pertanyaan, bukan jawaban</p>
+                              <p>• Iterasi: observasi → analisis → validasi</p>
+                            </AccordionContent>
+                          </AccordionItem>
+                        </Accordion>
+                      </div>
+                    </TabsContent>
 
-                    <AccordionItem value="pembimbingan" className="border-stone-700/40">
-                      <AccordionTrigger className="text-stone-200 text-[9px] py-0.5">
-                        🧭 Prinsip Pembimbingan
-                      </AccordionTrigger>
-                      <AccordionContent className="p-1 text-[8px] text-stone-300 space-y-0.5">
-                        <p>• Ajukan pertanyaan terbuka</p>
-                        <p>• Pandu pada pola, bukan angka</p>
-                        <p>• Validasi hipotesis bersama</p>
-                      </AccordionContent>
-                    </AccordionItem>
-                  </Accordion>
-                </CardContent>
-              </Card>
-            )}
+                    <TabsContent value="tools" className="space-y-2 mt-2">
+                      <div className="p-2 rounded-lg bg-stone-900/60 border border-stone-700/40">
+                        <h6 className="text-xs text-stone-300 mb-2 font-semibold">Alat Bantu</h6>
+                        <ul className="text-xs text-stone-300 space-y-1 list-disc pl-4">
+                          <li>Uji modulo kecil (2, 3, 5) untuk siklus</li>
+                          <li>Lonjakan tajam → penggandaan/pangkat</li>
+                          <li>Validasi dengan suku berikutnya</li>
+                        </ul>
+                      </div>
 
-
-            {/* EXPERT PANEL 2 - Strategi & Tools */}
-            {(isExpert || isHost) && puzzle.expertView && (
-              <Card className="border border-purple-700/40 bg-gradient-to-b from-stone-900/90 to-purple-950/30">
-                <CardHeader className="p-1.5 pb-1">
-                  <CardTitle className="text-[10px] text-purple-300 text-center">
-                    🛠️ Panel Expert - Strategi
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="p-1.5 space-y-1">
-                  <Accordion type="single" collapsible className="space-y-0.5">
-                    <AccordionItem value="traversal" className="border-stone-700/40">
-                      <AccordionTrigger className="text-stone-200 text-[9px] py-0.5">
-                        🔍 Strategi Traversal
-                      </AccordionTrigger>
-                      <AccordionContent className="p-1 text-[8px] text-stone-300 space-y-0.5">
-                        <p>• In-order: Left→Root→Right</p>
-                        <p>• Pre-order: Root→Left→Right</p>
-                        <p>• Post-order: Left→Right→Root</p>
-                        <p>• Level-order: Per tingkat</p>
-                      </AccordionContent>
-                    </AccordionItem>
-
-
-                    <AccordionItem value="validasi" className="border-stone-700/40">
-                      <AccordionTrigger className="text-stone-200 text-[9px] py-0.5">
-                        ✅ Validasi BST
-                      </AccordionTrigger>
-                      <AccordionContent className="p-1 text-[8px] text-stone-300 space-y-0.5">
-                        <p>• Left child {'<'} Parent</p>
-                        <p>• Right child {'>'} Parent</p>
-                        <p>• Rekursif ke subtree</p>
-                      </AccordionContent>
-                    </AccordionItem>
-
-
-                    <AccordionItem value="metode" className="border-stone-700/40">
-                      <AccordionTrigger className="text-stone-200 text-[9px] py-0.5">
-                        🔮 Metode Traversal
-                      </AccordionTrigger>
-                      <AccordionContent className="p-1 text-[8px] text-stone-300 space-y-0.5">
-                        <p>• DFS: Stack/Rekursi</p>
-                        <p>• BFS: Queue</p>
-                        <p>• Iteratif vs Rekursif</p>
-                      </AccordionContent>
-                    </AccordionItem>
-                  </Accordion>
+                      <div className="p-2 rounded-lg bg-stone-900/60 border border-amber-700/40">
+                        <h6 className="text-xs text-amber-300 mb-2 font-semibold">Peran Expert</h6>
+                        <ul className="text-xs text-stone-300 space-y-1 list-disc pl-4">
+                          <li>Pandu pada transformasi, bukan angka</li>
+                          <li>Minta hipotesis dan verifikasi</li>
+                          <li>Jaga ritme: amati → analisis → validasi</li>
+                        </ul>
+                      </div>
+                    </TabsContent>
+                  </Tabs>
                 </CardContent>
               </Card>
             )}
           </div>
+
+          {/* Collaboration tips - Compact accordion */}
+          <Card className="border border-purple-700/40 bg-purple-950/20 backdrop-blur-sm">
+            <CardContent className="p-3">
+              <Accordion type="single" collapsible>
+                <AccordionItem value="tips" className="border-purple-700/40">
+                  <AccordionTrigger className="text-purple-300 text-xs hover:text-purple-400 py-2">
+                    💡 Tips Kolaborasi
+                  </AccordionTrigger>
+                  <AccordionContent className="p-2 text-xs text-stone-300 space-y-2">
+                    <div>
+                      <span className="font-semibold text-amber-300">Defuser:</span> Telusuri selisih, uji
+                      progresi, minta validasi tanpa mengungkap final
+                    </div>
+                    <div>
+                      <span className="font-semibold text-blue-300">Expert:</span> Mulai observasi kualitatif,
+                      batasi petunjuk pada bentuk transformasi
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+              </Accordion>
+            </CardContent>
+          </Card>
         </CardContent>
       </Card>
 
-
-      {/* MINIMAL STYLES */}
+      {/* ========================================
+          CUSTOM DUNGEON STYLES
+          ======================================== */}
       <style>{`
-        .tree-svg-container {
-          background: radial-gradient(circle at center, rgba(0,0,0,0.15) 0%, transparent 70%);
-          border-radius: 6px;
-          padding: 5px;
-          overflow-x: auto;
+        .dungeon-torch-flicker {
+          display: inline-block;
         }
 
-
-        .tree-svg {
-          display: block;
-          margin: 0 auto;
+        .dungeon-rune-float {
+          display: inline-block;
+          animation: runeFloat 3.6s ease-in-out infinite;
         }
 
-
-        .tree-node-rect {
-          transition: all 0.3s;
+        @keyframes runeFloat {
+          0%,
+          100% {
+            transform: translateY(0);
+          }
+          50% {
+            transform: translateY(-6px);
+          }
         }
 
-
-        .tree-node-rect:hover {
-          filter: brightness(1.3);
+        .dungeon-card-glow {
+          box-shadow: 0 0 30px rgba(251, 191, 36, 0.4);
         }
 
-
-        .tree-svg-container::-webkit-scrollbar {
-          height: 4px;
+        .dungeon-card-glow-blue {
+          box-shadow: 0 0 20px rgba(59, 130, 246, 0.4);
         }
 
-
-        .tree-svg-container::-webkit-scrollbar-track {
-          background: rgba(28, 25, 23, 0.5);
+        .dungeon-card-glow-green {
+          box-shadow: 0 0 20px rgba(34, 197, 94, 0.4);
         }
 
-
-        .tree-svg-container::-webkit-scrollbar-thumb {
-          background: rgba(180, 83, 9, 0.6);
+        .dungeon-card-glow-red {
+          box-shadow: 0 0 20px rgba(239, 68, 68, 0.4);
         }
 
+        .dungeon-badge-glow {
+          filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.4));
+        }
 
+        .dungeon-glow-text {
+          text-shadow: 0 0 20px rgba(251, 191, 36, 0.6);
+        }
+
+        .dungeon-pulse {
+          animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+
+        @keyframes pulse {
+          0%,
+          100% {
+            opacity: 1;
+          }
+          50% {
+            opacity: 0.7;
+          }
+        }
+
+        /* Custom scrollbar */
         .overflow-y-auto::-webkit-scrollbar {
-          width: 3px;
+          width: 6px;
         }
-
 
         .overflow-y-auto::-webkit-scrollbar-track {
           background: rgba(28, 25, 23, 0.5);
+          border-radius: 3px;
         }
-
 
         .overflow-y-auto::-webkit-scrollbar-thumb {
           background: rgba(180, 83, 9, 0.6);
+          border-radius: 3px;
+        }
+
+        .overflow-y-auto::-webkit-scrollbar-thumb:hover {
+          background: rgba(180, 83, 9, 0.8);
+        }
+
+        @media (max-width: 768px) {
+          .dungeon-card-glow,
+          .dungeon-card-glow-blue,
+          .dungeon-card-glow-green,
+          .dungeon-card-glow-red {
+            box-shadow: 0 0 15px rgba(251, 191, 36, 0.3);
+          }
         }
       `}</style>
     </div>
