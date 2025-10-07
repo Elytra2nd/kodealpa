@@ -464,7 +464,7 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
               )}
 
 
-              {/* Expert Panel - WITH TABLE FORMAT */}
+              {/* Expert Panel - SIDE BY SIDE LAYOUT */}
               {(isExpert || isHost) && (
                 <Card className="border-2 border-emerald-700/40 bg-gradient-to-b from-stone-900/80 to-emerald-950/40">
                   <CardHeader className="pb-2 p-2">
@@ -473,107 +473,99 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="p-2">
-                    <Tabs defaultValue="hints" className="w-full">
-                      <TabsList className="grid w-full grid-cols-2 bg-stone-900/60 h-7">
-                        <TabsTrigger value="hints" className="text-xs py-1">
+                    {/* GRID LAYOUT: Hints on LEFT, Tables on RIGHT */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+                      {/* LEFT SIDE - Hints/Petunjuk */}
+                      <div
+                        className="p-2 rounded-lg bg-blue-950/40 border border-blue-700/40 overflow-y-auto"
+                        style={{ maxHeight: `${CONFIG.MAX_EXPERT_CONTENT_HEIGHT}px` }}
+                      >
+                        <h6 className="text-xs text-blue-300 font-semibold mb-2 flex items-center gap-1">
                           💡 Petunjuk
-                        </TabsTrigger>
-                        <TabsTrigger value="tools" className="text-xs py-1">
-                          🛠️ Tools
-                        </TabsTrigger>
-                      </TabsList>
+                        </h6>
+                        <ul className="text-xs text-blue-200/90 space-y-1 list-disc pl-3">
+                          {defuserHintsCipher.map((hint, i) => (
+                            <li key={i}>{hint}</li>
+                          ))}
+                        </ul>
+                      </div>
 
-
-                      <TabsContent value="hints" className="mt-2">
-                        <div
-                          className="p-2 rounded-lg bg-blue-950/40 border border-blue-700/40 overflow-y-auto"
-                          style={{ maxHeight: `${CONFIG.MAX_EXPERT_CONTENT_HEIGHT}px` }}
-                        >
-                          <ul className="text-xs text-blue-200/90 space-y-1 list-disc pl-3">
-                            {defuserHintsCipher.map((hint, i) => (
-                              <li key={i}>{hint}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      </TabsContent>
-
-
-                      <TabsContent value="tools" className="mt-2">
-                        <div
-                          className="space-y-2 overflow-y-auto"
-                          style={{ maxHeight: `${CONFIG.MAX_EXPERT_CONTENT_HEIGHT}px` }}
-                        >
-                          {/* Caesar Cipher Table - PROPER HTML TABLE */}
-                          {isCaesarCipher && (
-                            <div className="p-2 rounded-lg bg-stone-900/60 border border-stone-700/40">
-                              <h6 className="text-xs text-stone-300 mb-2 font-semibold">Caesar Cipher Mapping</h6>
-                              <div className="overflow-x-auto">
-                                <table className="w-full text-xs border-collapse">
-                                  <thead>
-                                    <tr className="bg-stone-800/80">
-                                      <th className="border border-stone-700/60 px-1 py-1 text-amber-200 font-semibold">
-                                        Plain
-                                      </th>
-                                      {alphabet.map((ch) => (
-                                        <th
-                                          key={ch}
-                                          className="border border-stone-700/60 px-1 py-1 text-stone-100 font-mono text-[10px]"
-                                        >
-                                          {ch}
-                                        </th>
-                                      ))}
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    <tr className="bg-stone-900/80">
-                                      <td className="border border-stone-700/60 px-1 py-1 text-amber-200 font-semibold">
-                                        Cipher
-                                      </td>
-                                      {rotated.map((ch, idx) => (
-                                        <td
-                                          key={idx}
-                                          className="border border-stone-700/60 px-1 py-1 text-amber-300 font-mono text-[10px] text-center bg-amber-950/30"
-                                        >
-                                          {ch}
-                                        </td>
-                                      ))}
-                                    </tr>
-                                  </tbody>
-                                </table>
-                              </div>
-                            </div>
-                          )}
-
-
-                          {/* Rune Legend Table */}
+                      {/* RIGHT SIDE - Tools/Tables */}
+                      <div
+                        className="space-y-2 overflow-y-auto"
+                        style={{ maxHeight: `${CONFIG.MAX_EXPERT_CONTENT_HEIGHT}px` }}
+                      >
+                        {/* Caesar Cipher Table */}
+                        {isCaesarCipher && (
                           <div className="p-2 rounded-lg bg-stone-900/60 border border-stone-700/40">
-                            <h6 className="text-xs text-stone-300 mb-2 font-semibold">Rune Legend</h6>
+                            <h6 className="text-xs text-stone-300 mb-2 font-semibold flex items-center gap-1">
+                              🛠️ Caesar Cipher Mapping
+                            </h6>
                             <div className="overflow-x-auto">
                               <table className="w-full text-xs border-collapse">
                                 <thead>
                                   <tr className="bg-stone-800/80">
-                                    <th className="border border-stone-700/60 px-2 py-1 text-amber-200">Rune</th>
-                                    <th className="border border-stone-700/60 px-2 py-1 text-amber-200">Value</th>
+                                    <th className="border border-stone-700/60 px-1 py-1 text-amber-200 font-semibold">
+                                      Plain
+                                    </th>
+                                    {alphabet.map((ch) => (
+                                      <th
+                                        key={ch}
+                                        className="border border-stone-700/60 px-1 py-1 text-stone-100 font-mono text-[10px]"
+                                      >
+                                        {ch}
+                                      </th>
+                                    ))}
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {runeLegend.map(({ num, sym }) => (
-                                    <tr key={num} className="hover:bg-stone-800/40 transition-colors">
-                                      <td className="border border-stone-700/60 px-2 py-1 text-center text-amber-100 font-bold">
-                                        {sym}
+                                  <tr className="bg-stone-900/80">
+                                    <td className="border border-stone-700/60 px-1 py-1 text-amber-200 font-semibold">
+                                      Cipher
+                                    </td>
+                                    {rotated.map((ch, idx) => (
+                                      <td
+                                        key={idx}
+                                        className="border border-stone-700/60 px-1 py-1 text-amber-300 font-mono text-[10px] text-center bg-amber-950/30"
+                                      >
+                                        {ch}
                                       </td>
-                                      <td className="border border-stone-700/60 px-2 py-1 text-center text-stone-300">
-                                        {num}
-                                      </td>
-                                    </tr>
-                                  ))}
+                                    ))}
+                                  </tr>
                                 </tbody>
                               </table>
                             </div>
                           </div>
+                        )}
+
+                        {/* Rune Legend Table */}
+                        <div className="p-2 rounded-lg bg-stone-900/60 border border-stone-700/40">
+                          <h6 className="text-xs text-stone-300 mb-2 font-semibold">Rune Legend</h6>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-xs border-collapse">
+                              <thead>
+                                <tr className="bg-stone-800/80">
+                                  <th className="border border-stone-700/60 px-2 py-1 text-amber-200">Rune</th>
+                                  <th className="border border-stone-700/60 px-2 py-1 text-amber-200">Value</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {runeLegend.map(({ num, sym }) => (
+                                  <tr key={num} className="hover:bg-stone-800/40 transition-colors">
+                                    <td className="border border-stone-700/60 px-2 py-1 text-center text-amber-100 font-bold">
+                                      {sym}
+                                    </td>
+                                    <td className="border border-stone-700/60 px-2 py-1 text-center text-stone-300">
+                                      {num}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
                         </div>
-                      </TabsContent>
-                    </Tabs>
+                      </div>
+                    </div>
                   </CardContent>
                 </Card>
               )}
@@ -632,7 +624,7 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
               )}
 
 
-              {/* Expert Panel */}
+              {/* Expert Panel - Bug Puzzle */}
               {(isExpert || isHost) && (
                 <Card className="border-2 border-emerald-700/40 bg-gradient-to-b from-stone-900/80 to-emerald-950/40">
                   <CardHeader className="pb-2 p-2">
