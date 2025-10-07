@@ -6,6 +6,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/Components/ui/tabs';
 import { gsap } from 'gsap';
 
+
 // ============================================
 // CONSTANTS & CONFIGURATIONS
 // ============================================
@@ -17,6 +18,7 @@ const CONFIG = {
   MAX_INPUT_LENGTH: 20,
   MAX_ACCORDION_HEIGHT: 300,
 } as const;
+
 
 const RUNE_MAP: Record<string, string> = {
   '0': '◇',
@@ -31,6 +33,7 @@ const RUNE_MAP: Record<string, string> = {
   '9': '★',
 } as const;
 
+
 const OBFUSCATION_PATTERNS = [
   { pattern: /\d/g, replacer: (d: string) => RUNE_MAP[d] ?? d },
   { pattern: /\b(kali|perkalian)\b/gi, replacer: () => 'ritual penggandaan' },
@@ -39,6 +42,7 @@ const OBFUSCATION_PATTERNS = [
   { pattern: /\b(bagi|pembagian)\b/gi, replacer: () => 'pemisahan sigil' },
   { pattern: /\b(pangkat|eksponen)\b/gi, replacer: () => 'sigil eksponensial' },
 ] as const;
+
 
 // ============================================
 // TYPE DEFINITIONS
@@ -49,6 +53,7 @@ interface Props {
   onSubmitAttempt: (input: string) => void;
   submitting: boolean;
 }
+
 
 // ============================================
 // UTILITY FUNCTIONS
@@ -66,10 +71,12 @@ const obfuscateText = (text: string): string => {
   }
 };
 
+
 const dungeonizeRule = (rule?: string): string => {
   const base = rule ? String(rule) : 'Jejak perubahan antar-suku menuntun peziarah angka';
   return obfuscateText(`Petuah lorong: ${base}`);
 };
+
 
 // ============================================
 // CUSTOM HOOKS
@@ -77,6 +84,7 @@ const dungeonizeRule = (rule?: string): string => {
 const useDungeonAtmosphere = () => {
   const torchRefs = useRef<(HTMLElement | null)[]>([]);
   const patternRefs = useRef<(HTMLElement | null)[]>([]);
+
 
   useEffect(() => {
     const torchInterval = setInterval(() => {
@@ -91,8 +99,10 @@ const useDungeonAtmosphere = () => {
       });
     }, CONFIG.TORCH_FLICKER_INTERVAL);
 
+
     return () => clearInterval(torchInterval);
   }, []);
+
 
   useEffect(() => {
     const validPatterns = patternRefs.current.filter((p): p is HTMLElement => p !== null);
@@ -116,16 +126,20 @@ const useDungeonAtmosphere = () => {
     }
   }, []);
 
-  const setTorchRef = (index: number) => (el: HTMLDivElement | null) => {
-    torchRefs.current[index] = el;
-  };
 
-  const setPatternRef = (index: number) => (el: HTMLDivElement | null) => {
+  const setTorchRef = useCallback((index: number) => (el: HTMLDivElement | null) => {
+    torchRefs.current[index] = el;
+  }, []);
+
+
+  const setPatternRef = useCallback((index: number) => (el: HTMLDivElement | null) => {
     patternRefs.current[index] = el;
-  };
+  }, []);
+
 
   return { setTorchRef, setPatternRef };
 };
+
 
 // ============================================
 // MEMOIZED COMPONENTS
@@ -157,7 +171,9 @@ const PatternBox = memo(
   )
 );
 
+
 PatternBox.displayName = 'PatternBox';
+
 
 const RuneLegendBadge = memo(({ num, sym }: { num: string; sym: string }) => (
   <Badge className="bg-stone-800 text-amber-100 border border-amber-700/60 dungeon-badge-glow text-xs">
@@ -165,7 +181,9 @@ const RuneLegendBadge = memo(({ num, sym }: { num: string; sym: string }) => (
   </Badge>
 ));
 
+
 RuneLegendBadge.displayName = 'RuneLegendBadge';
+
 
 const LoadingState = memo(() => (
   <div className="min-h-[200px] flex items-center justify-center bg-gradient-to-br from-stone-900 to-red-950 border-2 border-red-700/60 rounded-xl dungeon-card-glow-red">
@@ -173,7 +191,9 @@ const LoadingState = memo(() => (
   </div>
 ));
 
+
 LoadingState.displayName = 'LoadingState';
+
 
 // ============================================
 // MAIN COMPONENT
@@ -181,13 +201,17 @@ LoadingState.displayName = 'LoadingState';
 export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, submitting }: Props) {
   const { setTorchRef, setPatternRef } = useDungeonAtmosphere();
 
+
   const [jawaban, setJawaban] = useState('');
+
 
   const isDefuser = role === 'defuser';
   const isExpert = role === 'expert';
   const isHost = role === 'host';
 
+
   const runeLegend = useMemo(() => Object.entries(RUNE_MAP).map(([num, sym]) => ({ num, sym })), []);
+
 
   const transformedHints = useMemo(() => {
     const base = Array.isArray(puzzle?.defuserView?.hints) ? puzzle.defuserView.hints : [];
@@ -200,6 +224,7 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
     return [...base, ...extra].slice(0, 4).map(obfuscateText);
   }, [puzzle]);
 
+
   const handleSubmit = useCallback(
     (e: React.FormEvent) => {
       e.preventDefault();
@@ -211,6 +236,7 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
     [jawaban, onSubmitAttempt]
   );
 
+
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     if (value.length <= CONFIG.MAX_INPUT_LENGTH) {
@@ -218,9 +244,11 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
     }
   }, []);
 
+
   if (!puzzle) {
     return <LoadingState />;
   }
+
 
   return (
     <div className="space-y-4 relative">
@@ -258,6 +286,7 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
           </div>
         </CardHeader>
 
+
         <CardContent className="space-y-4 p-4">
           {/* Rule hint for expert/host */}
           {(isExpert || isHost) && puzzle.expertView?.rule && (
@@ -269,6 +298,7 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
               </CardContent>
             </Card>
           )}
+
 
           {/* MAIN GRID - Side by side layout */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -283,9 +313,9 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
                 <CardContent className="p-3 space-y-3">
                   {Array.isArray(puzzle.defuserView?.pattern) ? (
                     <>
-                      {/* FIX: Pattern boxes - GRID CENTERED */}
-                      <div className="grid place-items-center mb-4">
-                        <div className="flex flex-wrap gap-2 sm:gap-3 justify-center">
+                      {/* Pattern boxes - CENTERED GRID */}
+                      <div className="flex justify-center mb-4">
+                        <div className="flex flex-wrap gap-2 sm:gap-3 justify-center max-w-2xl">
                           {puzzle.defuserView.pattern.map((item: any, idx: number) => {
                             const kosong = item === '?' || item == null;
                             return (
@@ -309,10 +339,11 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
                         </div>
                       </div>
 
+
                       {/* Input form */}
                       {isDefuser && (
                         <form onSubmit={handleSubmit} className="space-y-3">
-                          <div className="grid place-items-center">
+                          <div className="flex justify-center">
                             <input
                               type="number"
                               value={jawaban}
@@ -338,6 +369,7 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
                             )}
                           </Button>
 
+
                           {/* Hints accordion */}
                           {transformedHints.length > 0 && (
                             <Accordion type="single" collapsible>
@@ -346,7 +378,7 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
                                   💡 Petunjuk Terselubung
                                 </AccordionTrigger>
                                 <AccordionContent
-                                  className="p-2 rounded-lg bg-blue-950/40 max-h-60 overflow-y-auto"
+                                  className="p-2 rounded-lg bg-blue-950/40 overflow-y-auto"
                                   style={{ maxHeight: `${CONFIG.MAX_ACCORDION_HEIGHT}px` }}
                                 >
                                   <ul className="text-xs text-blue-200/90 space-y-1.5 list-disc pl-4">
@@ -370,6 +402,7 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
               </Card>
             )}
 
+
             {/* EXPERT PANEL */}
             {(isExpert || isHost) && puzzle.expertView && (
               <Card className="border-2 border-emerald-700/40 bg-gradient-to-b from-stone-900/80 to-emerald-950/40 backdrop-blur-sm dungeon-card-glow-green">
@@ -382,12 +415,13 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
                   <Tabs defaultValue="guide" className="w-full">
                     <TabsList className="grid w-full grid-cols-2 bg-stone-900/60">
                       <TabsTrigger value="guide" className="text-xs">
-                        Panduan
+                        📚 Panduan
                       </TabsTrigger>
                       <TabsTrigger value="tools" className="text-xs">
-                        Tools
+                        🛠️ Tools
                       </TabsTrigger>
                     </TabsList>
+
 
                     <TabsContent value="guide" className="space-y-2 mt-2">
                       <div className="max-h-80 overflow-y-auto space-y-2 pr-1">
@@ -397,7 +431,7 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
                               ✨ Legenda Rune
                             </AccordionTrigger>
                             <AccordionContent className="p-2 text-xs text-stone-300 space-y-1">
-                              <div className="grid place-items-center mb-2">
+                              <div className="flex justify-center mb-2">
                                 <div className="flex flex-wrap gap-1 justify-center">
                                   {runeLegend.slice(0, 10).map(({ num, sym }) => (
                                     <RuneLegendBadge key={num} num={num} sym={sym} />
@@ -407,6 +441,7 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
                               <p className="text-center">Pulihkan digit dari rune untuk analisis yang akurat</p>
                             </AccordionContent>
                           </AccordionItem>
+
 
                           <AccordionItem value="deteksi" className="border-stone-700/40">
                             <AccordionTrigger className="text-stone-200 text-xs hover:text-amber-300 py-2">
@@ -418,6 +453,7 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
                               <p>• Uji selisih tingkat-2 jika tidak konstan</p>
                             </AccordionContent>
                           </AccordionItem>
+
 
                           <AccordionItem value="strategi" className="border-stone-700/40">
                             <AccordionTrigger className="text-stone-200 text-xs hover:text-amber-300 py-2">
@@ -433,6 +469,7 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
                       </div>
                     </TabsContent>
 
+
                     <TabsContent value="tools" className="space-y-2 mt-2">
                       <div className="p-2 rounded-lg bg-stone-900/60 border border-stone-700/40">
                         <h6 className="text-xs text-stone-300 mb-2 font-semibold">Alat Bantu</h6>
@@ -442,6 +479,7 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
                           <li>Validasi dengan suku berikutnya</li>
                         </ul>
                       </div>
+
 
                       <div className="p-2 rounded-lg bg-stone-900/60 border border-amber-700/40">
                         <h6 className="text-xs text-amber-300 mb-2 font-semibold">Peran Expert</h6>
@@ -457,6 +495,7 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
               </Card>
             )}
           </div>
+
 
           {/* Collaboration tips - Compact accordion */}
           <Card className="border border-purple-700/40 bg-purple-950/20 backdrop-blur-sm">
@@ -483,18 +522,19 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
         </CardContent>
       </Card>
 
-      {/* ========================================
-          CUSTOM DUNGEON STYLES
-          ======================================== */}
+
+      {/* CUSTOM DUNGEON STYLES */}
       <style>{`
         .dungeon-torch-flicker {
           display: inline-block;
         }
 
+
         .dungeon-rune-float {
           display: inline-block;
           animation: runeFloat 3.6s ease-in-out infinite;
         }
+
 
         @keyframes runeFloat {
           0%,
@@ -506,33 +546,41 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
           }
         }
 
+
         .dungeon-card-glow {
           box-shadow: 0 0 30px rgba(251, 191, 36, 0.4);
         }
+
 
         .dungeon-card-glow-blue {
           box-shadow: 0 0 20px rgba(59, 130, 246, 0.4);
         }
 
+
         .dungeon-card-glow-green {
           box-shadow: 0 0 20px rgba(34, 197, 94, 0.4);
         }
+
 
         .dungeon-card-glow-red {
           box-shadow: 0 0 20px rgba(239, 68, 68, 0.4);
         }
 
+
         .dungeon-badge-glow {
           filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.4));
         }
+
 
         .dungeon-glow-text {
           text-shadow: 0 0 20px rgba(251, 191, 36, 0.6);
         }
 
+
         .dungeon-pulse {
           animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
         }
+
 
         @keyframes pulse {
           0%,
@@ -544,24 +592,29 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
           }
         }
 
+
         /* Custom scrollbar */
         .overflow-y-auto::-webkit-scrollbar {
           width: 6px;
         }
+
 
         .overflow-y-auto::-webkit-scrollbar-track {
           background: rgba(28, 25, 23, 0.5);
           border-radius: 3px;
         }
 
+
         .overflow-y-auto::-webkit-scrollbar-thumb {
           background: rgba(180, 83, 9, 0.6);
           border-radius: 3px;
         }
 
+
         .overflow-y-auto::-webkit-scrollbar-thumb:hover {
           background: rgba(180, 83, 9, 0.8);
         }
+
 
         @media (max-width: 768px) {
           .dungeon-card-glow,
