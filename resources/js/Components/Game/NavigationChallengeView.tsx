@@ -127,7 +127,7 @@ const useDungeonAtmosphere = () => {
 };
 
 // ============================================
-// SVG BINARY TREE COMPONENT - LARGER VERSION
+// SVG BINARY TREE COMPONENT
 // ============================================
 const SvgBinaryTree = memo(({ array }: { array: any[] }) => {
   if (!Array.isArray(array) || array.length === 0) {
@@ -423,52 +423,52 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
   }
 
   return (
-    <div className="space-y-4 relative max-w-[1800px] mx-auto">
+    <div className="space-y-4 relative max-w-[2000px] mx-auto px-2 sm:px-4">
       <Card className="overflow-hidden border border-amber-700/40 bg-gradient-to-br from-stone-900 via-stone-800 to-amber-950 dungeon-card-glow">
-        <CardHeader className="relative p-3 sm:p-4">
+        <CardHeader className="relative p-4 sm:p-6">
           <div className="absolute top-2 left-2 text-lg sm:text-xl">
             <span ref={setTorchRef(0)} className="dungeon-torch-flicker">🔥</span>
           </div>
           <div className="absolute top-2 right-2 text-lg sm:text-xl">
             <span ref={setTorchRef(1)} className="dungeon-torch-flicker">🔥</span>
           </div>
-          <CardTitle className="text-amber-300 text-lg sm:text-xl relative z-10 dungeon-glow-text">
+          <CardTitle className="text-amber-300 text-xl sm:text-2xl relative z-10 dungeon-glow-text">
             {puzzle.title || 'Navigasi Tantangan'}
           </CardTitle>
-          <CardDescription className="text-stone-300 text-xs sm:text-sm relative z-10">
+          <CardDescription className="text-stone-300 text-sm sm:text-base relative z-10">
             {puzzle.description || 'Temukan jalan dalam struktur tree!'}
           </CardDescription>
 
-          <div className="pt-2 flex flex-wrap gap-1.5 relative z-10">
-            <Badge className="bg-amber-800 text-amber-100 border border-amber-700/50 text-xs">
+          <div className="pt-2 flex flex-wrap gap-2 relative z-10">
+            <Badge className="bg-amber-800 text-amber-100 border border-amber-700/50 text-sm">
               🏰 Mode Dungeon
             </Badge>
-            <Badge className="bg-stone-700 text-stone-200 border border-stone-600/50 text-xs">
+            <Badge className="bg-stone-700 text-stone-200 border border-stone-600/50 text-sm">
               🧭 Navigasi Pohon
             </Badge>
             {role && (
-              <Badge className="bg-purple-800 text-purple-100 border border-purple-700/50 text-xs">
+              <Badge className="bg-purple-800 text-purple-100 border border-purple-700/50 text-sm">
                 🎭 {role}
               </Badge>
             )}
             {puzzle?.defuserView?.targetValue != null && (
-              <Badge className="bg-indigo-800 text-indigo-100 border border-indigo-700/50 text-xs">
+              <Badge className="bg-indigo-800 text-indigo-100 border border-indigo-700/50 text-sm">
                 Target: {obfuscate(String(puzzle.defuserView.targetValue))}
               </Badge>
             )}
           </div>
         </CardHeader>
 
-        <CardContent className="space-y-3 p-3 sm:p-4">
+        <CardContent className="space-y-4 p-4 sm:p-6">
           {(isDefuser || isExpert) && syncIssue && (
-            <Alert className="border-amber-700/40 bg-gradient-to-r from-amber-900/40 to-stone-900/40 backdrop-blur-sm p-2">
-              <AlertDescription className="text-amber-200 text-xs">
+            <Alert className="border-amber-700/40 bg-gradient-to-r from-amber-900/40 to-stone-900/40 backdrop-blur-sm p-3">
+              <AlertDescription className="text-amber-200 text-sm">
                 ⚠️ {syncIssue}
               </AlertDescription>
             </Alert>
           )}
 
-          <div className="grid grid-cols-1 lg:grid-cols-7 gap-3">
+          <div className="grid grid-cols-1 lg:grid-cols-7 gap-4">
             {/* DEFUSER PANEL - 2 cols */}
             {(isDefuser || role === 'host') && (
               <div className="lg:col-span-2">
@@ -597,7 +597,7 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
             {/* EXPERT PANEL - BENTO GRID LAYOUT - 5 cols */}
             {(isExpert || role === 'host') && (
               <div className="lg:col-span-5 bento-grid-wide">
-                {/* Tree Visualization - LARGER VERSION */}
+                {/* Tree Visualization */}
                 <Card className="bento-tree-wide border border-emerald-700/40 bg-gradient-to-b from-stone-900/60 to-emerald-950/40">
                   <CardHeader className="pb-2 pt-2 px-3">
                     <CardTitle className="text-sm text-emerald-300 flex items-center gap-1.5">
