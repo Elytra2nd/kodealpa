@@ -12,9 +12,6 @@ import { gsap } from 'gsap';
 // ============================================
 const CONFIG = {
   TORCH_FLICKER_INTERVAL: 2200,
-  RUNE_FLOAT_DURATION: 3600,
-  PATTERN_ENTRANCE_DURATION: 0.6,
-  PATTERN_STAGGER: 0.1,
   MAX_INPUT_LENGTH: 20,
   MAX_ACCORDION_HEIGHT: 300,
 } as const;
@@ -49,8 +46,8 @@ const OBFUSCATION_PATTERNS = [
 // ============================================
 interface TreeNode {
   value: number | string;
-  children?: TreeNode[];
-  isActive?: boolean;
+  left?: TreeNode;
+  right?: TreeNode;
 }
 
 
@@ -85,56 +82,28 @@ const dungeonizeRule = (rule?: string): string => {
 };
 
 
-// Convert flat array to tree structure for visualization
-const buildTreeStructure = (pattern: any[]): TreeNode => {
-  if (!Array.isArray(pattern) || pattern.length === 0) {
-    return { value: '?', children: [] };
-  }
+// Build binary tree from array
+const buildTree = (arr: any[], index = 0): TreeNode | null => {
+  if (index >= arr.length || arr[index] == null) return null;
 
-
-  // Simple binary tree structure: root with left and right children
-  const root: TreeNode = {
-    value: pattern[0] ?? '?',
-    children: [],
+  const node: TreeNode = {
+    value: arr[index],
   };
 
+  const leftIndex = 2 * index + 1;
+  const rightIndex = 2 * index + 2;
 
-  // Level-order insertion for binary tree
-  const queue: TreeNode[] = [root];
-  let index = 1;
-
-
-  while (queue.length > 0 && index < pattern.length) {
-    const current = queue.shift()!;
-    current.children = [];
-
-
-    // Left child
-    if (index < pattern.length) {
-      const leftChild: TreeNode = {
-        value: pattern[index] ?? '?',
-        children: [],
-      };
-      current.children.push(leftChild);
-      queue.push(leftChild);
-      index++;
-    }
-
-
-    // Right child
-    if (index < pattern.length) {
-      const rightChild: TreeNode = {
-        value: pattern[index] ?? '?',
-        children: [],
-      };
-      current.children.push(rightChild);
-      queue.push(rightChild);
-      index++;
-    }
+  if (leftIndex < arr.length) {
+    const leftChild = buildTree(arr, leftIndex);
+    if (leftChild) node.left = leftChild;
   }
 
+  if (rightIndex < arr.length) {
+    const rightChild = buildTree(arr, rightIndex);
+    if (rightChild) node.right = rightChild;
+  }
 
-  return root;
+  return node;
 };
 
 
@@ -176,45 +145,59 @@ const useDungeonAtmosphere = () => {
 
 
 // ============================================
-// TREE NODE COMPONENT
+// TREE VISUALIZATION COMPONENT
 // ============================================
-const TreeNodeComponent = memo(({ node }: { node: TreeNode }) => {
+const TreeVisualizer = memo(({ node, level = 0 }: { node: TreeNode | null; level?: number }) => {
+  if (!node) return null;
+
   const isEmpty = node.value === '?' || node.value == null;
+  const hasChildren = node.left || node.right;
 
 
   return (
-    <li className="tree-node">
-      <div
-        className={`node-content ${
-          isEmpty
-            ? 'border-red-600/60 bg-gradient-to-br from-red-900/40 to-red-950/60 text-red-200'
-            : 'border-emerald-600/60 bg-gradient-to-br from-emerald-900/40 to-emerald-950/60 text-emerald-200'
-        }`}
-      >
-        <span className="node-value">{isEmpty ? '?' : node.value}</span>
+    <div className="tree-item">
+      <div className="tree-node-wrapper">
+        <div
+          className={`tree-node ${
+            isEmpty
+              ? 'tree-node-missing'
+              : 'tree-node-active'
+          }`}
+        >
+          {isEmpty ? '?' : node.value}
+        </div>
       </div>
 
 
-      {node.children && node.children.length > 0 && (
-        <ul className="tree-children">
-          {node.children.map((child, idx) => (
-            <TreeNodeComponent key={idx} node={child} />
-          ))}
-        </ul>
+      {hasChildren && (
+        <div className="tree-children-wrapper">
+          <div className="tree-children">
+            {node.left && (
+              <div className="tree-child-branch">
+                <TreeVisualizer node={node.left} level={level + 1} />
+              </div>
+            )}
+            {node.right && (
+              <div className="tree-child-branch">
+                <TreeVisualizer node={node.right} level={level + 1} />
+              </div>
+            )}
+          </div>
+        </div>
       )}
-    </li>
+    </div>
   );
 });
 
 
-TreeNodeComponent.displayName = 'TreeNodeComponent';
+TreeVisualizer.displayName = 'TreeVisualizer';
 
 
 // ============================================
 // MEMOIZED COMPONENTS
 // ============================================
 const RuneLegendBadge = memo(({ num, sym }: { num: string; sym: string }) => (
-  <Badge className="bg-stone-800 text-amber-100 border border-amber-700/60 dungeon-badge-glow text-xs">
+  <Badge className="bg-stone-800 text-amber-100 border border-amber-700/60 text-xs">
     {sym}={num}
   </Badge>
 ));
@@ -224,7 +207,7 @@ RuneLegendBadge.displayName = 'RuneLegendBadge';
 
 
 const LoadingState = memo(() => (
-  <div className="min-h-[200px] flex items-center justify-center bg-gradient-to-br from-stone-900 to-red-950 border-2 border-red-700/60 rounded-xl dungeon-card-glow-red">
+  <div className="min-h-[200px] flex items-center justify-center bg-gradient-to-br from-stone-900 to-red-950 border-2 border-red-700/60 rounded-xl">
     <p className="text-red-200 font-medium text-lg">Data teka-teki tidak tersedia</p>
   </div>
 ));
@@ -238,8 +221,6 @@ LoadingState.displayName = 'LoadingState';
 // ============================================
 export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, submitting }: Props) {
   const { setTorchRef } = useDungeonAtmosphere();
-
-
   const [jawaban, setJawaban] = useState('');
 
 
@@ -251,9 +232,9 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
   const runeLegend = useMemo(() => Object.entries(RUNE_MAP).map(([num, sym]) => ({ num, sym })), []);
 
 
-  const treeData = useMemo(() => {
+  const treeRoot = useMemo(() => {
     if (Array.isArray(puzzle?.defuserView?.pattern)) {
-      return buildTreeStructure(puzzle.defuserView.pattern);
+      return buildTree(puzzle.defuserView.pattern);
     }
     return null;
   }, [puzzle?.defuserView?.pattern]);
@@ -297,135 +278,100 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
 
 
   return (
-    <div className="space-y-4 relative">
-      <Card className="overflow-hidden border-2 border-amber-700/40 bg-gradient-to-br from-stone-900 via-stone-800 to-amber-950 shadow-2xl dungeon-card-glow">
-        <CardHeader className="relative p-4">
-          <div ref={setTorchRef(0)} className="absolute top-3 left-3 text-xl sm:text-2xl dungeon-torch-flicker">
+    <div className="space-y-3">
+      <Card className="overflow-hidden border-2 border-amber-700/40 bg-gradient-to-br from-stone-900 via-stone-800 to-amber-950">
+        <CardHeader className="relative p-3">
+          <div ref={setTorchRef(0)} className="absolute top-2 left-2 text-xl">
             🔥
           </div>
-          <div ref={setTorchRef(1)} className="absolute top-3 right-3 text-xl sm:text-2xl dungeon-torch-flicker">
+          <div ref={setTorchRef(1)} className="absolute top-2 right-2 text-xl">
             🔥
           </div>
-          <CardTitle className="text-amber-300 text-xl sm:text-2xl text-center dungeon-glow-text relative z-10">
+          <CardTitle className="text-amber-300 text-lg sm:text-xl text-center relative z-10">
             {puzzle.title || 'Analisis Pola Mistis'}
           </CardTitle>
-          <CardDescription className="text-stone-300 text-sm text-center relative z-10">
+          <CardDescription className="text-stone-300 text-xs sm:text-sm text-center relative z-10">
             {puzzle.description || 'Temukan pola tersembunyi dalam urutan angka dungeon'}
           </CardDescription>
-          <div className="pt-2 flex flex-wrap gap-2 justify-center relative z-10">
-            <Badge className="bg-amber-800 text-amber-100 border border-amber-700/50 dungeon-badge-glow">
-              🏰 Mode Dungeon
-            </Badge>
-            <Badge className="bg-stone-700 text-stone-200 border border-stone-600/50 dungeon-badge-glow">
-              🧩 Analisis Pola
-            </Badge>
-            {role && (
-              <Badge className="bg-purple-800 text-purple-100 border border-purple-700/50 dungeon-badge-glow">
-                🎭 Peran: {role}
-              </Badge>
-            )}
-            {puzzle?.expertView?.category && (
-              <Badge className="bg-emerald-800 text-emerald-100 border border-emerald-700/50 dungeon-badge-glow">
-                {String(puzzle.expertView.category)}
-              </Badge>
-            )}
-          </div>
         </CardHeader>
 
 
-        <CardContent className="space-y-4 p-4">
+        <CardContent className="p-3 space-y-3">
           {/* Rule hint for expert/host */}
           {(isExpert || isHost) && puzzle.expertView?.rule && (
-            <Card className="border border-stone-700/40 bg-stone-800/40 backdrop-blur-sm">
-              <CardContent className="p-3">
-                <p className="text-stone-300 italic text-xs sm:text-sm leading-relaxed text-center">
-                  "{dungeonizeRule(puzzle.expertView.rule)}"
-                </p>
-              </CardContent>
-            </Card>
+            <div className="p-2 rounded-lg border border-stone-700/40 bg-stone-800/40">
+              <p className="text-stone-300 italic text-xs text-center">
+                "{dungeonizeRule(puzzle.expertView.rule)}"
+              </p>
+            </div>
           )}
 
 
-          {/* MAIN GRID - Side by side layout */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* MAIN GRID */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
             {/* DEFUSER PANEL */}
             {(isDefuser || isHost) && (
-              <Card className="border-2 border-amber-600/40 bg-gradient-to-b from-stone-900/80 to-stone-800/40 backdrop-blur-sm dungeon-card-glow-blue">
-                <CardHeader className="pb-2 p-3">
-                  <CardTitle className="text-sm text-amber-300 text-center dungeon-glow-text">
-                    🌳 Visualisasi Pohon
+              <Card className="border-2 border-blue-700/40 bg-gradient-to-b from-stone-900/90 to-blue-950/30">
+                <CardHeader className="pb-2 p-2">
+                  <CardTitle className="text-xs text-blue-300 text-center flex items-center justify-center gap-2">
+                    🌳 Panel Defuser - Visualisasi Pohon
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="p-3 space-y-3">
-                  {treeData ? (
+                <CardContent className="p-2 space-y-3">
+                  {treeRoot ? (
                     <>
-                      {/* Tree Visualization with connecting lines */}
-                      <div className="tree-container overflow-x-auto pb-4">
-                        <ul className="tree-root">
-                          <TreeNodeComponent node={treeData} />
-                        </ul>
+                      {/* Tree Container with connecting lines */}
+                      <div className="tree-container">
+                        <TreeVisualizer node={treeRoot} />
                       </div>
 
 
-                      {/* Legenda */}
-                      <div className="flex flex-wrap gap-2 justify-center text-xs">
-                        <div className="flex items-center gap-2 px-2 py-1 rounded bg-emerald-900/30 border border-emerald-700/40">
-                          <div className="w-3 h-3 rounded border-2 border-emerald-600 bg-emerald-900/40"></div>
-                          <span className="text-emerald-200">Node tersorot (jejak aktif)</span>
+                      {/* Legend */}
+                      <div className="grid grid-cols-2 gap-2 text-[10px]">
+                        <div className="flex items-center gap-1 px-2 py-1 rounded bg-emerald-900/20 border border-emerald-700/30">
+                          <div className="w-3 h-3 rounded-lg border-2 border-emerald-600 bg-emerald-900/40"></div>
+                          <span className="text-emerald-200">Node aktif</span>
                         </div>
-                        <div className="flex items-center gap-2 px-2 py-1 rounded bg-red-900/30 border border-red-700/40">
-                          <div className="w-3 h-3 rounded border-2 border-red-600 bg-red-900/40"></div>
-                          <span className="text-red-200">Angka hilang</span>
-                        </div>
-                        <div className="flex items-center gap-2 px-2 py-1 rounded bg-stone-800/30 border border-stone-700/40">
-                          <div className="w-6 h-0.5 bg-amber-600"></div>
-                          <span className="text-stone-300">Koneksi cabang</span>
+                        <div className="flex items-center gap-1 px-2 py-1 rounded bg-red-900/20 border border-red-700/30">
+                          <div className="w-3 h-3 rounded-lg border-2 border-red-600 bg-red-900/40"></div>
+                          <span className="text-red-200">Missing (?)</span>
                         </div>
                       </div>
 
 
                       {/* Input form */}
                       {isDefuser && (
-                        <form onSubmit={handleSubmit} className="space-y-3">
-                          <div className="flex justify-center">
-                            <input
-                              type="number"
-                              value={jawaban}
-                              onChange={handleInputChange}
-                              placeholder="Masukkan angka..."
-                              className="w-full max-w-xs h-11 text-center text-lg font-bold bg-stone-900/70 border-2 border-amber-600/60 rounded-xl text-amber-200 placeholder-amber-500/50 focus:outline-none focus:ring-2 focus:ring-amber-500 transition-all"
-                              disabled={submitting}
-                              maxLength={CONFIG.MAX_INPUT_LENGTH}
-                            />
-                          </div>
+                        <form onSubmit={handleSubmit} className="space-y-2">
+                          <input
+                            type="number"
+                            value={jawaban}
+                            onChange={handleInputChange}
+                            placeholder="Masukkan angka..."
+                            className="w-full h-10 text-center text-base font-bold bg-stone-900/70 border-2 border-amber-600/60 rounded-lg text-amber-200 placeholder-amber-500/50 focus:outline-none focus:ring-2 focus:ring-amber-500 transition-all"
+                            disabled={submitting}
+                            maxLength={CONFIG.MAX_INPUT_LENGTH}
+                          />
                           <Button
                             type="submit"
                             disabled={!jawaban.trim() || submitting}
-                            className="w-full bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-stone-900 font-semibold py-2.5 rounded-xl disabled:opacity-50 transition-all"
+                            className="w-full bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-stone-900 font-semibold py-2 rounded-lg disabled:opacity-50 transition-all text-xs"
                           >
-                            {submitting ? (
-                              <span className="flex items-center justify-center gap-2">
-                                <span className="animate-spin">⚙️</span>
-                                Mengirim...
-                              </span>
-                            ) : (
-                              '✨ Kirim Jawaban'
-                            )}
+                            {submitting ? '⚙️ Mengirim...' : '✨ Kirim Jawaban'}
                           </Button>
 
 
-                          {/* Hints accordion */}
+                          {/* Hints */}
                           {transformedHints.length > 0 && (
                             <Accordion type="single" collapsible>
                               <AccordionItem value="hints" className="border-blue-700/40">
                                 <AccordionTrigger className="text-blue-200 text-xs hover:text-blue-300 py-2">
-                                  💡 Petunjuk Terselubung
+                                  💡 Petunjuk
                                 </AccordionTrigger>
                                 <AccordionContent
                                   className="p-2 rounded-lg bg-blue-950/40 overflow-y-auto"
                                   style={{ maxHeight: `${CONFIG.MAX_ACCORDION_HEIGHT}px` }}
                                 >
-                                  <ul className="text-xs text-blue-200/90 space-y-1.5 list-disc pl-4">
+                                  <ul className="text-xs text-blue-200/90 space-y-1 list-disc pl-3">
                                     {transformedHints.map((hint, i) => (
                                       <li key={i}>{hint}</li>
                                     ))}
@@ -438,7 +384,7 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
                       )}
                     </>
                   ) : (
-                    <div className="p-3 rounded-xl border border-red-700/40 bg-red-950/40 text-red-200 text-center text-sm">
+                    <div className="p-3 rounded-lg border border-red-700/40 bg-red-950/40 text-red-200 text-center text-xs">
                       Data urutan tidak ditemukan
                     </div>
                   )}
@@ -449,76 +395,64 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
 
             {/* EXPERT PANEL */}
             {(isExpert || isHost) && puzzle.expertView && (
-              <Card className="border-2 border-emerald-700/40 bg-gradient-to-b from-stone-900/80 to-emerald-950/40 backdrop-blur-sm dungeon-card-glow-green">
-                <CardHeader className="pb-2 p-3">
-                  <CardTitle className="text-sm text-emerald-300 text-center dungeon-glow-text">
+              <Card className="border-2 border-emerald-700/40 bg-gradient-to-b from-stone-900/90 to-emerald-950/30">
+                <CardHeader className="pb-2 p-2">
+                  <CardTitle className="text-xs text-emerald-300 text-center">
                     📖 Panel Expert
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="p-3">
+                <CardContent className="p-2">
                   <Tabs defaultValue="guide" className="w-full">
-                    <TabsList className="grid w-full grid-cols-2 bg-stone-900/60">
-                      <TabsTrigger value="guide" className="text-xs">
+                    <TabsList className="grid w-full grid-cols-2 bg-stone-900/60 h-7">
+                      <TabsTrigger value="guide" className="text-xs py-1">
                         📚 Panduan
                       </TabsTrigger>
-                      <TabsTrigger value="tools" className="text-xs">
+                      <TabsTrigger value="tools" className="text-xs py-1">
                         🛠️ Tools
                       </TabsTrigger>
                     </TabsList>
 
 
                     <TabsContent value="guide" className="space-y-2 mt-2">
-                      <div className="max-h-80 overflow-y-auto space-y-2 pr-1">
-                        <Accordion type="single" collapsible className="space-y-2">
+                      <div className="max-h-80 overflow-y-auto space-y-2">
+                        <Accordion type="single" collapsible className="space-y-1">
                           <AccordionItem value="runes" className="border-stone-700/40">
-                            <AccordionTrigger className="text-stone-200 text-xs hover:text-amber-300 py-2">
+                            <AccordionTrigger className="text-stone-200 text-xs hover:text-amber-300 py-1.5">
                               ✨ Legenda Rune
                             </AccordionTrigger>
-                            <AccordionContent className="p-2 text-xs text-stone-300 space-y-1">
-                              <div className="flex justify-center mb-2">
-                                <div className="flex flex-wrap gap-1 justify-center">
-                                  {runeLegend.slice(0, 10).map(({ num, sym }) => (
-                                    <RuneLegendBadge key={num} num={num} sym={sym} />
-                                  ))}
-                                </div>
+                            <AccordionContent className="p-2 text-xs">
+                              <div className="flex flex-wrap gap-1 justify-center mb-1">
+                                {runeLegend.slice(0, 10).map(({ num, sym }) => (
+                                  <RuneLegendBadge key={num} num={num} sym={sym} />
+                                ))}
                               </div>
-                              <p className="text-center">Pulihkan digit dari rune untuk analisis yang akurat</p>
-                            </AccordionContent>
-                          </AccordionItem>
-
-
-                          <AccordionItem value="deteksi" className="border-stone-700/40">
-                            <AccordionTrigger className="text-stone-200 text-xs hover:text-amber-300 py-2">
-                              🔍 Deteksi Pola
-                            </AccordionTrigger>
-                            <AccordionContent className="p-2 text-xs text-stone-300 space-y-1">
-                              <p>• Selisih konstan → aritmetika</p>
-                              <p>• Rasio konstan → geometri</p>
-                              <p>• Uji selisih tingkat-2 jika tidak konstan</p>
+                              <p className="text-stone-300 text-center text-[10px]">
+                                Pulihkan digit dari rune
+                              </p>
                             </AccordionContent>
                           </AccordionItem>
 
 
                           <AccordionItem value="struktur" className="border-stone-700/40">
-                            <AccordionTrigger className="text-stone-200 text-xs hover:text-amber-300 py-2">
+                            <AccordionTrigger className="text-stone-200 text-xs hover:text-amber-300 py-1.5">
                               🌳 Struktur Pohon
                             </AccordionTrigger>
-                            <AccordionContent className="p-2 text-xs text-stone-300 space-y-1">
-                              <p>• Jejak depth: akar → cabang → daun</p>
-                              <p>• Level order: baca per tingkat dari atas</p>
-                              <p>• Relasi parent-child membentuk pola</p>
+                            <AccordionContent className="p-2 text-xs text-stone-300 space-y-0.5">
+                              <p>• Root → Left/Right children</p>
+                              <p>• Level-order: baca per tingkat</p>
+                              <p>• Relasi parent-child bisa berpola</p>
                             </AccordionContent>
                           </AccordionItem>
 
 
                           <AccordionItem value="strategi" className="border-stone-700/40">
-                            <AccordionTrigger className="text-stone-200 text-xs hover:text-amber-300 py-2">
+                            <AccordionTrigger className="text-stone-200 text-xs hover:text-amber-300 py-1.5">
                               🎯 Strategi
                             </AccordionTrigger>
-                            <AccordionContent className="p-2 text-xs text-stone-300 space-y-1">
-                              <p>• Validasi hipotesis pada 2-3 suku</p>
-                              <p>• Bimbing dengan pertanyaan, bukan jawaban</p>
-                              <p>• Iterasi: observasi → analisis → validasi</p>
+                            <AccordionContent className="p-2 text-xs text-stone-300 space-y-0.5">
+                              <p>• Bimbing dengan pertanyaan</p>
+                              <p>• Observasi → analisis → validasi</p>
+                              <p>• Cek pola per level atau branch</p>
                             </AccordionContent>
                           </AccordionItem>
                         </Accordion>
@@ -528,23 +462,11 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
 
                     <TabsContent value="tools" className="space-y-2 mt-2">
                       <div className="p-2 rounded-lg bg-stone-900/60 border border-stone-700/40">
-                        <h6 className="text-xs text-stone-300 mb-2 font-semibold">Alat Bantu</h6>
-                        <ul className="text-xs text-stone-300 space-y-1 list-disc pl-4">
-                          <li>Uji modulo kecil (2, 3, 5) untuk siklus</li>
-                          <li>Lonjakan tajam → penggandaan/pangkat</li>
-                          <li>Validasi dengan suku berikutnya</li>
-                          <li>Perhatikan posisi dalam struktur pohon</li>
-                        </ul>
-                      </div>
-
-
-                      <div className="p-2 rounded-lg bg-stone-900/60 border border-amber-700/40">
-                        <h6 className="text-xs text-amber-300 mb-2 font-semibold">Peran Expert</h6>
-                        <ul className="text-xs text-stone-300 space-y-1 list-disc pl-4">
-                          <li>Pandu pada transformasi, bukan angka</li>
-                          <li>Minta hipotesis dan verifikasi</li>
-                          <li>Jaga ritme: amati → analisis → validasi</li>
-                          <li>Bantu mengidentifikasi relasi antar-level</li>
+                        <h6 className="text-xs text-stone-300 mb-1 font-semibold">Alat Analisis</h6>
+                        <ul className="text-[10px] text-stone-300 space-y-0.5 list-disc pl-3">
+                          <li>Selisih per level</li>
+                          <li>Pola parent → children</li>
+                          <li>Lonjakan tajam → penggandaan</li>
                         </ul>
                       </div>
                     </TabsContent>
@@ -553,197 +475,166 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
               </Card>
             )}
           </div>
-
-
-          {/* Collaboration tips */}
-          <Card className="border border-purple-700/40 bg-purple-950/20 backdrop-blur-sm">
-            <CardContent className="p-3">
-              <Accordion type="single" collapsible>
-                <AccordionItem value="tips" className="border-purple-700/40">
-                  <AccordionTrigger className="text-purple-300 text-xs hover:text-purple-400 py-2">
-                    💡 Tips Kolaborasi
-                  </AccordionTrigger>
-                  <AccordionContent className="p-2 text-xs text-stone-300 space-y-2">
-                    <div>
-                      <span className="font-semibold text-amber-300">Defuser:</span> Telusuri selisih antar-level,
-                      uji pola parent-child, minta validasi tanpa mengungkap final
-                    </div>
-                    <div>
-                      <span className="font-semibold text-blue-300">Expert:</span> Mulai observasi kualitatif,
-                      batasi petunjuk pada bentuk transformasi dan struktur hierarki
-                    </div>
-                  </AccordionContent>
-                </AccordionItem>
-              </Accordion>
-            </CardContent>
-          </Card>
         </CardContent>
       </Card>
 
 
-      {/* CUSTOM STYLES - Tree View with connecting lines */}
+      {/* TREE STYLES WITH CONNECTING LINES */}
       <style>{`
         /* Tree Container */
         .tree-container {
+          padding: 20px 10px;
+          overflow-x: auto;
+          overflow-y: visible;
           min-height: 200px;
           display: flex;
           justify-content: center;
-          align-items: flex-start;
-          padding: 20px 10px;
+          background: radial-gradient(circle at center, rgba(0,0,0,0.1) 0%, transparent 70%);
+          border-radius: 8px;
         }
 
 
-        /* Tree root - no bullets */
-        .tree-root {
-          list-style-type: none;
-          padding: 0;
-          margin: 0;
+        /* Tree Item (each node and its children) */
+        .tree-item {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
           position: relative;
         }
 
 
-        /* Tree node */
+        /* Node Wrapper */
+        .tree-node-wrapper {
+          position: relative;
+          z-index: 2;
+          margin-bottom: 10px;
+        }
+
+
+        /* Tree Node (the actual circle/box) */
         .tree-node {
-          list-style-type: none;
+          width: 48px;
+          height: 48px;
+          border-radius: 10px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-weight: 800;
+          font-size: 1.125rem;
+          border: 2px solid;
+          transition: all 0.3s ease;
           position: relative;
-          padding: 10px 5px 0 5px;
+          z-index: 2;
+        }
+
+
+        .tree-node-active {
+          border-color: rgb(5, 150, 105);
+          background: linear-gradient(135deg, rgba(6, 78, 59, 0.4) 0%, rgba(6, 95, 70, 0.6) 100%);
+          color: rgb(167, 243, 208);
+        }
+
+
+        .tree-node-missing {
+          border-color: rgb(220, 38, 38);
+          background: linear-gradient(135deg, rgba(127, 29, 29, 0.4) 0%, rgba(153, 27, 27, 0.6) 100%);
+          color: rgb(254, 202, 202);
+        }
+
+
+        .tree-node:hover {
+          transform: scale(1.1);
+          box-shadow: 0 0 20px rgba(251, 191, 36, 0.6);
+        }
+
+
+        /* Children Wrapper */
+        .tree-children-wrapper {
+          position: relative;
+          width: 100%;
+          display: flex;
+          justify-content: center;
+        }
+
+
+        /* Vertical line from parent to children group */
+        .tree-children-wrapper::before {
+          content: '';
+          position: absolute;
+          top: 0;
+          left: 50%;
+          width: 2px;
+          height: 30px;
+          background: linear-gradient(to bottom,
+            rgba(251, 191, 36, 0.7) 0%,
+            rgba(251, 191, 36, 0.4) 100%
+          );
+          transform: translateX(-50%);
+          z-index: 1;
+        }
+
+
+        /* Children Container */
+        .tree-children {
+          display: flex;
+          gap: 40px;
+          padding-top: 30px;
+          position: relative;
+        }
+
+
+        /* Horizontal line connecting siblings */
+        .tree-children::before {
+          content: '';
+          position: absolute;
+          top: 30px;
+          left: 0;
+          right: 0;
+          height: 2px;
+          background: linear-gradient(to right,
+            transparent 0%,
+            rgba(251, 191, 36, 0.4) 10%,
+            rgba(251, 191, 36, 0.7) 50%,
+            rgba(251, 191, 36, 0.4) 90%,
+            transparent 100%
+          );
+          z-index: 0;
+        }
+
+
+        /* Hide horizontal line if only one child */
+        .tree-children:has(.tree-child-branch:only-child)::before {
+          display: none;
+        }
+
+
+        /* Branch (each child column) */
+        .tree-child-branch {
+          position: relative;
           display: flex;
           flex-direction: column;
           align-items: center;
         }
 
 
-        /* Node content - the circle/box */
-        .node-content {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          width: 48px;
-          height: 48px;
-          border-radius: 12px;
-          border: 2px solid;
-          font-weight: 800;
-          font-size: 1.125rem;
-          transition: all 0.3s ease;
-          z-index: 2;
-          position: relative;
-        }
-
-
-        .node-content:hover {
-          transform: scale(1.1);
-          box-shadow: 0 0 20px rgba(251, 191, 36, 0.6);
-        }
-
-
-        .node-value {
-          user-select: none;
-        }
-
-
-        /* Tree children container */
-        .tree-children {
-          list-style-type: none;
-          padding: 30px 0 0 0;
-          margin: 0;
-          display: flex;
-          gap: 20px;
-          position: relative;
-        }
-
-
-        /* Vertical line from parent to children */
-        .tree-node .tree-children::before {
-          content: '';
-          position: absolute;
-          top: 0;
-          left: 50%;
-          width: 2px;
-          height: 30px;
-          background: linear-gradient(to bottom, rgba(251, 191, 36, 0.6), rgba(251, 191, 36, 0.3));
-          transform: translateX(-50%);
-        }
-
-
-        /* Horizontal line connecting children */
-        .tree-node .tree-children::after {
-          content: '';
-          position: absolute;
-          top: 0;
-          left: 0;
-          right: 0;
-          height: 2px;
-          background: linear-gradient(to right,
-            transparent 0%,
-            rgba(251, 191, 36, 0.6) 25%,
-            rgba(251, 191, 36, 0.6) 75%,
-            transparent 100%
-          );
-        }
-
-
-        /* Remove horizontal line if only one child */
-        .tree-node .tree-children:has(> .tree-node:only-child)::after {
-          display: none;
-        }
-
-
-        /* Vertical line from horizontal line to each child */
-        .tree-children > .tree-node::before {
+        /* Vertical line from horizontal connector to each child node */
+        .tree-child-branch::before {
           content: '';
           position: absolute;
           top: -30px;
           left: 50%;
           width: 2px;
           height: 30px;
-          background: linear-gradient(to bottom, rgba(251, 191, 36, 0.3), rgba(251, 191, 36, 0.6));
+          background: linear-gradient(to bottom,
+            rgba(251, 191, 36, 0.4) 0%,
+            rgba(251, 191, 36, 0.7) 100%
+          );
           transform: translateX(-50%);
+          z-index: 1;
         }
 
 
-        /* Hide vertical line for root node */
-        .tree-root > .tree-node::before {
-          display: none;
-        }
-
-
-        /* Dungeon Atmosphere */
-        .dungeon-torch-flicker {
-          display: inline-block;
-        }
-
-
-        .dungeon-card-glow {
-          box-shadow: 0 0 30px rgba(251, 191, 36, 0.4);
-        }
-
-
-        .dungeon-card-glow-blue {
-          box-shadow: 0 0 20px rgba(59, 130, 246, 0.4);
-        }
-
-
-        .dungeon-card-glow-green {
-          box-shadow: 0 0 20px rgba(34, 197, 94, 0.4);
-        }
-
-
-        .dungeon-card-glow-red {
-          box-shadow: 0 0 20px rgba(239, 68, 68, 0.4);
-        }
-
-
-        .dungeon-badge-glow {
-          filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.4));
-        }
-
-
-        .dungeon-glow-text {
-          text-shadow: 0 0 20px rgba(251, 191, 36, 0.6);
-        }
-
-
-        /* Custom scrollbar */
+        /* Scrollbar styles */
         .overflow-y-auto::-webkit-scrollbar,
         .overflow-x-auto::-webkit-scrollbar {
           width: 6px;
@@ -773,7 +664,7 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
 
         /* Responsive adjustments */
         @media (max-width: 768px) {
-          .node-content {
+          .tree-node {
             width: 40px;
             height: 40px;
             font-size: 1rem;
@@ -781,15 +672,7 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
 
 
           .tree-children {
-            gap: 15px;
-          }
-
-
-          .dungeon-card-glow,
-          .dungeon-card-glow-blue,
-          .dungeon-card-glow-green,
-          .dungeon-card-glow-red {
-            box-shadow: 0 0 15px rgba(251, 191, 36, 0.3);
+            gap: 30px;
           }
         }
       `}</style>
