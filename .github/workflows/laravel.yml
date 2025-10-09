@@ -8,6 +8,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     env:
       DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
@@ -41,15 +42,14 @@ jobs:
           mkdir -p ~/.ssh
           ssh-keyscan -p ${{ env.DEPLOY_PORT }} -H ${{ env.DEPLOY_HOST }} >> ~/.ssh/known_hosts
 
+      # ✅ FIX: Remove heredoc, use direct command
       - name: Prepare Server Directories
         run: |
           echo "🔐 Preparing directories on server..."
-          ssh -p ${{ env.DEPLOY_PORT }} root@${{ env.DEPLOY_HOST }} << 'ENDSSH'
-            mkdir -p ${{ env.DEPLOY_PATH }}
-            # Set ownership to the deploy user so rsync can write files
-            chown -R ${{ env.DEPLOY_USER }}:${{ env.DEPLOY_USER }} ${{ env.DEPLOY_PATH }}
-            echo "✅ Directories are ready."
-          ENDSSH
+          ssh -p ${{ env.DEPLOY_PORT }} root@${{ env.DEPLOY_HOST }} \
+            "mkdir -p ${{ env.DEPLOY_PATH }} && \
+             chown -R ${{ env.DEPLOY_USER }}:${{ env.DEPLOY_USER }} ${{ env.DEPLOY_PATH }}"
+          echo "✅ Directories are ready."
 
       - name: Deploy Application using rsync
         run: |
@@ -59,29 +59,36 @@ jobs:
             --exclude ".git/" \
             --exclude "node_modules/" \
             --exclude ".env" \
+            --exclude "storage/logs/*.log" \
+            --exclude "storage/framework/cache/*" \
+            --exclude "storage/framework/sessions/*" \
+            --exclude "storage/framework/views/*" \
             ./ \
             ${{ env.DEPLOY_USER }}@${{ env.DEPLOY_HOST }}:${{ env.DEPLOY_PATH }}/
           echo "✅ Application files deployed."
 
+      # ✅ FIX: Add cd before running script
       - name: Run Deployment Script on Server
         run: |
           echo "🚀 Executing deployment script on server..."
           ssh -p ${{ env.DEPLOY_PORT }} ${{ env.DEPLOY_USER }}@${{ env.DEPLOY_HOST }} \
-            "bash ${{ env.DEPLOY_PATH }}/deploy.sh"
+            "cd ${{ env.DEPLOY_PATH }} && bash deploy.sh"
 
+      # ✅ FIX: Direct command instead of heredoc
       - name: Finalize Permissions for Web Server
         run: |
           echo "🔐 Setting final permissions for web server..."
-          ssh -p ${{ env.DEPLOY_PORT }} root@${{ env.DEPLOY_HOST }} << 'ENDSSH'
-            cd ${{ env.DEPLOY_PATH }}
-            # Directories that need to be writable by the web server
-            chown -R www-data:www-data storage bootstrap/cache
-            chmod -R 775 storage bootstrap/cache
-            echo "✅ Final permissions are set."
-          ENDSSH
+          ssh -p ${{ env.DEPLOY_PORT }} root@${{ env.DEPLOY_HOST }} \
+            "cd ${{ env.DEPLOY_PATH }} && \
+             chown -R www-data:www-data storage bootstrap/cache public/build && \
+             chmod -R 775 storage bootstrap/cache && \
+             chmod -R 755 public/build"
+          echo "✅ Final permissions are set."
 
       - name: Verify Deployment
         run: |
           echo "🔍 Verifying deployment..."
           ssh -p ${{ env.DEPLOY_PORT }} ${{ env.DEPLOY_USER }}@${{ env.DEPLOY_HOST }} \
-            "test -f ${{ env.DEPLOY_PATH }}/public/build/manifest.json && echo '✅ Deployment looks good!'"
+            "test -f ${{ env.DEPLOY_PATH }}/public/build/manifest.json && \
+             echo '✅ Deployment looks good!' || \
+             (echo '❌ Deployment verification failed!' && exit 1)"
