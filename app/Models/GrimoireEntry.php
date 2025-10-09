@@ -96,7 +96,7 @@ class GrimoireEntry extends Model
         );
     }
 
-    // Accessor: URL web untuk file_url yang sudah siap dipakai (prioritas pertama)
+    // ✅ DIPERBAIKI: Accessor URL web untuk file_url yang sudah siap dipakai (prioritas pertama)
     protected function fileUrlWeb(): Attribute
     {
         return Attribute::make(
@@ -104,7 +104,9 @@ class GrimoireEntry extends Model
                 // Prioritas 1: Gunakan pdf_path (uploaded file) jika ada
                 $pdfPath = (string)($attributes['pdf_path'] ?? '');
                 if ($pdfPath !== '') {
-                    return Storage::disk('public')->url($pdfPath);
+                    $url = Storage::disk('public')->url($pdfPath);
+                    // Fix double slash
+                    return $this->fixUrlDoubleSlash($url);
                 }
 
                 // Prioritas 2: Gunakan file_url (eksternal/static)
@@ -120,7 +122,7 @@ class GrimoireEntry extends Model
         );
     }
 
-    // Accessor: URL untuk PDF yang diupload (pdf_path)
+    // ✅ DIPERBAIKI: Accessor URL untuk PDF yang diupload (pdf_path)
     protected function pdfUrl(): Attribute
     {
         return Attribute::make(
@@ -128,7 +130,9 @@ class GrimoireEntry extends Model
                 $path = (string)($attributes['pdf_path'] ?? '');
                 if ($path === '') return null;
 
-                return Storage::disk('public')->url($path);
+                $url = Storage::disk('public')->url($path);
+                // Fix double slash
+                return $this->fixUrlDoubleSlash($url);
             }
         );
     }
@@ -150,6 +154,17 @@ class GrimoireEntry extends Model
                 return null;
             }
         );
+    }
+
+    /* ===== Helper Methods ===== */
+
+    /**
+     * ✅ TAMBAHAN: Helper method untuk fix double slash di URL
+     */
+    private function fixUrlDoubleSlash(string $url): string
+    {
+        // Fix double slash kecuali yang setelah protokol (http://, https://)
+        return preg_replace('#(?<!:)//+#', '/', $url);
     }
 
     /* ===== Local scopes ===== */
