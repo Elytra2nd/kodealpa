@@ -1,4 +1,3 @@
-// resources/js/Pages/Welcome.tsx
 import { PageProps } from '@/types';
 import { Head, Link } from '@inertiajs/react';
 import { useLayoutEffect, useMemo, useRef } from 'react';
