@@ -6,7 +6,7 @@ echo "🚀 Running deployment script..."
 # Ensure we're in the right directory
 cd "$(dirname "$0")"
 
-# ✅ Force production APP_URL
+# Force production environment
 echo "🔧 Setting production environment..."
 if [ -f .env ]; then
     sed -i 's|APP_URL=.*|APP_URL=https://codealpha-dungeon.tech|g' .env
@@ -39,6 +39,16 @@ echo "⚡ Building cache..."
 php artisan config:cache
 php artisan route:cache
 php artisan view:cache
+
+# Ensure storage structure exists
+echo "📁 Ensuring storage structure..."
+mkdir -p storage/app/public/pdfs
+sudo chown -R www-data:www-data storage/app/public
+sudo chmod -R 755 storage/app/public
+
+# Ensure storage link exists
+echo "🔗 Ensuring storage link..."
+php artisan storage:link || true
 
 # Exit maintenance mode
 echo "🔓 Exiting maintenance mode..."
