@@ -71,6 +71,11 @@ class GrimoireController extends Controller
         $perPage = min((int) $request->input('per_page', 20), 100); // Max 100 items
         $entries = $query->orderByDesc('updated_at')->paginate($perPage);
 
+        \Log::info('Grimoire entries fetched', [
+            'count' => $entries->total(),
+            'entries' => $entries->items()
+        ]);
+
         return $this->successResponse(
             GrimoireEntryResource::collection($entries)->response()->getData(true),
             'Entries retrieved successfully'
