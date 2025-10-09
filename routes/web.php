@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\Game\AiDungeonMasterController;
+use App\Http\Controllers\Admin\AdminGrimoireController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\StageController;
@@ -34,7 +35,7 @@ Route::get('/', function () {
 });
 
 // REKOMENDASI: layani file publik via web server (public/, public/storage) setelah `php artisan storage:link`.
-// Gunakan URL seperti "/storage/files/grimoire/pdfs/aturan.pdf" atau "/files/..." yang langsung tersedia di public/ tanpa PHP. [web:39]
+// Gunakan URL seperti "/storage/files/grimoire/pdfs/aturan.pdf" atau "/files/..." yang langsung tersedia di public/ tanpa PHP.
 
 // OPSIONAL: fallback route terproteksi untuk menyajikan file dari public/files atau storage/app/public secara inline
 Route::get('/files/{path}', function ($path) {
@@ -64,7 +65,7 @@ Route::get('/files/{path}', function ($path) {
         return Response::file($publicFile, $headers);
     }
 
-    // Fallback ke storage/app/public (setelah storage:link, sebaiknya akses via "/storage/...") [web:39]
+    // Fallback ke storage/app/public (setelah storage:link, sebaiknya akses via "/storage/...")
     $storageFile = storage_path('app/public/'.$path);
     if (is_file($storageFile)) {
         $mime = 'application/octet-stream';
@@ -214,10 +215,6 @@ Route::middleware(['auth', 'verified'])->prefix('grimoire')->name('grimoire.')->
         return Inertia::render('Grimoire/GrimoirePanel');
     })->name('panel');
 
-    Route::get('/editor', function () {
-        return Inertia::render('Grimoire/GrimoireEditor');
-    })->middleware('can:admin')->name('editor');
-
     Route::get('/view/{slug}', function ($slug) {
         return Inertia::render('Grimoire/GrimoireView', ['slug' => $slug]);
     })->name('view');
@@ -227,6 +224,21 @@ Route::middleware(['auth', 'verified'])->prefix('grimoire')->name('grimoire.')->
 Route::middleware(['auth', 'verified'])->get('/game/grimoire', function () {
     return Inertia::render('Grimoire/GrimoirePanel');
 })->name('game.grimoire');
+
+/*
+|--------------------------------------------------------------------------
+| Admin Routes - Grimoire Management
+|--------------------------------------------------------------------------
+*/
+Route::middleware(['auth', 'verified', 'admin'])->prefix('admin')->name('admin.')->group(function () {
+    // Dashboard admin (opsional)
+    Route::get('/', function () {
+        return Inertia::render('Admin/Dashboard');
+    })->name('dashboard');
+
+    // Grimoire management
+    Route::resource('grimoire', AdminGrimoireController::class)->except(['show']);
+});
 
 /*
 |--------------------------------------------------------------------------
@@ -330,15 +342,9 @@ Route::prefix('api')->middleware(['auth', 'verified'])->group(function () {
     */
     Route::prefix('grimoire')->name('api.grimoire.')->group(function () {
         Route::get('/categories', [GrimoireController::class, 'categories'])->name('categories');
-        Route::get('/entries', [GrimoireController::class, 'index'])->name('entries.index'); // ?category=&q=&role=
+        Route::get('/entries', [GrimoireController::class, 'index'])->name('entries.index');
         Route::get('/entries/{slug}', [GrimoireController::class, 'show'])->name('entries.show');
         Route::get('/search', [GrimoireController::class, 'search'])->name('search');
-
-        Route::middleware('can:admin')->group(function () {
-            Route::post('/entries', [GrimoireController::class, 'store'])->name('entries.store');
-            Route::put('/entries/{id}', [GrimoireController::class, 'update'])->name('entries.update');
-            Route::delete('/entries/{id}', [GrimoireController::class, 'destroy'])->name('entries.destroy');
-        });
     });
 
     /*
@@ -436,7 +442,7 @@ Route::middleware(['auth', 'verified'])->prefix('ws')->group(function () {
 | Additional Game Features Routes (Enhanced)
 |--------------------------------------------------------------------------
 */
-Route::middleware(['auth, verified'])->prefix('game')->group(function () {
+Route::middleware(['auth', 'verified'])->prefix('game')->group(function () {
     Route::get('/leaderboard', function () {
         return Inertia::render('Game/Leaderboard');
     })->name('game.leaderboard');
@@ -561,15 +567,18 @@ Route::middleware(['auth', 'verified'])->prefix('stream')->group(function () {
          ->where('id', '[0-9]+');
 });
 
+/*
+|--------------------------------------------------------------------------
+| AI Dungeon Master Routes
+|--------------------------------------------------------------------------
+*/
 Route::middleware(['auth', 'verified'])->prefix('game')->name('game.')->group(function () {
-
     // DM Chat Page
     Route::get('/dm', [AiDungeonMasterController::class, 'index'])
         ->name('dm');
 
     // DM API Endpoints
     Route::controller(AiDungeonMasterController::class)->prefix('dm')->name('dm.')->group(function () {
-
         // Non-streaming message (fallback/debug)
         Route::post('/message', 'message')
             ->middleware('throttle:ai-dm')

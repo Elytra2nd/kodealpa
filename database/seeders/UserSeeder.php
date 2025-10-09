@@ -21,6 +21,8 @@ class UserSeeder extends Seeder
             'name' => 'Admin',
             'email' => 'admin@codealpha.com',
             'password' => Hash::make('password123'),
+            'is_admin' => true,
+            'email_verified_at' => now(),
         ]);
 
         User::create([

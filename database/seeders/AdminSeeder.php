@@ -19,8 +19,9 @@ class AdminSeeder extends Seeder
         if (!$adminExists) {
             User::create([
                 'name' => 'Admin CodeAlpha',
-                'email' => 'admin@kodealpa.com',
+                'email' => 'superadmin@kodealpa.com',
                 'password' => Hash::make('Admin123!@#'),
+                'is_admin' => true,
                 'email_verified_at' => now(),
             ]);
 
