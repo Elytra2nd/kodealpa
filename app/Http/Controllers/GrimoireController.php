@@ -77,7 +77,23 @@ class GrimoireController extends Controller
         ]);
 
         return $this->successResponse(
-            GrimoireEntryResource::collection($entries)->response()->getData(true),
+        [
+                'data' => GrimoireEntryResource::collection($entries->items()),
+                'links' => [
+                    'first' => $entries->url(1),
+                    'last' => $entries->url($entries->lastPage()),
+                    'prev' => $entries->previousPageUrl(),
+                    'next' => $entries->nextPageUrl(),
+                ],
+                'meta' => [
+                    'current_page' => $entries->currentPage(),
+                    'from' => $entries->firstItem(),
+                    'last_page' => $entries->lastPage(),
+                    'per_page' => $entries->perPage(),
+                    'to' => $entries->lastItem(),
+                    'total' => $entries->total(),
+                ],
+            ],
             'Entries retrieved successfully'
         );
     }
