@@ -130,6 +130,20 @@ class GrimoireController extends Controller
     {
         try {
             $data = $request->validated();
+
+            // --- TAMBAHKAN LOGIKA UPLOAD DI SINI ---
+            if ($request->hasFile('pdf_file')) {
+                // 1. Validasi sudah dilakukan oleh StoreGrimoireRequest, pastikan ada rule untuk file.
+                // 2. Simpan file di dalam folder 'storage/app/public/pdfs'.
+                //    'public' adalah disk yang merujuk ke filesystem di config/filesystems.php
+                $path = $request->file('pdf_file')->store('pdfs', 'public');
+
+                // 3. Simpan path relatif yang dikembalikan oleh store() ke dalam database.
+                //    Pastikan Anda punya kolom di tabel, misalnya 'pdf_path'.
+                $data['pdf_path'] = $path;
+            }
+            // --- AKHIR DARI LOGIKA UPLOAD ---
+
             $data['version'] = 1;
 
             $entry = GrimoireEntry::create($data);
