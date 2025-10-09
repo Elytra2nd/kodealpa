@@ -40,11 +40,9 @@ php artisan config:cache
 php artisan route:cache
 php artisan view:cache
 
-# Ensure storage structure exists
+# Ensure storage structure exists (without sudo)
 echo "📁 Ensuring storage structure..."
 mkdir -p storage/app/public/pdfs
-sudo chown -R www-data:www-data storage/app/public
-sudo chmod -R 755 storage/app/public
 
 # Ensure storage link exists
 echo "🔗 Ensuring storage link..."
