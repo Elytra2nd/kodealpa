@@ -16,15 +16,15 @@ class GrimoireController extends Controller
     use ApiResponse;
 
     /**
-     * Constructor - apply middleware if needed
+     * Constructor - apply middleware
      */
     public function __construct()
     {
-        // Rate limiting untuk proteksi API
+        // ✅ Rate limiting
         $this->middleware('throttle:60,1')->only(['store', 'update', 'destroy']);
 
-        // Uncomment jika perlu authentication
-        // $this->middleware('auth:sanctum')->except(['index', 'show', 'categories', 'search']);
+        // ✅ Authentication - use web guard for same-site requests
+        $this->middleware('auth')->except(['index', 'show', 'categories', 'search']);
     }
 
     /**
@@ -34,7 +34,10 @@ class GrimoireController extends Controller
     {
         $categories = GrimoireCategory::orderBy('sort_order')->get();
 
-        return $this->successResponse($categories, 'Categories retrieved successfully');
+        return $this->successResponse(
+            ['categories' => $categories],
+            'Categories retrieved successfully'
+        );
     }
 
     /**
@@ -68,30 +71,27 @@ class GrimoireController extends Controller
         }
 
         // Pagination
-        $perPage = min((int) $request->input('per_page', 20), 100); // Max 100 items
+        $perPage = min((int) $request->input('per_page', 20), 100);
         $entries = $query->orderByDesc('updated_at')->paginate($perPage);
 
-        \Log::info('Grimoire entries fetched', [
-            'count' => $entries->total(),
-            'entries' => $entries->items()
-        ]);
-
         return $this->successResponse(
-        [
-                'data' => GrimoireEntryResource::collection($entries->items()),
-                'links' => [
-                    'first' => $entries->url(1),
-                    'last' => $entries->url($entries->lastPage()),
-                    'prev' => $entries->previousPageUrl(),
-                    'next' => $entries->nextPageUrl(),
-                ],
-                'meta' => [
-                    'current_page' => $entries->currentPage(),
-                    'from' => $entries->firstItem(),
-                    'last_page' => $entries->lastPage(),
-                    'per_page' => $entries->perPage(),
-                    'to' => $entries->lastItem(),
-                    'total' => $entries->total(),
+            [
+                'entries' => [
+                    'data' => GrimoireEntryResource::collection($entries->items()),
+                    'links' => [
+                        'first' => $entries->url(1),
+                        'last' => $entries->url($entries->lastPage()),
+                        'prev' => $entries->previousPageUrl(),
+                        'next' => $entries->nextPageUrl(),
+                    ],
+                    'meta' => [
+                        'current_page' => $entries->currentPage(),
+                        'from' => $entries->firstItem(),
+                        'last_page' => $entries->lastPage(),
+                        'per_page' => $entries->perPage(),
+                        'to' => $entries->lastItem(),
+                        'total' => $entries->total(),
+                    ],
                 ],
             ],
             'Entries retrieved successfully'
@@ -109,7 +109,7 @@ class GrimoireController extends Controller
             ->firstOrFail();
 
         return $this->successResponse(
-            new GrimoireEntryResource($entry),
+            ['entry' => new GrimoireEntryResource($entry)],
             'Entry retrieved successfully'
         );
     }
@@ -121,7 +121,7 @@ class GrimoireController extends Controller
     {
         $request->validate([
             'q' => 'required|string|min:2|max:255',
-            'format' => 'nullable|string|in:pdf,html'
+            'format' => 'nullable|string|in:pdf,html',
         ]);
 
         $term = $request->string('q')->value();
@@ -130,7 +130,6 @@ class GrimoireController extends Controller
             ->searchTerm($term)
             ->orderByDesc('updated_at');
 
-        // Optional: support format=pdf in search endpoint
         $format = $request->string('format')->lower()->value();
         if ($format === 'pdf') {
             $query->pdfOnly();
@@ -139,7 +138,7 @@ class GrimoireController extends Controller
         $entries = $query->limit(20)->get();
 
         return $this->successResponse(
-            GrimoireEntryResource::collection($entries),
+            ['entries' => GrimoireEntryResource::collection($entries)],
             'Search completed successfully'
         );
     }
@@ -152,18 +151,11 @@ class GrimoireController extends Controller
         try {
             $data = $request->validated();
 
-            // --- TAMBAHKAN LOGIKA UPLOAD DI SINI ---
+            // Handle PDF upload
             if ($request->hasFile('pdf_file')) {
-                // 1. Validasi sudah dilakukan oleh StoreGrimoireRequest, pastikan ada rule untuk file.
-                // 2. Simpan file di dalam folder 'storage/app/public/pdfs'.
-                //    'public' adalah disk yang merujuk ke filesystem di config/filesystems.php
                 $path = $request->file('pdf_file')->store('pdfs', 'public');
-
-                // 3. Simpan path relatif yang dikembalikan oleh store() ke dalam database.
-                //    Pastikan Anda punya kolom di tabel, misalnya 'pdf_path'.
                 $data['pdf_path'] = $path;
             }
-            // --- AKHIR DARI LOGIKA UPLOAD ---
 
             $data['version'] = 1;
 
@@ -171,11 +163,16 @@ class GrimoireController extends Controller
             $entry->load('category');
 
             return $this->successResponse(
-                new GrimoireEntryResource($entry),
+                ['entry' => new GrimoireEntryResource($entry)],
                 'Grimoire entry created successfully',
                 201
             );
         } catch (\Exception $e) {
+            \Log::error('Failed to create grimoire entry', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
             return $this->errorResponse(
                 'Failed to create grimoire entry: ' . $e->getMessage(),
                 500
@@ -192,18 +189,35 @@ class GrimoireController extends Controller
             $entry = GrimoireEntry::findOrFail($id);
 
             $data = $request->validated();
+
+            // Handle PDF upload
+            if ($request->hasFile('pdf_file')) {
+                // Delete old PDF if exists
+                if ($entry->pdf_path) {
+                    \Storage::disk('public')->delete($entry->pdf_path);
+                }
+
+                $path = $request->file('pdf_file')->store('pdfs', 'public');
+                $data['pdf_path'] = $path;
+            }
+
             $data['version'] = (int) $entry->version + 1;
 
             $entry->update($data);
             $entry->load('category');
 
             return $this->successResponse(
-                new GrimoireEntryResource($entry),
+                ['entry' => new GrimoireEntryResource($entry)],
                 'Grimoire entry updated successfully'
             );
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return $this->errorResponse('Grimoire entry not found', 404);
         } catch (\Exception $e) {
+            \Log::error('Failed to update grimoire entry', [
+                'id' => $id,
+                'error' => $e->getMessage(),
+            ]);
+
             return $this->errorResponse(
                 'Failed to update grimoire entry: ' . $e->getMessage(),
                 500
@@ -218,6 +232,12 @@ class GrimoireController extends Controller
     {
         try {
             $entry = GrimoireEntry::findOrFail($id);
+
+            // Delete PDF file if exists
+            if ($entry->pdf_path) {
+                \Storage::disk('public')->delete($entry->pdf_path);
+            }
+
             $entry->delete();
 
             return $this->successResponse(
@@ -227,6 +247,11 @@ class GrimoireController extends Controller
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return $this->errorResponse('Grimoire entry not found', 404);
         } catch (\Exception $e) {
+            \Log::error('Failed to delete grimoire entry', [
+                'id' => $id,
+                'error' => $e->getMessage(),
+            ]);
+
             return $this->errorResponse(
                 'Failed to delete grimoire entry: ' . $e->getMessage(),
                 500
