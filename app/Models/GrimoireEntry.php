@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Storage;
 
 class GrimoireEntry extends Model
 {
@@ -17,8 +18,9 @@ class GrimoireEntry extends Model
         'summary',
         'content_html',
         'tags',
-        'file_url',       // URL atau path yang akan dinormalisasi
-        'content_type',   // MIME, ex: application/pdf
+        'file_url',       // URL eksternal atau path relatif
+        'pdf_path',       // Path file yang diupload ke storage/app/public/pdfs
+        'content_type',   // MIME type, ex: application/pdf
         'role_access',
         'difficulty',
         'is_published',
@@ -35,32 +37,32 @@ class GrimoireEntry extends Model
     }
 
     // Tambah atribut terhitung agar selalu ikut di JSON
-    protected $appends = ['is_pdf', 'file_url_web'];
+    protected $appends = ['is_pdf', 'file_url_web', 'pdf_url'];
 
     public function category(): BelongsTo
     {
         return $this->belongsTo(GrimoireCategory::class, 'category_id');
     }
 
-    // Accessor: true jika content_type PDF atau URL berakhiran .pdf
+    /* ===== Accessors & Mutators ===== */
+
+    // Accessor: true jika content_type PDF atau URL/path berakhiran .pdf
     protected function isPdf(): Attribute
     {
         return Attribute::make(
             get: function ($value, array $attributes) {
                 $ct  = strtolower((string)($attributes['content_type'] ?? ''));
                 $url = (string)($attributes['file_url'] ?? '');
+                $path = (string)($attributes['pdf_path'] ?? '');
+
                 return Str::startsWith($ct, 'application/pdf')
-                    || (bool) preg_match('/\.pdf($|\?)/i', $url);
+                    || (bool) preg_match('/\.pdf($|\?)/i', $url)
+                    || (bool) preg_match('/\.pdf$/i', $path);
             }
         );
     }
 
-    // Mutator untuk menormalkan penyimpanan file_url
-    // - backslash → slash
-    // - absolut (http/https//) dibiarkan apa adanya
-    // - root-relative ('/files/...') dibiarkan
-    // - relative ('files/...') dipaksa jadi root-relative
-    // - hanya nama file ('aturan.pdf') dipetakan ke folder default
+    // Mutator untuk menormalkan penyimpanan file_url (eksternal/static URL)
     protected function fileUrl(): Attribute
     {
         return Attribute::make(
@@ -69,47 +71,73 @@ class GrimoireEntry extends Model
                 if ($s === '') return null;
                 $s = str_replace('\\', '/', $s);
 
-                if (Str::startsWith($s, ['http://','https://','//'])) {
+                // URL absolut
+                if (Str::startsWith($s, ['http://', 'https://', '//'])) {
                     return $s;
                 }
+                // Root-relative path
                 if (Str::startsWith($s, '/')) {
                     return $s;
                 }
+                // Relative path dengan folder
                 if (Str::contains($s, '/')) {
-                    return '/'.ltrim($s, '/');
+                    return '/' . ltrim($s, '/');
                 }
-                // hanya nama file
-                return '/files/grimoire/pdfs/'.rawurlencode($s);
+                // Hanya nama file - asumsikan folder default
+                return '/files/grimoire/pdfs/' . rawurlencode($s);
             }
         );
     }
 
-    // Accessor: URL web yang sudah siap dipakai iframe (root-relative atau absolut)
+    // Accessor: URL web untuk file_url yang sudah siap dipakai (prioritas pertama)
     protected function fileUrlWeb(): Attribute
     {
         return Attribute::make(
             get: function ($value, array $attributes) {
+                // Prioritas 1: Gunakan pdf_path (uploaded file) jika ada
+                $pdfPath = (string)($attributes['pdf_path'] ?? '');
+                if ($pdfPath !== '') {
+                    return Storage::disk('public')->url($pdfPath);
+                }
+
+                // Prioritas 2: Gunakan file_url (eksternal/static)
                 $u = (string)($attributes['file_url'] ?? '');
                 if ($u === '') return null;
                 $u = str_replace('\\', '/', trim($u));
 
-                if (Str::startsWith($u, ['http://','https://','//'])) return $u; // absolut
-                if (Str::startsWith($u, '/')) return $u;                         // root-relative
-                if (Str::contains($u, '/')) return '/'.ltrim($u, '/');           // relative path
-                return '/files/grimoire/pdfs/'.rawurlencode($u);                 // nama file
+                if (Str::startsWith($u, ['http://', 'https://', '//'])) return $u;
+                if (Str::startsWith($u, '/')) return $u;
+                if (Str::contains($u, '/')) return '/' . ltrim($u, '/');
+                return '/files/grimoire/pdfs/' . rawurlencode($u);
             }
         );
     }
 
-    // Opsional: set content_type otomatis bila file_url berakhiran .pdf
+    // Accessor: URL untuk PDF yang diupload (pdf_path)
+    protected function pdfUrl(): Attribute
+    {
+        return Attribute::make(
+            get: function ($value, array $attributes) {
+                $path = (string)($attributes['pdf_path'] ?? '');
+                if ($path === '') return null;
+
+                return Storage::disk('public')->url($path);
+            }
+        );
+    }
+
+    // Auto-set content_type jika file_url atau pdf_path berakhiran .pdf
     protected function contentType(): Attribute
     {
         return Attribute::make(
             set: function ($value, array $attributes) {
                 $v = (string)($value ?? '');
                 if ($v !== '') return $v;
+
                 $url = (string)($attributes['file_url'] ?? '');
-                if (preg_match('/\.pdf($|\?)/i', $url)) {
+                $path = (string)($attributes['pdf_path'] ?? '');
+
+                if (preg_match('/\.pdf($|\?)/i', $url) || preg_match('/\.pdf$/i', $path)) {
                     return 'application/pdf';
                 }
                 return null;
@@ -131,7 +159,7 @@ class GrimoireEntry extends Model
 
     public function scopeForRole(Builder $q, ?string $role): Builder
     {
-        if ($role && in_array($role, ['defuser','expert'], true)) {
+        if ($role && in_array($role, ['defuser', 'expert'], true)) {
             return $q->whereIn('role_access', [$role, 'all']);
         }
         return $q;
@@ -140,18 +168,19 @@ class GrimoireEntry extends Model
     public function scopeSearchTerm(Builder $q, ?string $term): Builder
     {
         if ($term !== null && $term !== '') {
-            $like = '%'.$term.'%';
-            return $q->where(fn($x) => $x->where('title','like',$like)->orWhere('summary','like',$like));
+            $like = '%' . $term . '%';
+            return $q->where(fn($x) => $x->where('title', 'like', $like)->orWhere('summary', 'like', $like));
         }
         return $q;
     }
 
-    // Hanya PDF: content_type mengandung application/pdf ATAU ekstensi .pdf
+    // Hanya PDF: content_type mengandung application/pdf ATAU ekstensi .pdf di file_url/pdf_path
     public function scopePdfOnly(Builder $q): Builder
     {
         return $q->where(function ($x) {
             $x->where('content_type', 'like', 'application/pdf%')
-              ->orWhere('file_url', 'like', '%.pdf%');
+              ->orWhere('file_url', 'like', '%.pdf%')
+              ->orWhere('pdf_path', 'like', '%.pdf%');
         });
     }
 }
