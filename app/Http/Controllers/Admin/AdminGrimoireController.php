@@ -46,6 +46,14 @@ class AdminGrimoireController extends Controller
             'is_published' => 'boolean',
         ]);
 
+        if (empty($validated['content_html'])) {
+            $validated['content_html'] = '';
+        }
+
+        if (empty($validated['difficulty'])) {
+            $validated['difficulty'] = null;
+        }
+
         // Handle PDF upload
         if ($request->hasFile('pdf_file')) {
             $path = $request->file('pdf_file')->store('pdfs', 'public');
@@ -84,6 +92,14 @@ class AdminGrimoireController extends Controller
             'difficulty' => 'nullable|string|max:50',
             'is_published' => 'boolean',
         ]);
+
+        if (empty($validated['content_html'])) {
+            $validated['content_html'] = '';
+        }
+
+        if (empty($validated['difficulty'])) {
+            $validated['difficulty'] = null;
+        }
 
         // Handle PDF upload
         if ($request->hasFile('pdf_file')) {

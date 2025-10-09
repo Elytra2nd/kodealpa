@@ -36,6 +36,13 @@ class GrimoireEntry extends Model
         ];
     }
 
+    protected $attributes = [
+        'content_html' => '',
+        'summary' => '',
+        'difficulty' => null,
+        'is_published' => false,
+    ];
+
     // Tambah atribut terhitung agar selalu ikut di JSON
     protected $appends = ['is_pdf', 'file_url_web', 'pdf_url'];
 
