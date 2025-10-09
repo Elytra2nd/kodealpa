@@ -130,27 +130,80 @@ export default function GrimoirePanel({ role }: { role: 'defuser' | 'expert' | '
       <CardHeader className="p-4 sm:p-6">
         <CardTitle className="text-amber-300 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
           <span className="text-lg sm:text-xl">📘 Grimoire Pedoman</span>
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex flex-wrap items-center gap-2">
             <Badge className="bg-purple-700 text-purple-100 text-xs sm:text-sm">
               {role.toUpperCase()}
             </Badge>
+
+            {/* ✅ Admin Controls - Only visible to admins */}
             {auth.user?.is_admin && (
-              <Link
-                href="/admin/grimoire/create"
-                className="px-2 py-1 sm:px-3 sm:py-1.5 bg-emerald-700 text-emerald-100 rounded-md hover:bg-emerald-600 transition-colors text-xs sm:text-sm font-medium inline-flex items-center gap-1"
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-3 w-3 sm:h-4 sm:w-4"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Admin Index Button */}
+                <Link
+                  href="/admin/grimoire"
+                  className="px-2 py-1 sm:px-3 sm:py-1.5 bg-blue-700 text-blue-100 rounded-md hover:bg-blue-600 transition-colors text-xs sm:text-sm font-medium inline-flex items-center gap-1 shadow-lg hover:shadow-blue-500/25"
                 >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                <span className="hidden sm:inline">Tulis Pedoman</span>
-                <span className="sm:hidden">Buat</span>
-              </Link>
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-3 w-3 sm:h-4 sm:w-4"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
+                    />
+                  </svg>
+                  <span className="hidden sm:inline">Kelola Admin</span>
+                  <span className="sm:hidden">Admin</span>
+                </Link>
+
+                {/* Create New Button */}
+                <Link
+                  href="/admin/grimoire/create"
+                  className="px-2 py-1 sm:px-3 sm:py-1.5 bg-emerald-700 text-emerald-100 rounded-md hover:bg-emerald-600 transition-colors text-xs sm:text-sm font-medium inline-flex items-center gap-1 shadow-lg hover:shadow-emerald-500/25"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-3 w-3 sm:h-4 sm:w-4"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  <span className="hidden sm:inline">Tulis Pedoman</span>
+                  <span className="sm:hidden">Buat</span>
+                </Link>
+
+                {/* Quick Edit Button (if entry is selected) */}
+                {selected && (
+                  <Link
+                    href={`/admin/grimoire/${selected.id}/edit`}
+                    className="px-2 py-1 sm:px-3 sm:py-1.5 bg-amber-700 text-amber-100 rounded-md hover:bg-amber-600 transition-colors text-xs sm:text-sm font-medium inline-flex items-center gap-1 shadow-lg hover:shadow-amber-500/25"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      className="h-3 w-3 sm:h-4 sm:w-4"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                      />
+                    </svg>
+                    <span className="hidden sm:inline">Edit</span>
+                    <span className="sm:hidden">✏️</span>
+                  </Link>
+                )}
+              </div>
             )}
           </div>
         </CardTitle>
@@ -258,6 +311,12 @@ export default function GrimoirePanel({ role }: { role: 'defuser' | 'expert' | '
                           {(e as any).difficulty}
                         </Badge>
                       )}
+                      {/* ✅ Admin Badge - Show only to admins */}
+                      {auth.user?.is_admin && (
+                        <Badge className="bg-orange-700 text-orange-100 text-xs">
+                          ID: {e.id}
+                        </Badge>
+                      )}
                     </div>
                   </button>
                 ))
@@ -278,6 +337,24 @@ export default function GrimoirePanel({ role }: { role: 'defuser' | 'expert' | '
                         {(selected as any).category && (
                           <div className="text-stone-400 text-xs sm:text-sm mt-1">
                             Kategori: {(selected as any).category.name}
+                          </div>
+                        )}
+                        {/* ✅ Admin Info */}
+                        {auth.user?.is_admin && (
+                          <div className="flex gap-2 mt-2">
+                            <Badge className="bg-stone-600 text-stone-200 text-xs">
+                              ID: {selected.id}
+                            </Badge>
+                            <Badge className="bg-stone-600 text-stone-200 text-xs">
+                              v{(selected as any).version || 1}
+                            </Badge>
+                            <Badge className={`text-xs ${
+                              (selected as any).is_published
+                                ? 'bg-green-600 text-green-100'
+                                : 'bg-yellow-600 text-yellow-100'
+                            }`}>
+                              {(selected as any).is_published ? 'Published' : 'Draft'}
+                            </Badge>
                           </div>
                         )}
                       </div>
