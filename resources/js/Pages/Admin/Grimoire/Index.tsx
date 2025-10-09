@@ -49,6 +49,12 @@ interface PageProps {
     last_page: number;
     per_page: number;
     total: number;
+    links: {
+      first: string | null;
+      last: string | null;
+      prev: string | null;
+      next: string | null;
+    };
   };
   categories: Category[];
   filters: {
@@ -228,7 +234,22 @@ function DeleteModal({ isOpen, onClose, onConfirm, entry, isDeleting }: DeleteMo
 }
 
 export default function AdminGrimoireIndex() {
-  const { entries, categories, filters, flash } = usePage<PageProps>().props;
+  const pageData = usePage<PageProps>().props;
+
+  // ✅ Defensive destructuring
+  const {
+    entries = {
+      data: [],
+      current_page: 1,
+      last_page: 1,
+      per_page: 15,
+      total: 0,
+      links: { first: null, last: null, prev: null, next: null }
+    },
+    categories = [],
+    filters = {},
+    flash = {}
+  } = pageData;
 
   const [search, setSearch] = useState(filters.search || '');
   const [selectedCategory, setSelectedCategory] = useState(filters.category || '');
@@ -437,14 +458,171 @@ export default function AdminGrimoireIndex() {
             )}
           </AnimatePresence>
 
-          {/* Stats Cards - Keep existing */}
+          {/* ✅ Stats Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* ... Stats cards code sama seperti sebelumnya ... */}
+            <Card className="bg-stone-900/40 border-stone-700">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-emerald-900/30 rounded-lg">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      className="h-6 w-6 text-emerald-400"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
+                      />
+                    </svg>
+                  </div>
+                  <div>
+                    <div className="text-2xl font-bold text-stone-200">{entries.total}</div>
+                    <div className="text-stone-400 text-sm">Total Pedoman</div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-stone-900/40 border-stone-700">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-green-900/30 rounded-lg">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      className="h-6 w-6 text-green-400"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
+                    </svg>
+                  </div>
+                  <div>
+                    <div className="text-2xl font-bold text-stone-200">
+                      {entries.data.filter((e) => e.is_published).length}
+                    </div>
+                    <div className="text-stone-400 text-sm">Dipublikasikan</div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-stone-900/40 border-stone-700">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-yellow-900/30 rounded-lg">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      className="h-6 w-6 text-yellow-400"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
+                    </svg>
+                  </div>
+                  <div>
+                    <div className="text-2xl font-bold text-stone-200">
+                      {entries.data.filter((e) => !e.is_published).length}
+                    </div>
+                    <div className="text-stone-400 text-sm">Draft</div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-stone-900/40 border-stone-700">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-purple-900/30 rounded-lg">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      className="h-6 w-6 text-purple-400"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"
+                      />
+                    </svg>
+                  </div>
+                  <div>
+                    <div className="text-2xl font-bold text-stone-200">
+                      {entries.data.filter((e) => e.pdf_path).length}
+                    </div>
+                    <div className="text-stone-400 text-sm">Dengan PDF</div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </div>
 
-          {/* Filters - Keep existing */}
+          {/* ✅ Filters */}
           <Card className="bg-stone-900/40 border-stone-700">
-            {/* ... Filter code sama seperti sebelumnya ... */}
+            <CardContent className="p-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                {/* Search */}
+                <div className="sm:col-span-3 lg:col-span-1">
+                  <Input
+                    type="text"
+                    placeholder="🔍 Cari pedoman..."
+                    value={search}
+                    onChange={(e) => {
+                      setSearch(e.target.value);
+                      handleSearch(e.target.value);
+                    }}
+                    className="bg-stone-900 border-stone-700 text-stone-200"
+                  />
+                </div>
+
+                {/* Category Filter */}
+                <div>
+                  <select
+                    value={selectedCategory}
+                    onChange={(e) => handleFilter('category', e.target.value)}
+                    className="w-full px-3 py-2 bg-stone-900 border border-stone-700 rounded-md text-stone-200 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                  >
+                    <option value="">Semua Kategori</option>
+                    {categories.map((cat) => (
+                      <option key={cat.id} value={cat.slug}>
+                        {cat.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Status Filter */}
+                <div>
+                  <select
+                    value={selectedStatus}
+                    onChange={(e) => handleFilter('status', e.target.value)}
+                    className="w-full px-3 py-2 bg-stone-900 border border-stone-700 rounded-md text-stone-200 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                  >
+                    <option value="">Semua Status</option>
+                    <option value="published">Dipublikasikan</option>
+                    <option value="draft">Draft</option>
+                  </select>
+                </div>
+              </div>
+            </CardContent>
           </Card>
 
           {/* Table */}
@@ -476,7 +654,28 @@ export default function AdminGrimoireIndex() {
                           colSpan={8}
                           className="text-center py-12 text-stone-400"
                         >
-                          {/* ... Empty state sama seperti sebelumnya ... */}
+                          <div className="flex flex-col items-center gap-3">
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              className="h-12 w-12 text-stone-600"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              stroke="currentColor"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                              />
+                            </svg>
+                            <div>
+                              <p className="font-medium">Tidak ada pedoman</p>
+                              <p className="text-sm text-stone-500 mt-1">
+                                Buat pedoman baru untuk memulai
+                              </p>
+                            </div>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ) : (
@@ -556,7 +755,6 @@ export default function AdminGrimoireIndex() {
                                   ✏️ Edit
                                 </Button>
                               </Link>
-                              {/* ✅ Updated Delete Button */}
                               <Button
                                 variant="destructive"
                                 size="sm"
@@ -574,8 +772,51 @@ export default function AdminGrimoireIndex() {
                 </Table>
               </div>
 
-              {/* Pagination - Keep existing */}
-              {/* ... Pagination code sama seperti sebelumnya ... */}
+              {/* ✅ Pagination */}
+              {entries.last_page > 1 && (
+                <div className="flex items-center justify-between p-4 border-t border-stone-700">
+                  <div className="text-stone-400 text-sm">
+                    Showing {entries.data.length} of {entries.total} entries
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={entries.current_page === 1}
+                      onClick={() =>
+                        router.get('/admin/grimoire', {
+                          page: entries.current_page - 1,
+                          search,
+                          category: selectedCategory,
+                          status: selectedStatus,
+                        })
+                      }
+                      className="bg-stone-800 text-stone-200 hover:bg-stone-700"
+                    >
+                      Previous
+                    </Button>
+                    <span className="text-stone-400 text-sm">
+                      Page {entries.current_page} of {entries.last_page}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={entries.current_page === entries.last_page}
+                      onClick={() =>
+                        router.get('/admin/grimoire', {
+                          page: entries.current_page + 1,
+                          search,
+                          category: selectedCategory,
+                          status: selectedStatus,
+                        })
+                      }
+                      className="bg-stone-800 text-stone-200 hover:bg-stone-700"
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>

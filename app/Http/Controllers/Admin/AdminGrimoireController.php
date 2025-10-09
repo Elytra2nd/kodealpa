@@ -8,17 +8,52 @@ use App\Models\GrimoireEntry;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
+use Illuminate\Support\Facades\Storage;
 
 class AdminGrimoireController extends Controller
 {
-    public function index(): Response
+    public function index(Request $request): Response
     {
-        $entries = GrimoireEntry::with('category')
-            ->orderByDesc('created_at')
-            ->paginate(20);
+        $query = GrimoireEntry::query()->with('category');
+
+        // ✅ Search filter
+        if ($request->filled('search')) {
+            $search = $request->string('search')->value();
+            $query->where(function ($q) use ($search) {
+                $q->where('title', 'like', "%{$search}%")
+                  ->orWhere('summary', 'like', "%{$search}%");
+            });
+        }
+
+        // ✅ Category filter
+        if ($request->filled('category')) {
+            $query->whereHas('category', function ($q) use ($request) {
+                $q->where('slug', $request->string('category')->value());
+            });
+        }
+
+        // ✅ Status filter
+        if ($request->filled('status')) {
+            $isPublished = $request->string('status')->value() === 'published';
+            $query->where('is_published', $isPublished);
+        }
+
+        // Pagination
+        $entries = $query->orderByDesc('updated_at')->paginate(15)->withQueryString();
+        $categories = GrimoireCategory::orderBy('sort_order')->get();
 
         return Inertia::render('Admin/Grimoire/Index', [
             'entries' => $entries,
+            'categories' => $categories, // ✅ Added
+            'filters' => [ // ✅ Added
+                'search' => $request->string('search')->value() ?: null,
+                'category' => $request->string('category')->value() ?: null,
+                'status' => $request->string('status')->value() ?: null,
+            ],
+            'flash' => [ // ✅ Added flash messages
+                'success' => session('success'),
+                'error' => session('error'),
+            ],
         ]);
     }
 
@@ -40,32 +75,45 @@ class AdminGrimoireController extends Controller
             'summary' => 'nullable|string',
             'content_html' => 'nullable|string',
             'tags' => 'nullable|array',
-            'pdf_file' => 'nullable|file|mimes:pdf|max:10240', // 10MB
+            'pdf_file' => 'nullable|file|mimes:pdf|max:51200', // ✅ 50MB
             'role_access' => 'required|in:defuser,expert,all',
-            'difficulty' => 'nullable|string|max:50',
+            'difficulty' => 'nullable|in:beginner,intermediate,advanced', // ✅ Validate specific values
             'is_published' => 'boolean',
         ]);
 
-        if (empty($validated['content_html'])) {
-            $validated['content_html'] = '';
-        }
-
-        if (empty($validated['difficulty'])) {
-            $validated['difficulty'] = null;
-        }
+        // Set defaults
+        $validated['content_html'] = $validated['content_html'] ?? '';
+        $validated['difficulty'] = $validated['difficulty'] ?? null;
+        $validated['is_published'] = $validated['is_published'] ?? false;
 
         // Handle PDF upload
         if ($request->hasFile('pdf_file')) {
-            $path = $request->file('pdf_file')->store('pdfs', 'public');
-            $validated['pdf_path'] = $path;
+            $file = $request->file('pdf_file');
+
+            if ($file->isValid()) {
+                $path = $file->store('pdfs', 'public');
+                $validated['pdf_path'] = $path;
+            } else {
+                return back()->withErrors(['pdf_file' => 'File upload gagal.']);
+            }
         }
 
         $validated['version'] = 1;
 
-        GrimoireEntry::create($validated);
+        try {
+            GrimoireEntry::create($validated);
 
-        return redirect()->route('admin.grimoire.index')
-            ->with('success', 'Pedoman berhasil ditambahkan!');
+            return redirect()->route('admin.grimoire.index')
+                ->with('success', 'Pedoman berhasil ditambahkan!');
+        } catch (\Exception $e) {
+            \Log::error('Failed to create grimoire entry', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return back()
+                ->withInput()
+                ->with('error', 'Gagal menambahkan pedoman: ' . $e->getMessage());
+        }
     }
 
     public function edit(GrimoireEntry $grimoire): Response
@@ -82,54 +130,76 @@ class AdminGrimoireController extends Controller
     {
         $validated = $request->validate([
             'category_id' => 'required|exists:grimoire_categories,id',
-            'slug' => 'required|string|max:255|unique:grimoire_entries,slug,' . $grimoire->id,
             'title' => 'required|string|max:255',
             'summary' => 'nullable|string',
             'content_html' => 'nullable|string',
             'tags' => 'nullable|array',
-            'pdf_file' => 'nullable|file|mimes:pdf|max:10240',
+            'pdf_file' => 'nullable|file|mimes:pdf|max:51200', // ✅ 50MB
             'role_access' => 'required|in:defuser,expert,all',
-            'difficulty' => 'nullable|string|max:50',
+            'difficulty' => 'nullable|in:beginner,intermediate,advanced',
             'is_published' => 'boolean',
         ]);
 
-        if (empty($validated['content_html'])) {
-            $validated['content_html'] = '';
-        }
-
-        if (empty($validated['difficulty'])) {
-            $validated['difficulty'] = null;
-        }
+        // Set defaults
+        $validated['content_html'] = $validated['content_html'] ?? '';
+        $validated['difficulty'] = $validated['difficulty'] ?? null;
+        $validated['is_published'] = $validated['is_published'] ?? false;
 
         // Handle PDF upload
         if ($request->hasFile('pdf_file')) {
-            // Delete old file if exists
-            if ($grimoire->pdf_path) {
-                \Storage::disk('public')->delete($grimoire->pdf_path);
-            }
+            $file = $request->file('pdf_file');
 
-            $path = $request->file('pdf_file')->store('pdfs', 'public');
-            $validated['pdf_path'] = $path;
+            if ($file->isValid()) {
+                // Delete old file if exists
+                if ($grimoire->pdf_path && Storage::disk('public')->exists($grimoire->pdf_path)) {
+                    Storage::disk('public')->delete($grimoire->pdf_path);
+                }
+
+                $path = $file->store('pdfs', 'public');
+                $validated['pdf_path'] = $path;
+            } else {
+                return back()->withErrors(['pdf_file' => 'File upload gagal.']);
+            }
         }
 
         $validated['version'] = $grimoire->version + 1;
 
-        $grimoire->update($validated);
+        try {
+            $grimoire->update($validated);
 
-        return redirect()->route('admin.grimoire.index')
-            ->with('success', 'Pedoman berhasil diperbarui!');
+            return redirect()->route('admin.grimoire.index')
+                ->with('success', 'Pedoman berhasil diperbarui!');
+        } catch (\Exception $e) {
+            \Log::error('Failed to update grimoire entry', [
+                'id' => $grimoire->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return back()
+                ->withInput()
+                ->with('error', 'Gagal memperbarui pedoman: ' . $e->getMessage());
+        }
     }
 
     public function destroy(GrimoireEntry $grimoire)
     {
-        // Delete PDF file if exists
-        if ($grimoire->pdf_path) {
-            \Storage::disk('public')->delete($grimoire->pdf_path);
+        try {
+            // Delete PDF file if exists
+            if ($grimoire->pdf_path && Storage::disk('public')->exists($grimoire->pdf_path)) {
+                Storage::disk('public')->delete($grimoire->pdf_path);
+            }
+
+            $grimoire->delete();
+
+            return redirect()->route('admin.grimoire.index')
+                ->with('success', 'Pedoman berhasil dihapus!');
+        } catch (\Exception $e) {
+            \Log::error('Failed to delete grimoire entry', [
+                'id' => $grimoire->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return back()->with('error', 'Gagal menghapus pedoman: ' . $e->getMessage());
         }
-
-        $grimoire->delete();
-
-        return redirect()->route('admin.grimoire.index')
-            ->with('success', 'Pedoman berhasil dihapus!');
     }
 }
