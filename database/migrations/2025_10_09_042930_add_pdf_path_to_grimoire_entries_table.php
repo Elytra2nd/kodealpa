@@ -11,10 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('grimoire_entries', function (Blueprint $table) {
-            // Tambah kolom pdf_path setelah kolom file_url
-            $table->string('pdf_path')->nullable()->after('file_url');
-        });
+        // Cek apakah kolom belum ada untuk menghindari error
+        if (!Schema::hasColumn('grimoire_entries', 'pdf_path')) {
+            Schema::table('grimoire_entries', function (Blueprint $table) {
+                $table->string('pdf_path')->nullable();
+            });
+        }
     }
 
     /**
@@ -22,9 +24,11 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('grimoire_entries', function (Blueprint $table) {
-            // Hapus kolom pdf_path saat rollback
-            $table->dropColumn('pdf_path');
-        });
+        // Cek apakah kolom ada sebelum drop
+        if (Schema::hasColumn('grimoire_entries', 'pdf_path')) {
+            Schema::table('grimoire_entries', function (Blueprint $table) {
+                $table->dropColumn('pdf_path');
+            });
+        }
     }
 };
