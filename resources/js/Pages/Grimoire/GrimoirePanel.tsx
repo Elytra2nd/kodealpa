@@ -23,7 +23,7 @@ export default function GrimoirePanelPage() {
               <div className="flex items-center gap-2">
                 <Badge className="bg-stone-800 text-stone-200">Searchable</Badge>
                 <Badge className="bg-stone-800 text-stone-200">Role-aware</Badge>
-                <Link href="/grimoire/editor" className="text-emerald-300 hover:underline">
+                <Link href="/admin/grimoire/create" className="text-emerald-300 hover:underline">
                   + Tulis Pedoman
                 </Link>
               </div>
