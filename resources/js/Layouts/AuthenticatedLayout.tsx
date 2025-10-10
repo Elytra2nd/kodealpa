@@ -225,7 +225,7 @@ export default function Authenticated({ header, children }: Props) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-stone-900 via-stone-800 to-amber-950 text-stone-100">
       {/* Navbar */}
-      <nav className="relative border-b-4 border-amber-700 bg-gradient-to-r from-stone-900 via-stone-800 to-amber-950 shadow-xl">
+      <nav className="border-b-4 border-amber-700 bg-gradient-to-r from-stone-900 via-stone-800 to-amber-950 shadow-xl sticky top-0 z-50">
         {/* Decorative Torches */}
         <div className="absolute top-1 left-2 text-lg sm:text-xl select-none">
           <span ref={setTorchRef(0)} className="dungeon-torch-flicker">
@@ -325,15 +325,18 @@ export default function Authenticated({ header, children }: Props) {
         )}
       </nav>
 
-      {/* Page Header (Optional) */}
-      {header && (
-        <header className="border-b-4 border-amber-700 bg-gradient-to-r from-stone-900 via-stone-800 to-amber-950 shadow-lg">
-          <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">{header}</div>
-        </header>
-      )}
-
-      {/* Main Content */}
-      <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+      {/* Main Content - Header sekarang di dalam konten */}
+      <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+        {/* Tampilkan header di dalam konten jika ada */}
+        {header && (
+          <div className="mb-6">
+            <h1 className="text-2xl sm:text-3xl font-bold text-amber-300 font-cinzel">
+              {header}
+            </h1>
+          </div>
+        )}
+        {children}
+      </main>
 
       {/* ========================================
           CUSTOM DUNGEON STYLES
