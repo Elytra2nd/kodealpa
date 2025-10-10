@@ -14,14 +14,14 @@ export default function GrimoireSidebar({
       <Accordion type="single" collapsible defaultValue={activeCategory}>
         <AccordionItem value="all">
           <AccordionTrigger onClick={()=>onSelectCategory(undefined)}>📚 Semua Kategori</AccordionTrigger>
-          <AccordionContent className="text-stone-300">Tampilkan semua pedoman tanpa filter.</AccordionContent>
+          <AccordionContent className="text-white-600">Tampilkan semua pedoman tanpa filter.</AccordionContent>
         </AccordionItem>
         {categories.map((cat)=>(
           <AccordionItem key={cat.id} value={cat.slug}>
             <AccordionTrigger onClick={()=>onSelectCategory(cat.slug)}>
               {cat.icon ? `${cat.icon} ` : ''}{cat.title}
             </AccordionTrigger>
-            <AccordionContent className="text-stone-300">
+            <AccordionContent className="text-white-600">
               Pedoman terkait {cat.title}.
             </AccordionContent>
           </AccordionItem>
