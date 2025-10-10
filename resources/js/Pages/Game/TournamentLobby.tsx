@@ -13,7 +13,6 @@ import {
   TournamentData,
   TournamentGroup,
   normalizeTournamentData,
-  normalizeBoolean
 } from '@/types/game';
 import { toast } from 'sonner';
 import { gsap } from 'gsap';
@@ -29,6 +28,7 @@ const CONFIG = {
   MOBILE_BREAKPOINT: 768,
   TORCH_FLICKER_INTERVAL: 150,
   ANIMATION_DURATION: 0.6,
+  DEBOUNCE_DELAY: 300,
 } as const;
 
 const TOURNAMENT_STATUS = {
@@ -36,31 +36,31 @@ const TOURNAMENT_STATUS = {
     color: 'bg-gradient-to-r from-yellow-500 to-amber-600',
     text: 'Menunggu Petualang',
     icon: '⏳',
-    description: 'Ruang Guild terbuka untuk pendaftaran'
+    description: 'Ruang Guild terbuka untuk pendaftaran',
   },
   qualification: {
     color: 'bg-gradient-to-r from-blue-500 to-cyan-600',
     text: 'Kualifikasi Dungeon',
     icon: '🎯',
-    description: 'Tahap penyaringan petualang'
+    description: 'Tahap penyaringan petualang',
   },
   semifinals: {
     color: 'bg-gradient-to-r from-purple-500 to-pink-600',
     text: 'Pertempuran Semi Final',
     icon: '⚔️',
-    description: 'Clash guild elit'
+    description: 'Clash guild elit',
   },
   finals: {
     color: 'bg-gradient-to-r from-red-500 to-rose-600',
     text: 'Pertempuran Final',
     icon: '👑',
-    description: 'Duel untuk supremasi'
+    description: 'Duel untuk supremasi',
   },
   completed: {
     color: 'bg-gradient-to-r from-green-500 to-emerald-600',
     text: 'Legenda Terukir',
     icon: '🏆',
-    description: 'Penaklukan dungeon selesai'
+    description: 'Penaklukan dungeon selesai',
   },
 } as const;
 
@@ -70,15 +70,15 @@ const ROLE_CONFIG = {
     title: 'Penjinakkan Bom',
     color: 'red',
     description: 'Menangani perangkat berbahaya di kedalaman dungeon',
-    gradient: 'from-red-500 to-orange-600'
+    gradient: 'from-red-500 to-orange-600',
   },
   expert: {
     icon: '📖',
     title: 'Ahli Grimoire',
     color: 'blue',
     description: 'Membimbing dengan pengetahuan arkana kuno',
-    gradient: 'from-blue-500 to-cyan-600'
-  }
+    gradient: 'from-blue-500 to-cyan-600',
+  },
 } as const;
 
 // ========================================
@@ -93,8 +93,9 @@ const useIsMobile = () => {
     };
 
     checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
+    const debouncedResize = debounce(checkMobile, CONFIG.DEBOUNCE_DELAY);
+    window.addEventListener('resize', debouncedResize);
+    return () => window.removeEventListener('resize', debouncedResize);
   }, []);
 
   return isMobile;
@@ -103,6 +104,7 @@ const useIsMobile = () => {
 const useTouchOptimized = () => {
   useEffect(() => {
     document.body.style.overscrollBehavior = 'contain';
+    (document.body.style as any)['-webkit-tap-highlight-color'] = 'transparent';
 
     let lastTouchEnd = 0;
     const preventZoom = (e: TouchEvent) => {
@@ -125,10 +127,11 @@ const useTouchOptimized = () => {
 const useDungeonAtmosphere = () => {
   const torchRefs = useRef<(HTMLElement | null)[]>([]);
   const backgroundRef = useRef<HTMLDivElement>(null);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     // Torch flicker animation
-    const torchInterval = setInterval(() => {
+    intervalRef.current = setInterval(() => {
       torchRefs.current.forEach((torch) => {
         if (torch) {
           gsap.to(torch, {
@@ -157,14 +160,32 @@ const useDungeonAtmosphere = () => {
       });
     }
 
-    return () => clearInterval(torchInterval);
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+    };
   }, []);
 
-  const setTorchRef = (index: number) => (el: HTMLSpanElement | null) => {
-    torchRefs.current[index] = el;
-  };
+  const setTorchRef = useCallback(
+    (index: number) => (el: HTMLSpanElement | null) => {
+      torchRefs.current[index] = el;
+    },
+    []
+  );
 
-  return { torchRefs, backgroundRef, setTorchRef };
+  return { backgroundRef, setTorchRef };
+};
+
+// ========================================
+// UTILITY FUNCTIONS
+// ========================================
+const debounce = <T extends (...args: any[]) => any>(func: T, wait: number) => {
+  let timeout: NodeJS.Timeout | null = null;
+  return (...args: Parameters<T>) => {
+    if (timeout) clearTimeout(timeout);
+    timeout = setTimeout(() => func(...args), wait);
+  };
 };
 
 // ========================================
@@ -173,28 +194,73 @@ const useDungeonAtmosphere = () => {
 const fadeInUp = {
   initial: { opacity: 0, y: 20 },
   animate: { opacity: 1, y: 0 },
-  exit: { opacity: 0, y: -20 }
+  exit: { opacity: 0, y: -20 },
 };
 
 const scaleIn = {
   initial: { scale: 0.9, opacity: 0 },
   animate: { scale: 1, opacity: 1 },
-  exit: { scale: 0.9, opacity: 0 }
-};
-
-const slideInFromBottom = {
-  initial: { y: '100%', opacity: 0 },
-  animate: { y: 0, opacity: 1 },
-  exit: { y: '100%', opacity: 0 }
+  exit: { scale: 0.9, opacity: 0 },
 };
 
 const staggerContainer = {
   animate: {
     transition: {
-      staggerChildren: 0.08
-    }
-  }
+      staggerChildren: 0.08,
+    },
+  },
 };
+
+// ========================================
+// LOADING SKELETON COMPONENT
+// ========================================
+const LoadingSkeleton = memo(() => {
+  const skeletonRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (skeletonRef.current) {
+      gsap.fromTo(
+        skeletonRef.current.querySelectorAll('.skeleton-pulse'),
+        { opacity: 0.4 },
+        {
+          opacity: 1,
+          duration: 1,
+          repeat: -1,
+          yoyo: true,
+          ease: 'power1.inOut',
+          stagger: 0.2,
+        }
+      );
+    }
+  }, []);
+
+  return (
+    <div ref={skeletonRef} className="space-y-4 sm:space-y-6">
+      <Card className="border-2 sm:border-4 border-amber-600 bg-gradient-to-br from-amber-900/30 to-stone-900">
+        <CardContent className="p-4 sm:p-6 md:p-8 space-y-4">
+          <div className="skeleton-pulse h-16 bg-stone-700 rounded-lg w-3/4 mx-auto" />
+          <div className="skeleton-pulse h-8 bg-stone-700 rounded-lg w-1/2 mx-auto" />
+          <div className="flex gap-2 justify-center">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="skeleton-pulse h-8 bg-stone-700 rounded-full w-24" />
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+      <div className="space-y-3 sm:space-y-4">
+        {[1, 2, 3].map((i) => (
+          <Card key={i} className="border-2 border-purple-600 bg-gradient-to-r from-purple-900/30 to-stone-900">
+            <CardContent className="p-3 sm:p-4 md:p-6">
+              <div className="skeleton-pulse h-24 bg-stone-700 rounded-lg" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+});
+
+LoadingSkeleton.displayName = 'LoadingSkeleton';
 
 // ========================================
 // SWIPEABLE CARD COMPONENT
@@ -211,13 +277,16 @@ const SwipeableCard = memo(({ children, onSwipeLeft, onSwipeRight, className = '
   const opacity = useTransform(x, [-200, 0, 200], [0.5, 1, 0.5]);
   const scale = useTransform(x, [-200, 0, 200], [0.95, 1, 0.95]);
 
-  const handleDragEnd = (event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
-    if (info.offset.x > CONFIG.SWIPE_THRESHOLD && onSwipeRight) {
-      onSwipeRight();
-    } else if (info.offset.x < -CONFIG.SWIPE_THRESHOLD && onSwipeLeft) {
-      onSwipeLeft();
-    }
-  };
+  const handleDragEnd = useCallback(
+    (event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
+      if (info.offset.x > CONFIG.SWIPE_THRESHOLD && onSwipeRight) {
+        onSwipeRight();
+      } else if (info.offset.x < -CONFIG.SWIPE_THRESHOLD && onSwipeLeft) {
+        onSwipeLeft();
+      }
+    },
+    [onSwipeLeft, onSwipeRight]
+  );
 
   return (
     <motion.div
@@ -250,11 +319,25 @@ const BottomSheet = memo(({ isOpen, onClose, children, title }: BottomSheetProps
   const y = useMotionValue(0);
   const isMobile = useIsMobile();
 
-  const handleDragEnd = (event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
-    if (info.offset.y > 100) {
-      onClose();
+  const handleDragEnd = useCallback(
+    (event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
+      if (info.offset.y > 100) {
+        onClose();
+      }
+    },
+    [onClose]
+  );
+
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'auto';
     }
-  };
+    return () => {
+      document.body.style.overflow = 'auto';
+    };
+  }, [isOpen]);
 
   if (!isMobile) return null;
 
@@ -269,7 +352,6 @@ const BottomSheet = memo(({ isOpen, onClose, children, title }: BottomSheetProps
             onClick={onClose}
             className="fixed inset-0 bg-black/80 z-40 backdrop-blur-sm"
           />
-
           <motion.div
             initial={{ y: '100%' }}
             animate={{ y: 0 }}
@@ -283,10 +365,7 @@ const BottomSheet = memo(({ isOpen, onClose, children, title }: BottomSheetProps
             className="fixed bottom-0 left-0 right-0 z-50 bg-gradient-to-b from-stone-800 to-stone-900 rounded-t-3xl shadow-2xl max-h-[90vh] overflow-hidden border-t-4 border-amber-600"
           >
             <div className="flex justify-center pt-3 pb-2">
-              <motion.div
-                className="w-12 h-1.5 bg-amber-600 rounded-full"
-                whileTap={{ scale: 1.2 }}
-              />
+              <motion.div className="w-12 h-1.5 bg-amber-600 rounded-full" whileTap={{ scale: 1.2 }} />
             </div>
 
             {title && (
@@ -295,9 +374,7 @@ const BottomSheet = memo(({ isOpen, onClose, children, title }: BottomSheetProps
               </div>
             )}
 
-            <div className="overflow-y-auto max-h-[calc(90vh-80px)] overscroll-contain">
-              {children}
-            </div>
+            <div className="overflow-y-auto max-h-[calc(90vh-80px)] overscroll-contain">{children}</div>
           </motion.div>
         </>
       )}
@@ -321,8 +398,12 @@ const StatusBadge = memo(({ status }: { status: string }) => {
       whileTap={{ scale: 0.95 }}
       className={isMobile ? 'flex-shrink-0' : ''}
     >
-      <Badge className={`${config.color} text-white flex items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 shadow-lg text-xs sm:text-sm font-bold`}>
-        <span className="text-sm sm:text-base">{config.icon}</span>
+      <Badge
+        className={`${config.color} text-white flex items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 shadow-lg text-xs sm:text-sm font-bold`}
+      >
+        <span className="text-sm sm:text-base" aria-hidden="true">
+          {config.icon}
+        </span>
         <span className="whitespace-nowrap">{config.text}</span>
       </Badge>
     </motion.div>
@@ -332,11 +413,7 @@ const StatusBadge = memo(({ status }: { status: string }) => {
 StatusBadge.displayName = 'StatusBadge';
 
 const LoadingSpinner = memo(() => (
-  <motion.div
-    className="flex items-center justify-center space-x-2"
-    initial={{ opacity: 0 }}
-    animate={{ opacity: 1 }}
-  >
+  <motion.div className="flex items-center justify-center space-x-2" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
     {[0, 0.2, 0.4].map((delay, i) => (
       <motion.div
         key={i}
@@ -350,118 +427,252 @@ const LoadingSpinner = memo(() => (
 
 LoadingSpinner.displayName = 'LoadingSpinner';
 
-const RoleSelectionCard = memo(({
-  role,
-  selected,
-  onSelect
-}: {
-  role: 'defuser' | 'expert';
-  selected: boolean;
-  onSelect: () => void;
-}) => {
-  const config = ROLE_CONFIG[role];
-  const isMobile = useIsMobile();
+const RoleSelectionCard = memo(
+  ({
+    role,
+    selected,
+    onSelect,
+  }: {
+    role: 'defuser' | 'expert';
+    selected: boolean;
+    onSelect: () => void;
+  }) => {
+    const config = ROLE_CONFIG[role];
+    const isMobile = useIsMobile();
 
-  return (
-    <motion.div
-      whileTap={{ scale: 0.95 }}
-      onClick={onSelect}
-      className="cursor-pointer touch-manipulation"
-    >
-      <Card
-        className={`
+    return (
+      <motion.div whileTap={{ scale: 0.95 }} onClick={onSelect} className="cursor-pointer touch-manipulation">
+        <Card
+          className={`
           transition-all duration-300 overflow-hidden
-          ${selected
-            ? `border-4 border-${config.color}-500 bg-gradient-to-br from-${config.color}-900/60 to-stone-900 shadow-2xl dungeon-card-glow-${config.color}`
-            : 'border-2 border-gray-700 bg-stone-900/50 hover:border-gray-500'
+          ${
+            selected
+              ? `border-4 border-${config.color}-500 bg-gradient-to-br from-${config.color}-900/60 to-stone-900 shadow-2xl dungeon-card-glow-${config.color}`
+              : 'border-2 border-gray-700 bg-stone-900/50 hover:border-gray-500'
           }
         `}
-      >
-        <CardContent className={`${isMobile ? 'p-4' : 'p-6'} text-center relative`}>
-          {selected && (
+        >
+          <CardContent className={`${isMobile ? 'p-4' : 'p-6'} text-center relative`}>
+            {selected && (
+              <motion.div
+                className="absolute top-2 right-2"
+                initial={{ scale: 0, rotate: -180 }}
+                animate={{ scale: 1, rotate: 0 }}
+                transition={{ type: 'spring', stiffness: 200 }}
+              >
+                <span className="text-xl sm:text-2xl text-amber-400">✓</span>
+              </motion.div>
+            )}
             <motion.div
-              className="absolute top-2 right-2"
-              initial={{ scale: 0, rotate: -180 }}
-              animate={{ scale: 1, rotate: 0 }}
-              transition={{ type: 'spring', stiffness: 200 }}
+              className={`${isMobile ? 'text-3xl' : 'text-4xl sm:text-5xl'} mb-2 sm:mb-3 dungeon-icon-glow`}
+              animate={selected ? { rotate: [0, -10, 10, 0] } : {}}
+              transition={{ duration: 0.5 }}
+              aria-hidden="true"
             >
-              <span className="text-xl sm:text-2xl text-amber-400">✓</span>
+              {config.icon}
             </motion.div>
-          )}
-          <motion.div
-            className={`${isMobile ? 'text-3xl' : 'text-4xl sm:text-5xl'} mb-2 sm:mb-3 dungeon-icon-glow`}
-            animate={selected ? { rotate: [0, -10, 10, 0] } : {}}
-            transition={{ duration: 0.5 }}
-          >
-            {config.icon}
-          </motion.div>
-          <h4 className={`font-bold ${isMobile ? 'text-base' : 'text-lg'} mb-1 sm:mb-2 text-${config.color}-300`}>
-            {config.title}
-          </h4>
-          <p className={`text-${config.color}-200 ${isMobile ? 'text-xs' : 'text-sm'} leading-relaxed`}>
-            {config.description}
-          </p>
-        </CardContent>
-      </Card>
-    </motion.div>
-  );
-});
+            <h4 className={`font-bold ${isMobile ? 'text-base' : 'text-lg'} mb-1 sm:mb-2 text-${config.color}-300`}>
+              {config.title}
+            </h4>
+            <p className={`text-${config.color}-200 ${isMobile ? 'text-xs' : 'text-sm'} leading-relaxed`}>
+              {config.description}
+            </p>
+          </CardContent>
+        </Card>
+      </motion.div>
+    );
+  }
+);
 
 RoleSelectionCard.displayName = 'RoleSelectionCard';
 
 // ========================================
 // FLOATING ACTION BUTTON
 // ========================================
-const FloatingActionButton = memo(({
-  onClick,
-  icon,
-  label,
-  variant = 'primary'
-}: {
-  onClick: () => void;
-  icon: string;
-  label: string;
-  variant?: 'primary' | 'success';
-}) => {
-  const isMobile = useIsMobile();
+const FloatingActionButton = memo(
+  ({
+    onClick,
+    icon,
+    label,
+    variant = 'primary',
+  }: {
+    onClick: () => void;
+    icon: string;
+    label: string;
+    variant?: 'primary' | 'success';
+  }) => {
+    const isMobile = useIsMobile();
 
-  return (
-    <motion.button
-      onClick={onClick}
-      initial={{ scale: 0, rotate: -180 }}
-      animate={{ scale: 1, rotate: 0 }}
-      whileHover={{ scale: 1.1 }}
-      whileTap={{ scale: 0.9 }}
-      className={`
+    return (
+      <motion.button
+        onClick={onClick}
+        initial={{ scale: 0, rotate: -180 }}
+        animate={{ scale: 1, rotate: 0 }}
+        whileHover={{ scale: 1.1 }}
+        whileTap={{ scale: 0.9 }}
+        className={`
         fixed ${isMobile ? 'bottom-20 right-4' : 'bottom-8 right-8'} z-50
-        ${variant === 'primary'
-          ? 'bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-700 hover:to-yellow-700'
-          : 'bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700'
+        ${
+          variant === 'primary'
+            ? 'bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-700 hover:to-yellow-700'
+            : 'bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700'
         }
         text-white ${isMobile ? 'p-4' : 'p-5'} rounded-full shadow-2xl
         flex items-center gap-2 min-w-[56px] min-h-[56px]
         touch-manipulation dungeon-fab-glow
       `}
-      title={label}
-      aria-label={label}
-    >
-      <motion.span
-        className={isMobile ? 'text-2xl' : 'text-3xl'}
-        animate={{ scale: [1, 1.2, 1] }}
-        transition={{ duration: 2, repeat: Infinity }}
+        title={label}
+        aria-label={label}
       >
-        {icon}
-      </motion.span>
-    </motion.button>
-  );
-});
+        <motion.span
+          className={isMobile ? 'text-2xl' : 'text-3xl'}
+          animate={{ scale: [1, 1.2, 1] }}
+          transition={{ duration: 2, repeat: Infinity }}
+          aria-hidden="true"
+        >
+          {icon}
+        </motion.span>
+      </motion.button>
+    );
+  }
+);
 
 FloatingActionButton.displayName = 'FloatingActionButton';
 
 // ========================================
+// JOIN TOURNAMENT FORM COMPONENT
+// ========================================
+interface JoinTournamentFormProps {
+  groupName: string;
+  setGroupName: (name: string) => void;
+  selectedRole: 'defuser' | 'expert';
+  setSelectedRole: (role: 'defuser' | 'expert') => void;
+  onJoin: () => void;
+  onCancel: () => void;
+  joining: boolean;
+  isMobile: boolean;
+}
+
+const JoinTournamentForm = memo(
+  ({
+    groupName,
+    setGroupName,
+    selectedRole,
+    setSelectedRole,
+    onJoin,
+    onCancel,
+    joining,
+    isMobile,
+  }: JoinTournamentFormProps) => {
+    const handleSubmit = useCallback(
+      (e: React.FormEvent) => {
+        e.preventDefault();
+        if (groupName.trim() && !joining) {
+          onJoin();
+        }
+      },
+      [groupName, joining, onJoin]
+    );
+
+    return (
+      <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
+        <motion.div initial={{ x: -50, opacity: 0 }} animate={{ x: 0, opacity: 1 }} transition={{ delay: 0.1 }}>
+          <label htmlFor="group-name" className="block text-base sm:text-lg font-bold text-green-300 mb-2 sm:mb-3 dungeon-glow-text">
+            🏰 Nama Guild Anda
+          </label>
+          <input
+            id="group-name"
+            type="text"
+            value={groupName}
+            onChange={(e) => setGroupName(e.target.value)}
+            placeholder="Masukkan nama guild legendaris"
+            className="w-full px-4 sm:px-6 py-3 sm:py-4 bg-stone-800 border-2 border-green-600 rounded-lg sm:rounded-xl text-green-300 placeholder-green-500/50 focus:outline-none focus:ring-4 focus:ring-green-500/50 transition-all text-sm sm:text-base touch-manipulation font-semibold"
+            maxLength={CONFIG.MAX_GROUP_NAME_LENGTH}
+            disabled={joining}
+            autoComplete="off"
+            aria-describedby="group-name-help"
+          />
+          <p id="group-name-help" className="text-green-400 text-xs sm:text-sm mt-2">
+            {groupName.length}/{CONFIG.MAX_GROUP_NAME_LENGTH} karakter
+          </p>
+        </motion.div>
+
+        <motion.div initial={{ x: -50, opacity: 0 }} animate={{ x: 0, opacity: 1 }} transition={{ delay: 0.2 }}>
+          <fieldset>
+            <legend className="block text-base sm:text-lg font-bold text-green-300 mb-2 sm:mb-3 dungeon-glow-text">
+              ⚔️ Peran dalam Ekspedisi
+            </legend>
+            <div className="grid grid-cols-2 gap-3 sm:gap-4">
+              <RoleSelectionCard role="defuser" selected={selectedRole === 'defuser'} onSelect={() => setSelectedRole('defuser')} />
+              <RoleSelectionCard role="expert" selected={selectedRole === 'expert'} onSelect={() => setSelectedRole('expert')} />
+            </div>
+          </fieldset>
+        </motion.div>
+
+        <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.3 }}>
+          <Card className="border-2 sm:border-3 border-purple-600 bg-gradient-to-br from-purple-900/40 to-stone-800 overflow-hidden dungeon-card-glow-purple">
+            <CardContent className="p-4 sm:p-6">
+              <p className="text-purple-200 leading-relaxed text-xs sm:text-sm md:text-base">
+                <strong className="text-purple-300">Peran Terpilih:</strong> Guild Anda akan bertempur sebagai{' '}
+                <strong className="text-transparent bg-clip-text bg-gradient-to-r from-amber-300 to-yellow-300 dungeon-glow-text">
+                  {ROLE_CONFIG[selectedRole].title}
+                </strong>
+                . {ROLE_CONFIG[selectedRole].description}
+              </p>
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        <motion.div
+          initial={{ y: 20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ delay: 0.4 }}
+          className="flex flex-col sm:flex-row gap-3 sm:gap-4"
+        >
+          <motion.div className="flex-1" whileTap={{ scale: 0.98 }}>
+            <Button
+              type="submit"
+              disabled={!groupName.trim() || joining}
+              className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 disabled:from-gray-600 disabled:to-gray-700 text-white py-3 sm:py-4 text-base sm:text-lg font-bold rounded-lg sm:rounded-xl shadow-xl touch-manipulation dungeon-button-glow disabled:opacity-50 disabled:cursor-not-allowed"
+              aria-busy={joining}
+            >
+              {joining ? (
+                <div className="flex items-center justify-center">
+                  <LoadingSpinner />
+                  <span className="ml-2 sm:ml-3">Memasuki Arena...</span>
+                </div>
+              ) : (
+                <>
+                  <span className="mr-2 sm:mr-3" aria-hidden="true">
+                    ⚔️
+                  </span>
+                  Masuki Dungeon
+                </>
+              )}
+            </Button>
+          </motion.div>
+          <motion.div whileTap={{ scale: 0.98 }} className={isMobile ? 'w-full' : ''}>
+            <Button
+              type="button"
+              onClick={onCancel}
+              disabled={joining}
+              className={`${isMobile ? 'w-full' : ''} bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-700 hover:to-gray-800 text-white py-3 sm:py-4 px-6 sm:px-8 rounded-lg sm:rounded-xl shadow-xl touch-manipulation text-base sm:text-lg font-semibold disabled:opacity-50`}
+            >
+              Batalkan
+            </Button>
+          </motion.div>
+        </motion.div>
+      </form>
+    );
+  }
+);
+
+JoinTournamentForm.displayName = 'JoinTournamentForm';
+
+// ========================================
 // MAIN COMPONENT
 // ========================================
-export default function TurnamenLobby() {
+export default function TournamentLobby() {
   const { auth } = usePage().props as any;
   const isMobile = useIsMobile();
   useTouchOptimized();
@@ -484,29 +695,32 @@ export default function TurnamenLobby() {
     if (!activeTournament || !Array.isArray(activeTournament.groups)) {
       return undefined;
     }
-    const userGroup = activeTournament.groups.find((group: TournamentGroup) =>
-      Array.isArray(group.participants) &&
-      group.participants.some((p: any) => p.user_id === auth?.user?.id)
+    const userGroup = activeTournament.groups.find(
+      (group: TournamentGroup) =>
+        Array.isArray(group.participants) && group.participants.some((p: any) => p.user_id === auth?.user?.id)
     );
     return userGroup?.id;
   }, [activeTournament, auth?.user?.id]);
 
-  const globalLeaderboard = useMemo(() =>
-    tournaments
-      .flatMap(t => t.groups || [])
-      .filter(g => typeof g.rank === 'number' && g.rank <= CONFIG.MAX_TOURNAMENT_DISPLAY)
-      .sort((a, b) => (a.rank || 999) - (b.rank || 999))
-      .map(group => ({
-        id: group.id,
-        name: group.name,
-        rank: group.rank,
-        score: group.score,
-        status: group.status,
-        completion_time: group.completion_time,
-        participants: group.participants,
-      })),
+  const globalLeaderboard = useMemo(
+    () =>
+      tournaments
+        .flatMap((t) => t.groups || [])
+        .filter((g) => typeof g.rank === 'number' && g.rank <= CONFIG.MAX_TOURNAMENT_DISPLAY)
+        .sort((a, b) => (a.rank || 999) - (b.rank || 999))
+        .map((group) => ({
+          id: group.id,
+          name: group.name,
+          rank: group.rank,
+          score: group.score,
+          status: group.status,
+          completion_time: group.completion_time,
+          participants: group.participants,
+        })),
     [tournaments]
   );
+
+  const isActionDisabled = useMemo(() => creating || joining, [creating, joining]);
 
   // Callbacks
   const loadTournaments = useCallback(async (): Promise<void> => {
@@ -519,19 +733,20 @@ export default function TurnamenLobby() {
 
       setTournaments(normalized);
 
-      const userTournament = normalized.find((t: TournamentData) =>
-        Array.isArray(t.groups) && t.groups.some((g: TournamentGroup) =>
-          Array.isArray(g.participants) && g.participants.some((p: any) =>
-            p.user_id === auth?.user?.id
+      const userTournament = normalized.find(
+        (t: TournamentData) =>
+          Array.isArray(t.groups) &&
+          t.groups.some(
+            (g: TournamentGroup) =>
+              Array.isArray(g.participants) && g.participants.some((p: any) => p.user_id === auth?.user?.id)
           )
-        )
       );
 
       setActiveTournament(userTournament || null);
-      setLoading(false);
     } catch (error: any) {
       console.error('❌ Gagal memuat turnamen:', error);
       toast.error('Gagal memuat data turnamen');
+    } finally {
       setLoading(false);
     }
   }, [auth?.user?.id]);
@@ -545,12 +760,12 @@ export default function TurnamenLobby() {
         day: '2-digit',
         month: 'short',
         hour: '2-digit',
-        minute: '2-digit'
+        minute: '2-digit',
       })}`;
 
       const response = await gameApi.createTournament({
         name: newTournamentName,
-        max_groups: 4
+        max_groups: 4,
       });
 
       if (response.success) {
@@ -561,55 +776,84 @@ export default function TurnamenLobby() {
       }
     } catch (error: any) {
       console.error('❌ Pembuatan turnamen gagal:', error);
-      toast.error(error.response?.data?.message || 'Gagal membuat turnamen');
+      const errorMessage =
+        error.response?.status === 429
+          ? 'Terlalu banyak permintaan. Mohon tunggu sebentar.'
+          : error.response?.status === 503
+          ? 'Server sedang sibuk. Silakan coba lagi nanti.'
+          : error.response?.data?.message || 'Gagal membuat turnamen';
+      toast.error(errorMessage);
     } finally {
       setCreating(false);
     }
   }, [creating, loadTournaments]);
 
-  const joinTournament = useCallback(async (tournamentId: number): Promise<void> => {
-    if (!groupName.trim() || joining) return;
+  const joinTournament = useCallback(
+    async (tournamentId: number): Promise<void> => {
+      if (!groupName.trim() || joining) return;
 
-    setJoining(true);
-    try {
-      const response = await gameApi.joinTournament(tournamentId, {
-        group_name: groupName.trim(),
-        role: selectedRole,
-        nickname: auth.user.name
-      });
+      setJoining(true);
+      try {
+        const response = await gameApi.joinTournament(tournamentId, {
+          group_name: groupName.trim(),
+          role: selectedRole,
+          nickname: auth.user.name,
+        });
 
-      if (response.success) {
-        toast.success(`Guild ${groupName} berhasil memasuki arena sebagai ${ROLE_CONFIG[selectedRole].title}!`);
-        await loadTournaments();
-        setGroupName('');
-        setSelectedTournament(null);
-        setShowJoinSheet(false);
+        if (response.success) {
+          toast.success(`Guild ${groupName} berhasil memasuki arena sebagai ${ROLE_CONFIG[selectedRole].title}!`);
+          await loadTournaments();
+          setGroupName('');
+          setSelectedTournament(null);
+          setShowJoinSheet(false);
 
-        if (tournamentId && response.group?.id) {
-          router.visit(`/game/tournament/${tournamentId}`, {
-            method: 'get',
-            data: { groupId: response.group.id },
-            onError: (errors) => {
-              console.error('❌ Redirect turnamen gagal:', errors);
-              toast.error('Gagal masuk ke sesi turnamen');
-            }
-          });
+          if (tournamentId && response.group?.id) {
+            router.visit(`/game/tournament/${tournamentId}`, {
+              method: 'get',
+              data: { groupId: response.group.id },
+              preserveState: false,
+              onError: (errors) => {
+                console.error('❌ Redirect turnamen gagal:', errors);
+                toast.error('Gagal masuk ke sesi turnamen');
+              },
+            });
+          }
         }
+      } catch (error: any) {
+        console.error('❌ Gagal bergabung turnamen:', error);
+        const errorMessage =
+          error.response?.status === 404
+            ? 'Turnamen tidak ditemukan atau sudah kedaluwarsa.'
+            : error.response?.status === 409
+            ? 'Turnamen sudah penuh atau nama guild sudah digunakan.'
+            : error.response?.data?.message || 'Gagal bergabung turnamen';
+        toast.error(errorMessage);
+      } finally {
+        setJoining(false);
       }
-    } catch (error: any) {
-      console.error('❌ Gagal bergabung turnamen:', error);
-      toast.error(error.response?.data?.message || 'Gagal bergabung turnamen');
-    } finally {
-      setJoining(false);
-    }
-  }, [groupName, joining, selectedRole, auth.user.name, loadTournaments]);
+    },
+    [groupName, joining, selectedRole, auth.user.name, loadTournaments]
+  );
 
-  const handleTournamentSelect = useCallback((tournament: TournamentData) => {
-    setSelectedTournament(tournament);
-    if (isMobile) {
-      setShowJoinSheet(true);
-    }
-  }, [isMobile]);
+  const handleTournamentSelect = useCallback(
+    (tournament: TournamentData) => {
+      setSelectedTournament(tournament);
+      if (isMobile) {
+        setShowJoinSheet(true);
+      }
+    },
+    [isMobile]
+  );
+
+  const handleToggleVoiceChat = useCallback(() => {
+    setShowVoiceChat((prev) => !prev);
+  }, []);
+
+  const handleCancelJoin = useCallback(() => {
+    setShowJoinSheet(false);
+    setSelectedTournament(null);
+    setGroupName('');
+  }, []);
 
   // Effects
   useEffect(() => {
@@ -617,6 +861,20 @@ export default function TurnamenLobby() {
     const interval = setInterval(loadTournaments, CONFIG.POLLING_INTERVAL);
     return () => clearInterval(interval);
   }, [loadTournaments]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyPress = (e: KeyboardEvent) => {
+      if (isActionDisabled) return;
+
+      if (e.key === 'Escape' && (showJoinSheet || selectedTournament)) {
+        handleCancelJoin();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, [isActionDisabled, showJoinSheet, selectedTournament, handleCancelJoin]);
 
   // Loading State
   if (loading) {
@@ -626,11 +884,7 @@ export default function TurnamenLobby() {
       >
         <Head title="Arena Turnamen" />
         <div className="min-h-screen bg-gradient-to-br from-stone-900 via-purple-900 to-amber-900 flex items-center justify-center p-4">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="text-center w-full max-w-md"
-          >
+          <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-center w-full max-w-md">
             <Card className="bg-gradient-to-br from-stone-800 to-stone-900 border-4 border-amber-600 p-6 sm:p-12 shadow-2xl dungeon-card-glow">
               <CardContent>
                 <LoadingSpinner />
@@ -697,12 +951,7 @@ export default function TurnamenLobby() {
 
       <div className="min-h-screen bg-gradient-to-br from-stone-900 via-purple-900 to-amber-900 py-4 sm:py-8 md:py-12 pb-24 sm:pb-12 relative z-10">
         <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
-          <motion.div
-            variants={staggerContainer}
-            initial="initial"
-            animate="animate"
-            className="space-y-4 sm:space-y-6"
-          >
+          <motion.div variants={staggerContainer} initial="initial" animate="animate" className="space-y-4 sm:space-y-6">
             {/* Header Turnamen */}
             <motion.div variants={fadeInUp}>
               <Card className="border-2 sm:border-4 border-amber-600 bg-gradient-to-br from-amber-900/30 to-stone-900 overflow-hidden shadow-xl sm:shadow-2xl dungeon-card-glow">
@@ -711,13 +960,14 @@ export default function TurnamenLobby() {
                     className="text-4xl sm:text-5xl md:text-7xl mb-3 sm:mb-4 dungeon-icon-glow"
                     animate={{
                       rotate: [0, -5, 5, -5, 0],
-                      scale: [1, 1.05, 1]
+                      scale: [1, 1.05, 1],
                     }}
                     transition={{
                       duration: 2,
                       repeat: Infinity,
-                      ease: 'easeInOut'
+                      ease: 'easeInOut',
                     }}
+                    aria-hidden="true"
                   >
                     ⚔️
                   </motion.div>
@@ -733,7 +983,7 @@ export default function TurnamenLobby() {
                       { icon: '🎯', text: 'Arena 4 Guild', color: 'purple' },
                       { icon: '⏱️', text: 'Dungeon Race', color: 'red' },
                       { icon: '👥', text: 'Koordinasi Mistis', color: 'blue' },
-                      { icon: '🏆', text: 'Warisan Juara', color: 'green' }
+                      { icon: '🏆', text: 'Warisan Juara', color: 'green' },
                     ].map((badge, index) => (
                       <motion.div
                         key={badge.text}
@@ -742,8 +992,12 @@ export default function TurnamenLobby() {
                         transition={{ delay: index * 0.1 }}
                         className="snap-center flex-shrink-0"
                       >
-                        <Badge className={`bg-gradient-to-r from-${badge.color}-600 to-${badge.color}-700 text-${badge.color}-100 px-2 sm:px-3 md:px-4 py-1 sm:py-1.5 md:py-2 text-xs sm:text-sm font-semibold shadow-lg whitespace-nowrap dungeon-badge-glow`}>
-                          <span className="mr-1 sm:mr-2">{badge.icon}</span>
+                        <Badge
+                          className={`bg-gradient-to-r from-${badge.color}-600 to-${badge.color}-700 text-${badge.color}-100 px-2 sm:px-3 md:px-4 py-1 sm:py-1.5 md:py-2 text-xs sm:text-sm font-semibold shadow-lg whitespace-nowrap dungeon-badge-glow`}
+                        >
+                          <span className="mr-1 sm:mr-2" aria-hidden="true">
+                            {badge.icon}
+                          </span>
                           <span className="hidden sm:inline">{badge.text}</span>
                           <span className="sm:hidden">{badge.text.split(' ')[0]}</span>
                         </Badge>
@@ -754,17 +1008,10 @@ export default function TurnamenLobby() {
               </Card>
             </motion.div>
 
-            {/* Turnamen Aktif / Daftar Turnamen */}
+            {/* Content - Active Tournament or Tournament List */}
             <AnimatePresence mode="wait">
               {activeTournament ? (
-                <motion.div
-                  key="active-tournament"
-                  variants={fadeInUp}
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                  className="space-y-4 sm:space-y-6"
-                >
+                <motion.div key="active-tournament" variants={fadeInUp} initial="initial" animate="animate" exit="exit" className="space-y-4 sm:space-y-6">
                   <Card className="border-2 sm:border-4 border-green-600 bg-gradient-to-br from-green-900/30 to-stone-900 shadow-xl sm:shadow-2xl dungeon-card-glow-green">
                     <CardHeader className="p-4 sm:p-6">
                       <CardTitle className="text-green-300 text-center text-xl sm:text-2xl md:text-3xl flex items-center justify-center gap-2 sm:gap-3 dungeon-glow-text">
@@ -772,6 +1019,7 @@ export default function TurnamenLobby() {
                           animate={{ rotate: [0, 360] }}
                           transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
                           className="text-2xl sm:text-3xl"
+                          aria-hidden="true"
                         >
                           🎯
                         </motion.span>
@@ -779,9 +1027,7 @@ export default function TurnamenLobby() {
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="text-center space-y-4 sm:space-y-6 p-4 sm:p-6">
-                      <h3 className="text-lg sm:text-xl md:text-2xl font-bold text-green-200 px-2">
-                        {activeTournament.name}
-                      </h3>
+                      <h3 className="text-lg sm:text-xl md:text-2xl font-bold text-green-200 px-2">{activeTournament.name}</h3>
 
                       <div className="flex flex-col sm:grid sm:grid-cols-3 gap-3 sm:gap-4">
                         <StatusBadge status={activeTournament.status} />
@@ -793,8 +1039,9 @@ export default function TurnamenLobby() {
                         <motion.div whileTap={{ scale: 0.95 }}>
                           <Badge className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-3 sm:px-4 py-2 text-sm sm:text-base w-full sm:w-auto font-bold">
                             {Array.isArray(activeTournament.groups)
-                              ? activeTournament.groups.filter(g => g.status !== 'eliminated').length
-                              : 0} Guild Bertahan
+                              ? activeTournament.groups.filter((g) => g.status !== 'eliminated').length
+                              : 0}{' '}
+                            Guild Bertahan
                           </Badge>
                         </motion.div>
                       </div>
@@ -804,31 +1051,24 @@ export default function TurnamenLobby() {
                           onClick={() => router.visit(`/game/tournament/${activeTournament.id}`)}
                           className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white px-6 sm:px-8 md:px-10 py-4 sm:py-5 md:py-6 text-base sm:text-lg md:text-xl font-bold rounded-xl sm:rounded-2xl shadow-2xl w-full sm:w-auto touch-manipulation dungeon-button-glow"
                         >
-                          <span className="mr-2 sm:mr-3 text-xl sm:text-2xl">🚀</span>
+                          <span className="mr-2 sm:mr-3 text-xl sm:text-2xl" aria-hidden="true">
+                            🚀
+                          </span>
                           Masuki Medan Pertempuran
                         </Button>
                       </motion.div>
                     </CardContent>
                   </Card>
 
+                  {/* Tournament Bracket - Desktop only */}
                   {activeTournament.bracket && Array.isArray(activeTournament.bracket) && activeTournament.bracket.length > 0 && (
                     <motion.div variants={fadeInUp} className="hidden sm:block">
-                      <TournamentBracket
-                        tournament={activeTournament}
-                        groups={activeTournament.groups || []}
-                        loading={false}
-                      />
+                      <TournamentBracket tournament={activeTournament} groups={activeTournament.groups || []} loading={false} />
                     </motion.div>
                   )}
                 </motion.div>
               ) : (
-                <motion.div
-                  key="tournament-list"
-                  variants={staggerContainer}
-                  initial="initial"
-                  animate="animate"
-                  className="space-y-4 sm:space-y-6"
-                >
+                <motion.div key="tournament-list" variants={staggerContainer} initial="initial" animate="animate" className="space-y-4 sm:space-y-6">
                   <motion.div variants={fadeInUp}>
                     <Card className="border-2 sm:border-4 border-blue-600 bg-gradient-to-br from-blue-900/30 to-stone-900 shadow-xl sm:shadow-2xl dungeon-card-glow-blue">
                       <CardHeader className="p-4 sm:p-6">
@@ -837,6 +1077,7 @@ export default function TurnamenLobby() {
                             animate={{ y: [0, -10, 0] }}
                             transition={{ duration: 1.5, repeat: Infinity }}
                             className="text-2xl sm:text-3xl"
+                            aria-hidden="true"
                           >
                             📋
                           </motion.span>
@@ -846,24 +1087,18 @@ export default function TurnamenLobby() {
                       <CardContent className="p-3 sm:p-6">
                         <AnimatePresence mode="wait">
                           {tournaments.length === 0 ? (
-                            <motion.div
-                              key="no-tournaments"
-                              variants={scaleIn}
-                              initial="initial"
-                              animate="animate"
-                              exit="exit"
-                              className="text-center py-8 sm:py-12 px-4"
-                            >
+                            <motion.div key="no-tournaments" variants={scaleIn} initial="initial" animate="animate" exit="exit" className="text-center py-8 sm:py-12 px-4">
                               <motion.div
                                 className="text-6xl sm:text-7xl md:text-8xl mb-4 sm:mb-6 dungeon-icon-glow"
                                 animate={{
                                   scale: [1, 1.1, 1],
-                                  rotate: [0, -10, 10, 0]
+                                  rotate: [0, -10, 10, 0],
                                 }}
                                 transition={{
                                   duration: 3,
-                                  repeat: Infinity
+                                  repeat: Infinity,
                                 }}
+                                aria-hidden="true"
                               >
                                 🏟️
                               </motion.div>
@@ -877,7 +1112,8 @@ export default function TurnamenLobby() {
                                 <Button
                                   onClick={createTournament}
                                   disabled={creating}
-                                  className="bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-700 hover:to-yellow-700 disabled:from-gray-600 disabled:to-gray-700 text-white px-6 sm:px-8 md:px-10 py-4 sm:py-5 md:py-6 text-base sm:text-lg md:text-xl font-bold rounded-xl sm:rounded-2xl shadow-2xl w-full sm:w-auto touch-manipulation dungeon-button-glow"
+                                  className="bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-700 hover:to-yellow-700 disabled:from-gray-600 disabled:to-gray-700 text-white px-6 sm:px-8 md:px-10 py-4 sm:py-5 md:py-6 text-base sm:text-lg md:text-xl font-bold rounded-xl sm:rounded-2xl shadow-2xl w-full sm:w-auto touch-manipulation dungeon-button-glow disabled:opacity-50 disabled:cursor-not-allowed"
+                                  aria-busy={creating}
                                 >
                                   {creating ? (
                                     <div className="flex items-center justify-center">
@@ -886,7 +1122,9 @@ export default function TurnamenLobby() {
                                     </div>
                                   ) : (
                                     <>
-                                      <span className="mr-2 sm:mr-3 text-xl sm:text-2xl">🏆</span>
+                                      <span className="mr-2 sm:mr-3 text-xl sm:text-2xl" aria-hidden="true">
+                                        🏆
+                                      </span>
                                       <span className="hidden sm:inline">Buka Arena Baru</span>
                                       <span className="sm:hidden">Buka Arena</span>
                                     </>
@@ -900,18 +1138,18 @@ export default function TurnamenLobby() {
                                 <SwipeableCard
                                   key={tournament.id}
                                   onSwipeRight={() => {
-                                    if (Array.isArray(tournament.groups) &&
-                                        tournament.groups.length < tournament.max_groups &&
-                                        tournament.status === 'waiting') {
+                                    if (
+                                      Array.isArray(tournament.groups) &&
+                                      tournament.groups.length < tournament.max_groups &&
+                                      tournament.status === 'waiting' &&
+                                      !isActionDisabled
+                                    ) {
                                       handleTournamentSelect(tournament);
                                     }
                                   }}
                                   className="w-full"
                                 >
-                                  <motion.div
-                                    variants={fadeInUp}
-                                    custom={index}
-                                  >
+                                  <motion.div variants={fadeInUp} custom={index}>
                                     <Card className="border-2 border-purple-600 bg-gradient-to-r from-purple-900/30 to-stone-900 hover:border-purple-400 transition-all duration-300 overflow-hidden shadow-lg dungeon-card-glow-purple">
                                       <CardContent className="p-3 sm:p-4 md:p-6">
                                         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-4">
@@ -961,9 +1199,12 @@ export default function TurnamenLobby() {
                                               <motion.div whileTap={{ scale: 0.95 }} className="flex-1 sm:flex-initial">
                                                 <Button
                                                   onClick={() => handleTournamentSelect(tournament)}
-                                                  className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white px-4 sm:px-6 py-2 sm:py-3 rounded-lg sm:rounded-xl font-bold shadow-lg w-full touch-manipulation text-sm sm:text-base dungeon-button-glow"
+                                                  disabled={isActionDisabled}
+                                                  className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white px-4 sm:px-6 py-2 sm:py-3 rounded-lg sm:rounded-xl font-bold shadow-lg w-full touch-manipulation text-sm sm:text-base dungeon-button-glow disabled:opacity-50 disabled:cursor-not-allowed"
                                                 >
-                                                  <span className="mr-1 sm:mr-2">⚔️</span>
+                                                  <span className="mr-1 sm:mr-2" aria-hidden="true">
+                                                    ⚔️
+                                                  </span>
                                                   <span className="hidden sm:inline">Gabung Guild</span>
                                                   <span className="sm:hidden">Gabung</span>
                                                 </Button>
@@ -978,7 +1219,9 @@ export default function TurnamenLobby() {
                                                     onClick={() => router.visit(`/game/tournament/${tournament.id}`)}
                                                     className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white px-3 sm:px-4 py-2 text-xs sm:text-sm rounded-lg shadow-lg w-full touch-manipulation font-semibold"
                                                   >
-                                                    <span className="mr-1 sm:mr-2">👁️</span>
+                                                    <span className="mr-1 sm:mr-2" aria-hidden="true">
+                                                      👁️
+                                                    </span>
                                                     Saksikan
                                                   </Button>
                                                 </motion.div>
@@ -992,16 +1235,15 @@ export default function TurnamenLobby() {
                                 </SwipeableCard>
                               ))}
 
-                              <motion.div
-                                variants={fadeInUp}
-                                whileTap={{ scale: 0.98 }}
-                              >
+                              {/* Create New Tournament Button */}
+                              <motion.div variants={fadeInUp} whileTap={{ scale: 0.98 }}>
                                 <Card className="border-2 border-dashed border-amber-600 bg-gradient-to-r from-amber-900/10 to-yellow-900/10 hover:from-amber-900/20 hover:to-yellow-900/20 transition-all duration-300">
                                   <CardContent className="p-3 sm:p-4 md:p-6 text-center">
                                     <Button
                                       onClick={createTournament}
                                       disabled={creating}
-                                      className="w-full bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-700 hover:to-yellow-700 disabled:from-gray-600 disabled:to-gray-700 text-white py-3 sm:py-4 text-base sm:text-lg font-bold rounded-lg sm:rounded-xl shadow-xl touch-manipulation dungeon-button-glow"
+                                      className="w-full bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-700 hover:to-yellow-700 disabled:from-gray-600 disabled:to-gray-700 text-white py-3 sm:py-4 text-base sm:text-lg font-bold rounded-lg sm:rounded-xl shadow-xl touch-manipulation dungeon-button-glow disabled:opacity-50 disabled:cursor-not-allowed"
+                                      aria-busy={creating}
                                     >
                                       {creating ? (
                                         <div className="flex items-center justify-center">
@@ -1010,7 +1252,9 @@ export default function TurnamenLobby() {
                                         </div>
                                       ) : (
                                         <>
-                                          <span className="mr-2 sm:mr-3 text-xl">🏆</span>
+                                          <span className="mr-2 sm:mr-3 text-xl" aria-hidden="true">
+                                            🏆
+                                          </span>
                                           <span className="hidden sm:inline">Buka Arena Baru</span>
                                           <span className="sm:hidden">Buka Arena</span>
                                         </>
@@ -1029,20 +1273,11 @@ export default function TurnamenLobby() {
                   {/* Desktop: Join Form */}
                   {!isMobile && selectedTournament && (
                     <AnimatePresence>
-                      <motion.div
-                        key="join-form-desktop"
-                        variants={scaleIn}
-                        initial="initial"
-                        animate="animate"
-                        exit="exit"
-                      >
+                      <motion.div key="join-form-desktop" variants={scaleIn} initial="initial" animate="animate" exit="exit">
                         <Card className="border-4 border-green-600 bg-gradient-to-br from-green-900/30 to-stone-900 shadow-2xl dungeon-card-glow-green">
                           <CardHeader>
                             <CardTitle className="text-green-300 text-center text-2xl md:text-3xl flex items-center justify-center gap-3 dungeon-glow-text">
-                              <motion.span
-                                animate={{ rotate: [0, -15, 15, 0] }}
-                                transition={{ duration: 1, repeat: Infinity }}
-                              >
+                              <motion.span animate={{ rotate: [0, -15, 15, 0] }} transition={{ duration: 1, repeat: Infinity }} aria-hidden="true">
                                 ⚔️
                               </motion.span>
                               Bergabung ke {selectedTournament.name}
@@ -1055,10 +1290,7 @@ export default function TurnamenLobby() {
                               selectedRole={selectedRole}
                               setSelectedRole={setSelectedRole}
                               onJoin={() => joinTournament(selectedTournament.id)}
-                              onCancel={() => {
-                                setSelectedTournament(null);
-                                setGroupName('');
-                              }}
+                              onCancel={handleCancelJoin}
                               joining={joining}
                               isMobile={false}
                             />
@@ -1068,7 +1300,7 @@ export default function TurnamenLobby() {
                     </AnimatePresence>
                   )}
 
-                  {/* Global Leaderboard */}
+                  {/* Global Leaderboard - Desktop only */}
                   {tournaments.length > 0 && globalLeaderboard.length > 0 && (
                     <motion.div variants={fadeInUp} className={isMobile ? 'hidden' : 'block'}>
                       <Card className="border-4 border-purple-600 bg-gradient-to-br from-purple-900/30 to-stone-900 shadow-2xl dungeon-card-glow-purple">
@@ -1077,12 +1309,13 @@ export default function TurnamenLobby() {
                             <motion.span
                               animate={{
                                 rotate: [0, 360],
-                                scale: [1, 1.2, 1]
+                                scale: [1, 1.2, 1],
                               }}
                               transition={{
                                 duration: 3,
-                                repeat: Infinity
+                                repeat: Infinity,
                               }}
+                              aria-hidden="true"
                             >
                               🏆
                             </motion.span>
@@ -1114,11 +1347,7 @@ export default function TurnamenLobby() {
       {/* Mobile Bottom Sheet untuk Join Tournament */}
       <BottomSheet
         isOpen={showJoinSheet && isMobile && selectedTournament !== null}
-        onClose={() => {
-          setShowJoinSheet(false);
-          setSelectedTournament(null);
-          setGroupName('');
-        }}
+        onClose={handleCancelJoin}
         title={selectedTournament ? `Bergabung ke ${selectedTournament.name}` : ''}
       >
         {selectedTournament && (
@@ -1129,11 +1358,7 @@ export default function TurnamenLobby() {
               selectedRole={selectedRole}
               setSelectedRole={setSelectedRole}
               onJoin={() => joinTournament(selectedTournament.id)}
-              onCancel={() => {
-                setShowJoinSheet(false);
-                setSelectedTournament(null);
-                setGroupName('');
-              }}
+              onCancel={handleCancelJoin}
               joining={joining}
               isMobile={true}
             />
@@ -1142,47 +1367,30 @@ export default function TurnamenLobby() {
       </BottomSheet>
 
       {/* Floating Voice Chat Button */}
-      {!showVoiceChat && (
-        <FloatingActionButton
-          onClick={() => setShowVoiceChat(true)}
-          icon="🎙️"
-          label="Voice Chat Guild"
-          variant="success"
-        />
-      )}
+      {!showVoiceChat && <FloatingActionButton onClick={handleToggleVoiceChat} icon="🎙️" label="Voice Chat Guild" variant="success" />}
 
       {/* Voice Chat Sidebar/Modal */}
       <AnimatePresence>
-        {showVoiceChat && (
-          isMobile ? (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 z-50 bg-stone-900"
-            >
+        {showVoiceChat &&
+          (isMobile ? (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 bg-stone-900">
               <div className="h-full flex flex-col">
                 <div className="flex items-center justify-between p-4 border-b border-gray-700">
                   <h3 className="text-xl font-bold text-green-300 flex items-center gap-2 dungeon-glow-text">
-                    <span>🎙️</span>
+                    <span aria-hidden="true">🎙️</span>
                     Lobi Suara Guild
                   </h3>
                   <motion.button
                     whileTap={{ scale: 0.9 }}
                     onClick={() => setShowVoiceChat(false)}
                     className="bg-red-600/30 hover:bg-red-600/50 text-red-300 px-4 py-2 rounded-lg touch-manipulation font-semibold"
+                    aria-label="Tutup voice chat"
                   >
                     ✕ Tutup
                   </motion.button>
                 </div>
                 <div className="flex-1 overflow-auto p-4">
-                  <VoiceChat
-                    sessionId={0}
-                    userId={auth?.user?.id || 0}
-                    nickname={auth?.user?.name || 'Petualang'}
-                    role="host"
-                    participants={[]}
-                  />
+                  <VoiceChat sessionId={0} userId={auth?.user?.id || 0} nickname={auth?.user?.name || 'Petualang'} role="host" participants={[]} />
                 </div>
               </div>
             </motion.div>
@@ -1198,10 +1406,7 @@ export default function TurnamenLobby() {
                 <CardHeader>
                   <CardTitle className="text-green-300 flex items-center justify-between dungeon-glow-text">
                     <span className="flex items-center gap-2">
-                      <motion.span
-                        animate={{ scale: [1, 1.2, 1] }}
-                        transition={{ duration: 1, repeat: Infinity }}
-                      >
+                      <motion.span animate={{ scale: [1, 1.2, 1] }} transition={{ duration: 1, repeat: Infinity }} aria-hidden="true">
                         🎙️
                       </motion.span>
                       Lobi Suara Guild
@@ -1211,24 +1416,18 @@ export default function TurnamenLobby() {
                       whileTap={{ scale: 0.9 }}
                       onClick={() => setShowVoiceChat(false)}
                       className="bg-red-600/30 hover:bg-red-600/50 text-red-300 px-3 py-1 text-sm rounded-lg font-semibold"
+                      aria-label="Tutup voice chat"
                     >
                       ✕
                     </motion.button>
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="h-[calc(100vh-100px)] overflow-auto">
-                  <VoiceChat
-                    sessionId={0}
-                    userId={auth?.user?.id || 0}
-                    nickname={auth?.user?.name || 'Petualang'}
-                    role="host"
-                    participants={[]}
-                  />
+                  <VoiceChat sessionId={0} userId={auth?.user?.id || 0} nickname={auth?.user?.name || 'Petualang'} role="host" participants={[]} />
                 </CardContent>
               </Card>
             </motion.div>
-          )
-        )}
+          ))}
       </AnimatePresence>
 
       {/* ========================================
@@ -1307,6 +1506,20 @@ export default function TurnamenLobby() {
           50% { transform: translateY(-50px) rotate(180deg); opacity: 0.8; }
         }
 
+        /* Loading skeleton pulse animation */
+        .skeleton-pulse {
+          animation: skeleton-pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+
+        @keyframes skeleton-pulse {
+          0%, 100% {
+            opacity: 0.4;
+          }
+          50% {
+            opacity: 1;
+          }
+        }
+
         /* Hide Scrollbar */
         .scrollbar-hide::-webkit-scrollbar {
           display: none;
@@ -1315,6 +1528,18 @@ export default function TurnamenLobby() {
         .scrollbar-hide {
           -ms-overflow-style: none;
           scrollbar-width: none;
+        }
+
+        /* Smooth transitions */
+        * {
+          transition-property: color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, filter, backdrop-filter;
+          transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* Focus styles for accessibility */
+        *:focus-visible {
+          outline: 2px solid rgba(251, 191, 36, 0.8);
+          outline-offset: 2px;
         }
 
         /* Responsive Adjustments */
@@ -1327,130 +1552,3 @@ export default function TurnamenLobby() {
     </AuthenticatedLayout>
   );
 }
-
-// ========================================
-// JOIN TOURNAMENT FORM COMPONENT
-// ========================================
-interface JoinTournamentFormProps {
-  groupName: string;
-  setGroupName: (name: string) => void;
-  selectedRole: 'defuser' | 'expert';
-  setSelectedRole: (role: 'defuser' | 'expert') => void;
-  onJoin: () => void;
-  onCancel: () => void;
-  joining: boolean;
-  isMobile: boolean;
-}
-
-const JoinTournamentForm = memo(({
-  groupName,
-  setGroupName,
-  selectedRole,
-  setSelectedRole,
-  onJoin,
-  onCancel,
-  joining,
-  isMobile
-}: JoinTournamentFormProps) => {
-  return (
-    <div className="space-y-4 sm:space-y-6">
-      <motion.div
-        initial={{ x: -50, opacity: 0 }}
-        animate={{ x: 0, opacity: 1 }}
-        transition={{ delay: 0.1 }}
-      >
-        <label className="block text-base sm:text-lg font-bold text-green-300 mb-2 sm:mb-3 dungeon-glow-text">
-          🏰 Nama Guild Anda
-        </label>
-        <input
-          type="text"
-          value={groupName}
-          onChange={(e) => setGroupName(e.target.value)}
-          placeholder="Masukkan nama guild legendaris"
-          className="w-full px-4 sm:px-6 py-3 sm:py-4 bg-stone-800 border-2 border-green-600 rounded-lg sm:rounded-xl text-green-300 placeholder-green-500/50 focus:outline-none focus:ring-4 focus:ring-green-500/50 transition-all text-sm sm:text-base touch-manipulation font-semibold"
-          maxLength={CONFIG.MAX_GROUP_NAME_LENGTH}
-        />
-        <p className="text-green-400 text-xs sm:text-sm mt-2">
-          {groupName.length}/{CONFIG.MAX_GROUP_NAME_LENGTH} karakter
-        </p>
-      </motion.div>
-
-      <motion.div
-        initial={{ x: -50, opacity: 0 }}
-        animate={{ x: 0, opacity: 1 }}
-        transition={{ delay: 0.2 }}
-      >
-        <label className="block text-base sm:text-lg font-bold text-green-300 mb-2 sm:mb-3 dungeon-glow-text">
-          ⚔️ Peran dalam Ekspedisi
-        </label>
-        <div className="grid grid-cols-2 gap-3 sm:gap-4">
-          <RoleSelectionCard
-            role="defuser"
-            selected={selectedRole === 'defuser'}
-            onSelect={() => setSelectedRole('defuser')}
-          />
-          <RoleSelectionCard
-            role="expert"
-            selected={selectedRole === 'expert'}
-            onSelect={() => setSelectedRole('expert')}
-          />
-        </div>
-      </motion.div>
-
-      <motion.div
-        initial={{ y: 20, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ delay: 0.3 }}
-      >
-        <Card className="border-2 sm:border-3 border-purple-600 bg-gradient-to-br from-purple-900/40 to-stone-800 overflow-hidden dungeon-card-glow-purple">
-          <CardContent className="p-4 sm:p-6">
-            <p className="text-purple-200 leading-relaxed text-xs sm:text-sm md:text-base">
-              <strong className="text-purple-300">Peran Terpilih:</strong> Guild Anda akan bertempur sebagai{' '}
-              <strong className="text-transparent bg-clip-text bg-gradient-to-r from-amber-300 to-yellow-300 dungeon-glow-text">
-                {ROLE_CONFIG[selectedRole].title}
-              </strong>.{' '}
-              {ROLE_CONFIG[selectedRole].description}
-            </p>
-          </CardContent>
-        </Card>
-      </motion.div>
-
-      <motion.div
-        initial={{ y: 20, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ delay: 0.4 }}
-        className="flex flex-col sm:flex-row gap-3 sm:gap-4"
-      >
-        <motion.div className="flex-1" whileTap={{ scale: 0.98 }}>
-          <Button
-            onClick={onJoin}
-            disabled={!groupName.trim() || joining}
-            className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 disabled:from-gray-600 disabled:to-gray-700 text-white py-3 sm:py-4 text-base sm:text-lg font-bold rounded-lg sm:rounded-xl shadow-xl touch-manipulation dungeon-button-glow"
-          >
-            {joining ? (
-              <div className="flex items-center justify-center">
-                <LoadingSpinner />
-                <span className="ml-2 sm:ml-3">Memasuki Arena...</span>
-              </div>
-            ) : (
-              <>
-                <span className="mr-2 sm:mr-3">⚔️</span>
-                Masuki Dungeon
-              </>
-            )}
-          </Button>
-        </motion.div>
-        <motion.div whileTap={{ scale: 0.98 }} className={isMobile ? 'w-full' : ''}>
-          <Button
-            onClick={onCancel}
-            className={`${isMobile ? 'w-full' : ''} bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-700 hover:to-gray-800 text-white py-3 sm:py-4 px-6 sm:px-8 rounded-lg sm:rounded-xl shadow-xl touch-manipulation text-base sm:text-lg font-semibold`}
-          >
-            Batalkan
-          </Button>
-        </motion.div>
-      </motion.div>
-    </div>
-  );
-});
-
-JoinTournamentForm.displayName = 'JoinTournamentForm';
