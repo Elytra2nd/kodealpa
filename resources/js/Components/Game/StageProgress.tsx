@@ -1,18 +1,19 @@
-import React, { useMemo, useRef, useEffect, memo } from 'react';
+import React, { useMemo, useRef, useEffect, memo, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Card, CardContent } from '@/Components/ui/card';
 import { Badge } from '@/Components/ui/badge';
-import { Progress } from '@/Components/ui/progress';
 import { gsap } from 'gsap';
 
 // ============================================
 // CONSTANTS & CONFIGURATIONS
 // ============================================
 const CONFIG = {
-  TORCH_FLICKER_INTERVAL: 2200,
+  TORCH_FLICKER_INTERVAL: 150,
   RUNE_FLOAT_DURATION: 3200,
   STAGE_ENTRANCE_DURATION: 0.5,
   STAGE_STAGGER: 0.1,
   PROGRESS_DURATION: 1,
+  MOBILE_BREAKPOINT: 768,
 } as const;
 
 const STAGE_CONFIG = {
@@ -27,14 +28,14 @@ const STAGE_CONFIG = {
     bg: 'bg-indigo-900/50',
     border: 'border-indigo-600',
     text: 'text-indigo-200',
-    icon: '', // Add icon property for consistency
+    icon: '⚔️',
     glow: 'shadow-indigo-500/50',
   },
   pending: {
     bg: 'bg-stone-900/60',
     border: 'border-stone-700',
     text: 'text-stone-300',
-    icon: '', // Add icon property for consistency
+    icon: '⏳',
     glow: 'shadow-stone-700/20',
   },
 } as const;
@@ -52,27 +53,40 @@ interface Props {
 // ============================================
 // CUSTOM HOOKS
 // ============================================
+const useIsMobile = () => {
+  const [isMobile, setIsMobile] = React.useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < CONFIG.MOBILE_BREAKPOINT);
+    checkMobile();
+    const handleResize = () => checkMobile();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  return isMobile;
+};
+
 const useDungeonAtmosphere = () => {
   const torchRefs = useRef<(HTMLElement | null)[]>([]);
   const runeRefs = useRef<(HTMLElement | null)[]>([]);
   const stageRefs = useRef<(HTMLElement | null)[]>([]);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
-    // Torch flicker animation
-    const torchInterval = setInterval(() => {
+    intervalRef.current = setInterval(() => {
       torchRefs.current.forEach((torch) => {
         if (torch) {
           gsap.to(torch, {
-            opacity: Math.random() * 0.14 + 0.86,
-            filter: `brightness(${Math.random() * 0.17 + 0.95})`,
-            duration: 0.22,
+            opacity: Math.random() * 0.3 + 0.7,
+            scale: Math.random() * 0.1 + 0.95,
+            duration: 0.15,
             ease: 'power1.inOut',
           });
         }
       });
     }, CONFIG.TORCH_FLICKER_INTERVAL);
 
-    // Rune float animation
     runeRefs.current.forEach((rune, index) => {
       if (rune) {
         gsap.to(rune, {
@@ -86,11 +100,14 @@ const useDungeonAtmosphere = () => {
       }
     });
 
-    return () => clearInterval(torchInterval);
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+    };
   }, []);
 
   useEffect(() => {
-    // Stage entrance animation
     const validStages = stageRefs.current.filter((stage): stage is HTMLElement => stage !== null);
     if (validStages.length > 0) {
       gsap.fromTo(
@@ -112,19 +129,49 @@ const useDungeonAtmosphere = () => {
     }
   }, []);
 
-  const setTorchRef = (index: number) => (el: HTMLSpanElement | null) => {
-    torchRefs.current[index] = el;
-  };
+  const setTorchRef = useCallback(
+    (index: number) => (el: HTMLSpanElement | null) => {
+      torchRefs.current[index] = el;
+    },
+    []
+  );
 
-  const setRuneRef = (index: number) => (el: HTMLDivElement | null) => {
-    runeRefs.current[index] = el;
-  };
+  const setRuneRef = useCallback(
+    (index: number) => (el: HTMLDivElement | null) => {
+      runeRefs.current[index] = el;
+    },
+    []
+  );
 
-  const setStageRef = (index: number) => (el: HTMLDivElement | null) => {
-    stageRefs.current[index] = el;
-  };
+  const setStageRef = useCallback(
+    (index: number) => (el: HTMLDivElement | null) => {
+      stageRefs.current[index] = el;
+    },
+    []
+  );
 
   return { setTorchRef, setRuneRef, setStageRef };
+};
+
+// ============================================
+// ANIMATION VARIANTS
+// ============================================
+const fadeInUp = {
+  initial: { opacity: 0, y: 10 },
+  animate: { opacity: 1, y: 0 },
+  exit: { opacity: 0, y: -10 },
+};
+
+const scaleIn = {
+  initial: { scale: 0.95, opacity: 0 },
+  animate: { scale: 1, opacity: 1 },
+  exit: { scale: 0.95, opacity: 0 },
+};
+
+const staggerContainer = {
+  animate: {
+    transition: { staggerChildren: 0.05 },
+  },
 };
 
 // ============================================
@@ -137,25 +184,26 @@ const StageIndicator = memo(
     isCurrent,
     index,
     setStageRef,
+    isMobile,
   }: {
     stageNumber: number;
     isCompleted: boolean;
     isCurrent: boolean;
     index: number;
     setStageRef: (index: number) => (el: HTMLDivElement | null) => void;
+    isMobile: boolean;
   }) => {
-    const config = isCompleted
-      ? STAGE_CONFIG.completed
-      : isCurrent
-      ? STAGE_CONFIG.current
-      : STAGE_CONFIG.pending;
+    const config = isCompleted ? STAGE_CONFIG.completed : isCurrent ? STAGE_CONFIG.current : STAGE_CONFIG.pending;
 
     return (
-      <div
+      <motion.div
         ref={setStageRef(index)}
-        className={`w-12 h-12 rounded-xl border-2 flex items-center justify-center font-bold select-none shadow-lg transition-all duration-300 hover:scale-110 ${config.bg} ${config.border} ${config.text} ${config.glow} ${
-          isCurrent ? 'dungeon-rune-float dungeon-pulse' : ''
-        }`}
+        variants={fadeInUp}
+        whileHover={{ scale: 1.1, rotate: isCompleted ? 360 : 0 }}
+        whileTap={{ scale: 0.95 }}
+        className={`${isMobile ? 'w-10 h-10 text-sm' : 'w-12 h-12 text-base'} rounded-xl border-2 flex items-center justify-center font-bold select-none shadow-lg transition-all duration-300 cursor-default ${
+          config.bg
+        } ${config.border} ${config.text} ${config.glow} ${isCurrent ? 'dungeon-rune-float dungeon-pulse' : ''}`}
         title={
           isCompleted
             ? `Tahap ${stageNumber}: Ditaklukkan`
@@ -172,7 +220,7 @@ const StageIndicator = memo(
         }
       >
         {isCompleted ? STAGE_CONFIG.completed.icon : stageNumber}
-      </div>
+      </motion.div>
     );
   }
 );
@@ -180,10 +228,13 @@ const StageIndicator = memo(
 StageIndicator.displayName = 'StageIndicator';
 
 const StageConnector = memo(({ isCompleted }: { isCompleted: boolean }) => (
-  <div
-    className={`flex-1 h-1.5 rounded transition-all duration-500 ${
+  <motion.div
+    initial={{ scaleX: 0 }}
+    animate={{ scaleX: 1 }}
+    transition={{ duration: 0.3, delay: 0.1 }}
+    className={`flex-1 h-1.5 rounded transition-all duration-500 origin-left ${
       isCompleted
-        ? 'bg-gradient-to-r from-emerald-700 via-emerald-600 to-emerald-700 shadow-lg shadow-emerald-500/30'
+        ? 'bg-gradient-to-r from-emerald-700 via-emerald-600 to-emerald-700 shadow-lg shadow-emerald-500/30 dungeon-progress-glow'
         : 'bg-stone-700'
     }`}
     aria-hidden="true"
@@ -199,30 +250,32 @@ const StatCard = memo(
     badgeColor,
     badgeText,
     badgeBorder,
+    icon,
     index,
     setRuneRef,
+    isMobile,
   }: {
     value: number;
     label: string;
     badgeColor: string;
     badgeText: string;
     badgeBorder: string;
+    icon: string;
     index: number;
     setRuneRef: (index: number) => (el: HTMLDivElement | null) => void;
+    isMobile: boolean;
   }) => (
-    <div className="text-center">
-      <div
-        ref={setRuneRef(index)}
-        className={`text-lg font-bold dungeon-rune-float ${badgeText}`}
-      >
+    <motion.div variants={fadeInUp} className="text-center">
+      <div ref={setRuneRef(index)} className={`${isMobile ? 'text-lg' : 'text-xl sm:text-2xl'} font-bold dungeon-rune-float ${badgeText}`}>
         {value}
       </div>
-      <Badge
-        className={`mt-1 ${badgeColor} ${badgeText} ${badgeBorder} shadow-md dungeon-badge-glow`}
-      >
+      <Badge className={`mt-1 ${badgeColor} ${badgeText} ${badgeBorder} shadow-md dungeon-badge-glow text-xs`}>
+        <span className="mr-1" aria-hidden="true">
+          {icon}
+        </span>
         {label}
       </Badge>
-    </div>
+    </motion.div>
   )
 );
 
@@ -232,20 +285,48 @@ StatCard.displayName = 'StatCard';
 // MAIN COMPONENT
 // ============================================
 export default function StageProgress({ current, total, completed, totalScore }: Props) {
+  const isMobile = useIsMobile();
   const { setTorchRef, setRuneRef, setStageRef } = useDungeonAtmosphere();
+  const progressBarRef = useRef<HTMLDivElement>(null);
 
+  // ============================================
+  // MEMOIZED VALUES
+  // ============================================
   const percent = useMemo(() => {
     const done = Math.min(completed.length, total);
     return total > 0 ? Math.round((done / total) * 100) : 0;
   }, [completed.length, total]);
 
-  const remainingStages = useMemo(() => Math.max(total - current, 0), [total, current]);
+  const remainingStages = useMemo(() => Math.max(total - completed.length, 0), [total, completed.length]);
 
-  // Animate progress bar when percent changes
+  const motivationalMessage = useMemo(() => {
+    if (percent === 100) {
+      return {
+        text: 'Semua tahap berhasil ditaklukkan! Dungeon telah jatuh!',
+        icon: '🏆',
+        color: 'emerald',
+        gradient: 'from-emerald-950/40 to-green-950/40',
+        border: 'border-emerald-600',
+      };
+    }
+    if (percent >= 50) {
+      return {
+        text: 'Setengah perjalanan telah dilalui! Terus bertarung!',
+        icon: '⚔️',
+        color: 'indigo',
+        gradient: 'from-indigo-950/40 to-blue-950/40',
+        border: 'border-indigo-600',
+      };
+    }
+    return null;
+  }, [percent]);
+
+  // ============================================
+  // EFFECTS
+  // ============================================
   useEffect(() => {
-    const progressBar = document.querySelector('[data-progress-bar]');
-    if (progressBar) {
-      gsap.to(progressBar, {
+    if (progressBarRef.current) {
+      gsap.to(progressBarRef.current, {
         width: `${percent}%`,
         duration: CONFIG.PROGRESS_DURATION,
         ease: 'power2.out',
@@ -254,218 +335,177 @@ export default function StageProgress({ current, total, completed, totalScore }:
   }, [percent]);
 
   return (
-    <Card className="overflow-hidden border-4 border-amber-700 bg-gradient-to-br from-stone-900 via-stone-800 to-amber-950 shadow-2xl dungeon-card-glow">
-      <CardContent className="p-4 sm:p-5">
-        {/* Header skor dan label */}
-        <div className="flex flex-col sm:flex-row items-center justify-between mb-4 gap-3">
-          <h3 className="text-base sm:text-lg font-semibold text-amber-300 flex items-center gap-2 dungeon-glow-text">
-            <span ref={setTorchRef(0)} className="dungeon-torch-flicker text-xl sm:text-2xl">
-              🕯️
-            </span>
-            <span>Kemajuan Ekspedisi Dungeon</span>
-          </h3>
-          <div className="text-center sm:text-right">
-            <div
-              ref={setRuneRef(0)}
-              className="text-2xl sm:text-3xl font-extrabold text-emerald-300 dungeon-rune-float dungeon-glow-text"
+    <motion.div variants={scaleIn} initial="initial" animate="animate">
+      <Card className="overflow-hidden border-2 sm:border-4 border-amber-700 bg-gradient-to-br from-stone-900 via-stone-800 to-amber-950 shadow-2xl dungeon-card-glow">
+        <CardContent className={isMobile ? 'p-3' : 'p-4 sm:p-5'}>
+          {/* Header skor dan label */}
+          <motion.div variants={staggerContainer} className="flex flex-col sm:flex-row items-center justify-between mb-4 gap-3">
+            <motion.h3
+              variants={fadeInUp}
+              className={`${
+                isMobile ? 'text-sm' : 'text-base sm:text-lg'
+              } font-semibold text-amber-300 flex items-center gap-2 dungeon-glow-text`}
             >
-              {totalScore.toLocaleString()}
+              <span ref={setTorchRef(0)} className={`dungeon-torch-flicker ${isMobile ? 'text-lg' : 'text-xl sm:text-2xl'}`}>
+                🕯️
+              </span>
+              <span>Kemajuan Ekspedisi</span>
+            </motion.h3>
+            <motion.div variants={fadeInUp} className="text-center sm:text-right">
+              <div
+                ref={setRuneRef(0)}
+                className={`${isMobile ? 'text-xl' : 'text-2xl sm:text-3xl'} font-extrabold text-emerald-300 dungeon-rune-float dungeon-glow-text`}
+              >
+                {totalScore.toLocaleString()}
+              </div>
+              <div className="text-xs sm:text-sm text-stone-300">Skor Penaklukan</div>
+            </motion.div>
+          </motion.div>
+
+          {/* Deretan tahap berbentuk batu runik */}
+          <motion.div
+            variants={staggerContainer}
+            className="flex items-center gap-2 mb-4 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-amber-700 scrollbar-track-stone-900"
+          >
+            {Array.from({ length: total }, (_, i) => {
+              const stageNumber = i + 1;
+              const isCompleted = completed.includes(stageNumber);
+              const isCurrent = stageNumber === current;
+
+              return (
+                <React.Fragment key={stageNumber}>
+                  <StageIndicator
+                    stageNumber={stageNumber}
+                    isCompleted={isCompleted}
+                    isCurrent={isCurrent}
+                    index={i}
+                    setStageRef={setStageRef}
+                    isMobile={isMobile}
+                  />
+
+                  {stageNumber < total && <StageConnector isCompleted={completed.includes(stageNumber)} />}
+                </React.Fragment>
+              );
+            })}
+          </motion.div>
+
+          {/* Progress bar total */}
+          <motion.div variants={fadeInUp} className="mb-2">
+            <div className="relative w-full h-2 bg-stone-700 rounded-full overflow-hidden shadow-inner">
+              <div
+                ref={progressBarRef}
+                className="h-full bg-gradient-to-r from-emerald-600 via-emerald-500 to-emerald-600 rounded-full shadow-lg shadow-emerald-500/50 dungeon-progress-glow"
+                style={{ width: '0%' }}
+              />
             </div>
-            <div className="text-xs sm:text-sm text-stone-300">Skor Penaklukan</div>
-          </div>
-        </div>
+          </motion.div>
 
-        {/* Deretan tahap berbentuk batu runik */}
-        <div className="flex items-center gap-2 sm:gap-3 mb-4 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-amber-700 scrollbar-track-stone-900">
-          {Array.from({ length: total }, (_, i) => {
-            const stageNumber = i + 1;
-            const isCompleted = completed.includes(stageNumber);
-            const isCurrent = stageNumber === current;
+          <motion.div variants={fadeInUp} className="flex items-center justify-between text-xs text-stone-300 mb-4">
+            <span className="flex items-center gap-1">
+              <span className="text-emerald-400" aria-hidden="true">
+                ✓
+              </span>
+              <span className="hidden sm:inline">{completed.length} ditaklukkan</span>
+              <span className="sm:hidden">{completed.length}</span>
+            </span>
+            <span className="font-bold text-amber-300">{percent}%</span>
+            <span className="flex items-center gap-1">
+              <span className="text-stone-500" aria-hidden="true">
+                ⏳
+              </span>
+              <span className="hidden sm:inline">{remainingStages} tersisa</span>
+              <span className="sm:hidden">{remainingStages}</span>
+            </span>
+          </motion.div>
 
-            return (
-              <React.Fragment key={stageNumber}>
-                <StageIndicator
-                  stageNumber={stageNumber}
-                  isCompleted={isCompleted}
-                  isCurrent={isCurrent}
-                  index={i}
-                  setStageRef={setStageRef}
-                />
-
-                {stageNumber < total && (
-                  <StageConnector isCompleted={completed.includes(stageNumber)} />
-                )}
-              </React.Fragment>
-            );
-          })}
-        </div>
-
-        {/* Progress bar total */}
-        <div className="mb-2">
-          <div className="relative w-full h-2 bg-stone-700 rounded-full overflow-hidden shadow-inner">
-            <div
-              data-progress-bar
-              className="h-full bg-gradient-to-r from-emerald-600 via-emerald-500 to-emerald-600 rounded-full transition-all duration-1000 shadow-lg shadow-emerald-500/50 dungeon-progress-glow"
-              style={{ width: `${percent}%` }}
+          {/* Ringkasan status dalam badge */}
+          <motion.div variants={staggerContainer} className="grid grid-cols-3 gap-2 sm:gap-3 text-center">
+            <StatCard
+              value={completed.length}
+              label="Ditaklukkan"
+              badgeColor="bg-emerald-800"
+              badgeText="text-emerald-100"
+              badgeBorder="border-emerald-700"
+              icon="✓"
+              index={1}
+              setRuneRef={setRuneRef}
+              isMobile={isMobile}
             />
-          </div>
-        </div>
-        <div className="flex items-center justify-between text-xs text-stone-300 mb-4">
-          <span className="flex items-center gap-1">
-            <span className="text-emerald-400">✓</span>
-            {completed.length} ditaklukkan
-          </span>
-          <span className="font-bold text-amber-300">{percent}%</span>
-          <span className="flex items-center gap-1">
-            <span className="text-stone-500">⏳</span>
-            {Math.max(total - completed.length, 0)} tersisa
-          </span>
-        </div>
+            <StatCard
+              value={current}
+              label="Pertempuran"
+              badgeColor="bg-indigo-800"
+              badgeText="text-indigo-100"
+              badgeBorder="border-indigo-700"
+              icon="⚔️"
+              index={2}
+              setRuneRef={setRuneRef}
+              isMobile={isMobile}
+            />
+            <StatCard
+              value={remainingStages}
+              label="Menanti"
+              badgeColor="bg-stone-700"
+              badgeText="text-stone-200"
+              badgeBorder="border-stone-600"
+              icon="⏳"
+              index={3}
+              setRuneRef={setRuneRef}
+              isMobile={isMobile}
+            />
+          </motion.div>
 
-        {/* Ringkasan status dalam badge */}
-        <div className="grid grid-cols-3 gap-2 sm:gap-3 text-center">
-          <StatCard
-            value={completed.length}
-            label="Ditaklukkan"
-            badgeColor="bg-emerald-800"
-            badgeText="text-emerald-100"
-            badgeBorder="border-emerald-700"
-            index={1}
-            setRuneRef={setRuneRef}
-          />
-          <StatCard
-            value={current}
-            label="Pertempuran"
-            badgeColor="bg-indigo-800"
-            badgeText="text-indigo-100"
-            badgeBorder="border-indigo-700"
-            index={2}
-            setRuneRef={setRuneRef}
-          />
-          <StatCard
-            value={remainingStages}
-            label="Menanti"
-            badgeColor="bg-stone-700"
-            badgeText="text-stone-200"
-            badgeBorder="border-stone-600"
-            index={3}
-            setRuneRef={setRuneRef}
-          />
-        </div>
+          {/* Motivational Message */}
+          <AnimatePresence>
+            {motivationalMessage && (
+              <motion.div
+                key={motivationalMessage.text}
+                initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                transition={{ duration: 0.3 }}
+                className={`mt-4 p-3 bg-gradient-to-r ${motivationalMessage.gradient} border-2 ${motivationalMessage.border} rounded-lg text-center backdrop-blur-sm ${
+                  motivationalMessage.color === 'emerald' ? 'dungeon-card-glow-green' : ''
+                }`}
+              >
+                <p
+                  className={`${isMobile ? 'text-xs' : 'text-sm'} font-bold text-${
+                    motivationalMessage.color
+                  }-300 flex items-center justify-center gap-2 dungeon-glow-text`}
+                >
+                  <span className={isMobile ? 'text-base' : 'text-lg'} aria-hidden="true">
+                    {motivationalMessage.icon}
+                  </span>
+                  <span>{motivationalMessage.text}</span>
+                </p>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </CardContent>
 
-        {/* Motivational Message */}
-        {percent === 100 ? (
-          <div className="mt-4 p-3 bg-gradient-to-r from-emerald-950/40 to-green-950/40 border-2 border-emerald-600 rounded-lg text-center backdrop-blur-sm animate-[fadeIn_0.5s_ease-out] dungeon-card-glow-green">
-            <p className="text-sm font-bold text-emerald-300 flex items-center justify-center gap-2 dungeon-glow-text">
-              <span className="text-lg">🏆</span>
-              Semua tahap berhasil ditaklukkan! Dungeon telah jatuh!
-            </p>
-          </div>
-        ) : percent >= 50 ? (
-          <div className="mt-4 p-3 bg-gradient-to-r from-indigo-950/40 to-blue-950/40 border-2 border-indigo-600 rounded-lg text-center backdrop-blur-sm animate-[fadeIn_0.5s_ease-out]">
-            <p className="text-sm font-bold text-indigo-300 flex items-center justify-center gap-2">
-              <span className="text-lg">⚔️</span>
-              Setengah perjalanan telah dilalui! Terus bertarung!
-            </p>
-          </div>
-        ) : null}
-      </CardContent>
-
-      {/* ========================================
-          CUSTOM DUNGEON STYLES
-          ======================================== */}
-      <style>{`
-        /* Torch Flicker Animation */
-        .dungeon-torch-flicker {
-          display: inline-block;
-        }
-
-        /* Rune Float Animation */
-        .dungeon-rune-float {
-          display: inline-block;
-        }
-
-        /* Card Glow */
-        .dungeon-card-glow {
-          box-shadow: 0 0 30px rgba(251, 191, 36, 0.4), 0 0 60px rgba(251, 191, 36, 0.2);
-        }
-
-        .dungeon-card-glow-green {
-          box-shadow: 0 0 20px rgba(34, 197, 94, 0.4), 0 0 40px rgba(34, 197, 94, 0.2);
-        }
-
-        /* Progress Glow */
-        .dungeon-progress-glow {
-          filter: drop-shadow(0 0 8px rgba(34, 197, 94, 0.6));
-        }
-
-        /* Badge Glow */
-        .dungeon-badge-glow {
-          filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.4));
-        }
-
-        /* Text Glow */
-        .dungeon-glow-text {
-          text-shadow: 0 0 20px rgba(251, 191, 36, 0.6), 0 0 40px rgba(251, 191, 36, 0.4);
-        }
-
-        /* Pulse Animation */
-        .dungeon-pulse {
-          animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-        }
-
-        @keyframes pulse {
-          0%, 100% {
-            opacity: 1;
+        {/* Styles */}
+        <style>{`
+          .dungeon-torch-flicker { display: inline-block; }
+          .dungeon-rune-float { display: inline-block; }
+          .dungeon-card-glow { box-shadow: 0 0 30px rgba(251, 191, 36, 0.4), 0 0 60px rgba(251, 191, 36, 0.2); }
+          .dungeon-card-glow-green { box-shadow: 0 0 20px rgba(34, 197, 94, 0.4), 0 0 40px rgba(34, 197, 94, 0.2); }
+          .dungeon-progress-glow { filter: drop-shadow(0 0 8px rgba(34, 197, 94, 0.6)); }
+          .dungeon-badge-glow { filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.4)); }
+          .dungeon-glow-text { text-shadow: 0 0 20px rgba(251, 191, 36, 0.6), 0 0 40px rgba(251, 191, 36, 0.4); }
+          .dungeon-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+          @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+          .scrollbar-thin::-webkit-scrollbar { height: 6px; }
+          .scrollbar-thin::-webkit-scrollbar-track { background: rgba(28, 25, 23, 0.5); border-radius: 3px; }
+          .scrollbar-thumb-amber-700::-webkit-scrollbar-thumb { background-color: rgba(180, 83, 9, 0.6); border-radius: 3px; }
+          .scrollbar-thumb-amber-700::-webkit-scrollbar-thumb:hover { background-color: rgba(180, 83, 9, 0.8); }
+          .scrollbar-track-stone-900::-webkit-scrollbar-track { background: rgba(28, 25, 23, 0.5); }
+          @media (max-width: 768px) {
+            .dungeon-card-glow, .dungeon-card-glow-green {
+              box-shadow: 0 0 15px rgba(251, 191, 36, 0.3), 0 0 30px rgba(251, 191, 36, 0.15);
+            }
           }
-          50% {
-            opacity: 0.7;
-          }
-        }
-
-        /* Fade In Animation */
-        @keyframes fadeIn {
-          from {
-            opacity: 0;
-            transform: translateY(10px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-
-        /* Scrollbar Styling */
-        .scrollbar-thin::-webkit-scrollbar {
-          height: 6px;
-        }
-
-        .scrollbar-thin::-webkit-scrollbar-track {
-          background: rgba(28, 25, 23, 0.5);
-          border-radius: 3px;
-        }
-
-        .scrollbar-thumb-amber-700::-webkit-scrollbar-thumb {
-          background-color: rgba(180, 83, 9, 0.6);
-          border-radius: 3px;
-        }
-
-        .scrollbar-thumb-amber-700::-webkit-scrollbar-thumb:hover {
-          background-color: rgba(180, 83, 9, 0.8);
-        }
-
-        .scrollbar-track-stone-900::-webkit-scrollbar-track {
-          background: rgba(28, 25, 23, 0.5);
-        }
-
-        /* Responsive Adjustments */
-        @media (max-width: 768px) {
-          .dungeon-card-glow,
-          .dungeon-card-glow-green {
-            box-shadow: 0 0 15px rgba(251, 191, 36, 0.3), 0 0 30px rgba(251, 191, 36, 0.15);
-          }
-        }
-      `}</style>
-    </Card>
+        `}</style>
+      </Card>
+    </motion.div>
   );
 }

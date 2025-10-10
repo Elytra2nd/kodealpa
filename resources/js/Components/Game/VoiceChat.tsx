@@ -22,7 +22,7 @@ const CONFIG = {
   CONNECTION_TIMEOUT: 1500,
   MAX_PARTICIPANTS_DISPLAY: 10,
   PULSE_DURATION: 2000,
-  TEST_MODE: true, // Set to false in production
+  TEST_MODE: false, // Set to false in production
 } as const;
 
 const ICE_SERVERS: RTCConfiguration = {
