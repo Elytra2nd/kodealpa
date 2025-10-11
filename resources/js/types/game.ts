@@ -16,12 +16,13 @@ export interface StageConfig {
   title: string;
   timeLimit: number;
   maxAttempts: number;
+  maxHints?: number; // ✅ ADDED: Max hints per stage
   difficulty?: 'beginner' | 'intermediate' | 'advanced';
   learningObjectives?: string[];
 }
 
 // Main Stage interface - ONLY DECLARE ONCE
-export interface GameStage {  // Renamed from 'Stage' to avoid conflicts
+export interface GameStage {
   id: number;
   mission_id: number;
   name: string;
@@ -79,6 +80,11 @@ export interface GameSession {
   collaboration_score?: number;
   failed_stage?: number;
 
+  // ✅ ADDED: Hint system properties
+  hint_usage?: Record<number, number>; // Track hints used per stage { stage_number: hints_used }
+  max_hints_per_stage?: number; // Maximum hints allowed per stage
+  total_hints_used?: number; // Total hints used across all stages
+
   // Learning and feedback
   learning_progress?: Array<{
     stage: number;
@@ -86,7 +92,7 @@ export interface GameSession {
     score: number;
     time_taken: number;
   }>;
-  hint_count?: number;
+  hint_count?: number; // Legacy hint count (kept for backward compatibility)
   peer_feedback?: Array<{
     from: string;
     to: string;
@@ -99,7 +105,7 @@ export interface GameSession {
   participants: GameParticipant[];
   attempts: GameAttempt[];
 
-  // Optional stage reference - using renamed interface
+  // Optional stage reference
   stage?: GameStage;
   mission?: Mission;
 
@@ -235,6 +241,56 @@ export interface GameHint {
   used_at: string;
 }
 
+// ✅ ADDED: DM Conversation and Message interfaces
+export interface DmConversation {
+  id: number;
+  game_session_id: number;
+  status: 'active' | 'completed' | 'paused';
+  total_tokens: number;
+  estimated_cost: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DmMessage {
+  id: number;
+  dm_conversation_id: number;
+  user_id?: number;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  tokens_used: number;
+  created_at: string;
+  updated_at?: string;
+  user?: {
+    id: number;
+    name: string;
+    email: string;
+  };
+}
+
+// ✅ ADDED: DM Hint usage response
+export interface DmHintUsageResponse {
+  currentStage: number;
+  hintsUsed: number;
+  hintsRemaining: number;
+  maxHintsPerStage: number;
+  totalHintsUsed: number;
+  hintHistory?: Array<{
+    stage: number;
+    hintsUsed: number;
+    timestamp: string;
+  }>;
+}
+
+// ✅ ADDED: DM Hint response
+export interface DmHintResponse {
+  hint: string;
+  hintsRemaining: number;
+  hintsUsed: number;
+  stage: number;
+  timestamp: string;
+}
+
 // Analytics interface
 export interface GameAnalytics {
   session_id: number;
@@ -328,10 +384,9 @@ export interface FeedbackSubmissionRequest {
 }
 
 // ===========================
-// TOURNAMENT TYPES - UPDATED FOR TS2345 FIX
+// TOURNAMENT TYPES
 // ===========================
 
-// ✅ Tournament group interface with proper nullable handling
 export interface TournamentGroup {
   id: number;
   name: string;
@@ -342,13 +397,11 @@ export interface TournamentGroup {
     nickname: string;
     role: 'defuser' | 'expert';
   }>;
-  // ✅ FIX: Explicit null/undefined handling for nullable fields
   completion_time?: number | undefined;
   rank?: number | undefined;
   score: number;
 }
 
-// ✅ Tournament main interface with proper nullable handling
 export interface TournamentData {
   id: number;
   name: string;
@@ -358,11 +411,9 @@ export interface TournamentData {
   groups: TournamentGroup[];
   bracket?: TournamentBracket[];
   created_at: string;
-  // ✅ FIX: Allow null for starts_at
   starts_at: string | null;
 }
 
-// ✅ Tournament bracket interface with proper nullable handling
 export interface TournamentBracket {
   round: number;
   matches: Array<{
@@ -402,7 +453,6 @@ export interface TournamentListResponse {
   message?: string;
 }
 
-// Tournament participant interface
 export interface TournamentParticipant {
   id: number;
   user_id: number;
@@ -415,7 +465,6 @@ export interface TournamentParticipant {
   updated_at?: string;
 }
 
-// ✅ Tournament match interface with proper nullable handling
 export interface TournamentMatch {
   id: number;
   tournament_id: number;
@@ -434,7 +483,6 @@ export interface TournamentMatch {
   updated_at?: string;
 }
 
-// ✅ Tournament analytics interface with proper nullable handling
 export interface TournamentAnalytics {
   tournament_id: number;
   total_groups: number;
@@ -462,7 +510,6 @@ export interface TournamentAnalytics {
   };
 }
 
-// ✅ Tournament session data interface
 export interface TournamentSessionData {
   tournament: TournamentData;
   group: TournamentGroup;
@@ -475,7 +522,7 @@ export interface TournamentSessionData {
 // END TOURNAMENT TYPES
 // ===========================
 
-// Legacy aliases for backward compatibility - NO DUPLICATE DECLARATIONS
+// Legacy aliases for backward compatibility
 export type Stage = GameStage;
 export type SessionParticipant = GameParticipant;
 export type Attempt = GameAttempt;
@@ -515,3 +562,26 @@ export const normalizeTournamentData = (tournament: any): TournamentData => ({
   bracket: Array.isArray(tournament.bracket) ? tournament.bracket : [],
   starts_at: tournament.starts_at || null
 });
+
+// ✅ ADDED: Normalize GameSession with hint data
+export const normalizeGameSession = (session: any): GameSession => ({
+  ...session,
+  participants: Array.isArray(session.participants) ? session.participants : [],
+  attempts: Array.isArray(session.attempts) ? session.attempts : [],
+  hint_usage: session.hint_usage || {},
+  max_hints_per_stage: session.max_hints_per_stage || 3,
+  total_hints_used: session.total_hints_used || 0,
+  stages_completed: Array.isArray(session.stages_completed) ? session.stages_completed : [],
+});
+
+// ✅ ADDED: Helper to get hints remaining for current stage
+export const getHintsRemaining = (session: GameSession, currentStage: number): number => {
+  const maxHints = session.max_hints_per_stage || 3;
+  const hintsUsed = session.hint_usage?.[currentStage] || 0;
+  return Math.max(0, maxHints - hintsUsed);
+};
+
+// ✅ ADDED: Helper to check if hints are available
+export const hasHintsAvailable = (session: GameSession, currentStage: number): boolean => {
+  return getHintsRemaining(session, currentStage) > 0;
+};

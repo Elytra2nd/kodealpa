@@ -34,10 +34,7 @@ Route::get('/', function () {
     ]);
 });
 
-// REKOMENDASI: layani file publik via web server (public/, public/storage) setelah `php artisan storage:link`.
-// Gunakan URL seperti "/storage/files/grimoire/pdfs/aturan.pdf" atau "/files/..." yang langsung tersedia di public/ tanpa PHP.
-
-// OPSIONAL: fallback route terproteksi untuk menyajikan file dari public/files atau storage/app/public secara inline
+// File serving route (keep as is)
 Route::get('/files/{path}', function ($path) {
     $path = str_replace('\\', '/', $path);
     $path = ltrim($path, '/');
@@ -45,7 +42,6 @@ Route::get('/files/{path}', function ($path) {
         abort(400, 'Invalid path');
     }
 
-    // Coba dari public/files terlebih dahulu (jika menyimpan di public/files/...)
     $publicFile = public_path('files/'.$path);
     if (is_file($publicFile)) {
         $mime = 'application/octet-stream';
@@ -65,7 +61,6 @@ Route::get('/files/{path}', function ($path) {
         return Response::file($publicFile, $headers);
     }
 
-    // Fallback ke storage/app/public (setelah storage:link, sebaiknya akses via "/storage/...")
     $storageFile = storage_path('app/public/'.$path);
     if (is_file($storageFile)) {
         $mime = 'application/octet-stream';
@@ -231,12 +226,10 @@ Route::middleware(['auth', 'verified'])->get('/game/grimoire', function () {
 |--------------------------------------------------------------------------
 */
 Route::middleware(['auth', 'verified', 'admin'])->prefix('admin')->name('admin.')->group(function () {
-    // Dashboard admin (opsional)
     Route::get('/', function () {
         return Inertia::render('Admin/Dashboard');
     })->name('dashboard');
 
-    // Grimoire management
     Route::resource('grimoire', AdminGrimoireController::class)->except(['show']);
 });
 
@@ -254,7 +247,6 @@ Route::middleware(['auth','verified'])->prefix('game')->group(function () {
         return Inertia::render('Game/ExplorerJournalDetail', ['id' => (int) $id]);
     })->where('id','[0-9]+')->name('game.journal.detail');
 
-    // ✅ Halaman Achievements
     Route::get('/achievements', function () {
         return Inertia::render('Game/Achievements');
     })->name('game.achievements');
@@ -281,6 +273,16 @@ Route::prefix('api')->middleware(['auth', 'verified'])->group(function () {
     Route::post('/sessions/{id}/hint', [SessionController::class, 'provideHint'])->name('api.sessions.hint');
     Route::post('/sessions/{id}/feedback', [SessionController::class, 'provideFeedback'])->name('api.sessions.feedback');
     Route::get('/sessions/{id}/analytics', [SessionController::class, 'getAnalytics'])->name('api.sessions.analytics');
+
+    // ✅ NEW: DM Hint System API
+    Route::prefix('sessions/{session}')->name('api.sessions.')->group(function () {
+        Route::get('/dm-hint/usage', [AiDungeonMasterController::class, 'getHintUsage'])
+            ->name('dm-hint.usage');
+
+        Route::post('/dm-hint', [AiDungeonMasterController::class, 'useHint'])
+            ->middleware('throttle:ai-dm')
+            ->name('dm-hint');
+    });
 
     // Session management actions
     Route::patch('/sessions/{id}/pause', [SessionController::class, 'pauseSession'])->name('api.sessions.pause');
@@ -577,14 +579,14 @@ Route::middleware(['auth', 'verified'])->prefix('game')->name('game.')->group(fu
     Route::get('/dm', [AiDungeonMasterController::class, 'index'])
         ->name('dm');
 
-    // DM API Endpoints
+    // ✅ DM API Endpoints
     Route::controller(AiDungeonMasterController::class)->prefix('dm')->name('dm.')->group(function () {
         // Non-streaming message (fallback/debug)
         Route::post('/message', 'message')
             ->middleware('throttle:ai-dm')
             ->name('message');
 
-        // SSE streaming endpoint
+        // ✅ SSE streaming endpoint (NO /api prefix - used by EventSource)
         Route::get('/stream', 'stream')
             ->middleware('throttle:ai-dm-stream')
             ->name('stream');

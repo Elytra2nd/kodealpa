@@ -43,7 +43,6 @@ const api = axios.create({
 // Initialize CSRF Cookie using separate instance
 export const initializeCSRF = async (): Promise<void> => {
   try {
-    // Use csrfAxios (no /api prefix) for CSRF cookie
     await csrfAxios.get('/sanctum/csrf-cookie');
     console.log('✅ CSRF cookie initialized');
   } catch (error) {
@@ -63,22 +62,18 @@ if (token) {
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
-    // Handle 419 CSRF Token Mismatch error
     if (error.response && error.response.status === 419) {
       console.log('🔄 CSRF token expired, refreshing...');
 
       try {
-        // Get fresh CSRF token using correct endpoint
         await initializeCSRF();
 
-        // Update token in default headers from meta tag
         const newToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
         if (newToken) {
           api.defaults.headers.common['X-CSRF-TOKEN'] = newToken;
           csrfAxios.defaults.headers.common['X-CSRF-TOKEN'] = newToken;
         }
 
-        // Retry the original request
         return api(error.config);
       } catch (refreshError) {
         console.error('❌ Failed to refresh CSRF token:', refreshError);
@@ -91,7 +86,6 @@ api.interceptors.response.use(
       }
     }
 
-    // Handle other errors
     if (error.response) {
       const status = error.response.status;
 
@@ -137,9 +131,8 @@ export const gameApi = {
 
   // === STAGE MANAGEMENT ===
 
-  // Get all stages
   createSampleStages: async () => {
-    await initializeCSRF(); // Ensure fresh token before creation
+    await initializeCSRF();
     const response = await api.post('/stages/sample');
     return response.data;
   },
@@ -151,32 +144,28 @@ export const gameApi = {
 
   // === REGULAR GAME SESSION MANAGEMENT ===
 
-  // Create new game session
   createSession: async (stageId: number): Promise<any> => {
-    await initializeCSRF(); // Ensure fresh token before creation
+    await initializeCSRF();
 
     console.log('🚀 Creating session with stage_id:', stageId);
 
     const response = await api.post('/sessions', { stage_id: stageId });
 
-    // DEBUG: Log full response structure
     console.log('🔍 Full createSession response:', response);
     console.log('🔍 Response data:', response.data);
     console.log('🔍 Session object:', response.data.session);
     console.log('🔍 Session ID:', response.data.session?.id);
 
-    // Validate response structure
     if (!response.data || !response.data.session || !response.data.session.id) {
       console.error('❌ Invalid response structure from createSession API');
       throw new Error('Invalid session data received from server');
     }
 
-    return response.data; // Return full response data
+    return response.data;
   },
 
-  // Join session
   joinSession: async (teamCode: string, role: 'defuser' | 'expert', nickname: string) => {
-    await initializeCSRF(); // Ensure fresh token
+    await initializeCSRF();
     const response = await api.post('/sessions/join', {
       team_code: teamCode,
       role,
@@ -185,23 +174,19 @@ export const gameApi = {
     return response.data;
   },
 
-  // Start session
   startSession: async (sessionId: number): Promise<GameSession> => {
     const response = await api.post(`/sessions/${sessionId}/start`);
     return response.data;
   },
 
-  // Get game state with proper error handling
   getGameState: async (sessionId: number): Promise<GameState> => {
     try {
       const response = await api.get(`/sessions/${sessionId}/state`);
 
-      // Ensure response has proper structure
       if (!response.data || !response.data.session) {
         throw new Error('Invalid API response structure');
       }
 
-      // Ensure arrays are always arrays and add stage data if available
       const gameState: GameState = {
         session: {
           ...response.data.session,
@@ -213,7 +198,7 @@ export const gameApi = {
             : [],
         },
         puzzle: response.data.puzzle || {},
-        stage: response.data.stage || undefined, // Include stage data for multi-stage
+        stage: response.data.stage || undefined,
         serverTime: response.data.serverTime || new Date().toISOString()
       };
 
@@ -224,7 +209,6 @@ export const gameApi = {
     }
   },
 
-  // Submit attempt
   submitAttempt: async (sessionId: number, puzzleKey: string, input: string) => {
     const response = await api.post(`/sessions/${sessionId}/attempt`, {
       puzzle_key: puzzleKey,
@@ -233,7 +217,7 @@ export const gameApi = {
     return response.data;
   },
 
-  // Get hint
+  // ✅ UPDATED: Legacy hint system (kept for backward compatibility)
   getHint: async (sessionId: number, hintType: 'general' | 'specific' | 'debugging' = 'general') => {
     const response = await api.post(`/sessions/${sessionId}/hint`, {
       hint_type: hintType,
@@ -241,7 +225,6 @@ export const gameApi = {
     return response.data;
   },
 
-  // Submit feedback
   submitFeedback: async (sessionId: number, feedback: {
     feedback_type: 'peer_review' | 'learning_reflection' | 'collaboration_rating';
     content: string;
@@ -252,15 +235,58 @@ export const gameApi = {
     return response.data;
   },
 
-  // Get session analytics
   getAnalytics: async (sessionId: number) => {
     const response = await api.get(`/sessions/${sessionId}/analytics`);
     return response.data;
   },
 
+  // === ✅ DUNGEON MASTER AI HINT SYSTEM ===
+
+  /**
+   * Use a hint from DM (decrements available hints)
+   * Note: This is a server-side decrement endpoint, NOT the streaming chat
+   * The streaming chat uses SSE endpoint: /game/dm/stream (handled separately)
+   */
+  useDMHint: async (sessionId: number, stage: number): Promise<{
+    hint: string;
+    hintsRemaining: number;
+    hintsUsed: number;
+  }> => {
+    try {
+      await initializeCSRF();
+      const response = await api.post(`/sessions/${sessionId}/dm-hint`, {
+        stage,
+      });
+
+      console.log('🧙‍♂️ DM Hint used:', response.data);
+      return response.data;
+    } catch (error: any) {
+      console.error('❌ Failed to use DM hint:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get hint usage statistics for current stage
+   */
+  getDMHintUsage: async (sessionId: number): Promise<{
+    currentStage: number;
+    hintsUsed: number;
+    hintsRemaining: number;
+    maxHintsPerStage: number;
+    totalHintsUsed: number;
+  }> => {
+    try {
+      const response = await api.get(`/sessions/${sessionId}/dm-hint/usage`);
+      return response.data;
+    } catch (error: any) {
+      console.error('❌ Failed to get DM hint usage:', error);
+      throw error;
+    }
+  },
+
   // === TOURNAMENT SYSTEM ===
 
-  // Get all tournaments
   getTournaments: async (): Promise<{ tournaments: TournamentData[] }> => {
     try {
       const response = await api.get('/tournaments');
@@ -272,7 +298,6 @@ export const gameApi = {
     }
   },
 
-  // Create new tournament
   createTournament: async (data: {
     name: string;
     max_groups?: number;
@@ -296,7 +321,6 @@ export const gameApi = {
     }
   },
 
-  // Join tournament
   joinTournament: async (tournamentId: number, data: TournamentJoinRequest): Promise<TournamentJoinResponse> => {
     try {
       await initializeCSRF();
@@ -312,7 +336,6 @@ export const gameApi = {
     }
   },
 
-  // Get tournament details
   getTournament: async (tournamentId: number): Promise<{
     tournament: TournamentData;
     bracket: TournamentBracket[];
@@ -327,7 +350,6 @@ export const gameApi = {
     }
   },
 
-  // Get tournament session data
   getTournamentSession: async (tournamentId: number, groupId?: number): Promise<{
     tournament: TournamentData;
     group: TournamentGroup;
@@ -347,7 +369,6 @@ export const gameApi = {
     }
   },
 
-  // Complete tournament session
   completeTournamentSession: async (sessionId: number): Promise<{
     success: boolean;
     group: TournamentGroup;
@@ -365,7 +386,6 @@ export const gameApi = {
     }
   },
 
-  // Get tournament leaderboard
   getTournamentLeaderboard: async (tournamentId: number): Promise<{
     tournament: { id: number; name: string; status: string };
     leaderboard: Array<{
@@ -392,7 +412,6 @@ export const gameApi = {
     }
   },
 
-  // Leave tournament
   leaveTournament: async (tournamentId: number): Promise<{
     success: boolean;
     message: string;
@@ -411,7 +430,6 @@ export const gameApi = {
 
   // === VOICE CHAT SYSTEM ===
 
-  // Get voice chat token
   getVoiceToken: async (sessionId?: number): Promise<{
     token: string;
     iceServers: Array<{ urls: string }>;
@@ -429,7 +447,6 @@ export const gameApi = {
     }
   },
 
-  // Join voice chat session
   joinVoiceSession: async (sessionId: number, data: {
     nickname: string;
     role: string;
@@ -454,7 +471,6 @@ export const gameApi = {
     }
   },
 
-  // Leave voice chat session
   leaveVoiceSession: async (sessionId: number): Promise<{
     success: boolean;
     message: string;
@@ -471,7 +487,6 @@ export const gameApi = {
     }
   },
 
-  // Get voice chat participants
   getVoiceParticipants: async (sessionId: number): Promise<{
     participants: Array<{
       id: number;
@@ -490,7 +505,6 @@ export const gameApi = {
     }
   },
 
-  // Toggle mute status
   toggleVoiceMute: async (sessionId: number, muted: boolean): Promise<{
     success: boolean;
     muted: boolean;
@@ -507,7 +521,6 @@ export const gameApi = {
     }
   },
 
-  // Set voice volume
   setVoiceVolume: async (sessionId: number, volume: number): Promise<{
     success: boolean;
     volume: number;
@@ -525,7 +538,6 @@ export const gameApi = {
     }
   },
 
-  // Test voice connection
   testVoiceConnection: async (): Promise<{
     success: boolean;
     latency: number;
@@ -547,7 +559,6 @@ export const gameApi = {
     }
   },
 
-  // Test audio quality
   testAudioQuality: async (audioData: Blob): Promise<{
     success: boolean;
     quality: 'excellent' | 'good' | 'fair' | 'poor';
@@ -572,7 +583,6 @@ export const gameApi = {
     }
   },
 
-  // Get voice chat settings
   getVoiceSettings: async (): Promise<VoiceChatSettings> => {
     try {
       const response = await api.get('/voice/settings');
@@ -583,7 +593,6 @@ export const gameApi = {
     }
   },
 
-  // Update voice chat settings
   updateVoiceSettings: async (settings: Partial<VoiceChatSettings>): Promise<{
     success: boolean;
     settings: VoiceChatSettings;
@@ -600,7 +609,6 @@ export const gameApi = {
     }
   },
 
-  // Report voice chat issue
   reportVoiceIssue: async (sessionId: number, issue: {
     type: 'connection' | 'audio_quality' | 'echo' | 'noise' | 'other';
     description: string;
@@ -624,7 +632,6 @@ export const gameApi = {
 
   // === WEBRTC SIGNALING ===
 
-  // Handle WebRTC offer
   sendWebRTCOffer: async (sessionId: number, offer: RTCSessionDescriptionInit, targetUserId: number): Promise<{
     success: boolean;
   }> => {
@@ -642,7 +649,6 @@ export const gameApi = {
     }
   },
 
-  // Handle WebRTC answer
   sendWebRTCAnswer: async (sessionId: number, answer: RTCSessionDescriptionInit, targetUserId: number): Promise<{
     success: boolean;
   }> => {
@@ -660,7 +666,6 @@ export const gameApi = {
     }
   },
 
-  // Handle ICE candidate
   sendICECandidate: async (sessionId: number, candidate: RTCIceCandidateInit, targetUserId: number): Promise<{
     success: boolean;
   }> => {
@@ -678,7 +683,6 @@ export const gameApi = {
     }
   },
 
-  // Get signaling status
   getSignalingStatus: async (): Promise<{
     status: 'online' | 'offline' | 'degraded';
     servers: Array<{
@@ -698,7 +702,6 @@ export const gameApi = {
 
   // === HEALTH CHECKS ===
 
-  // Voice system health check
   checkVoiceHealth: async (): Promise<{
     status: 'healthy' | 'degraded' | 'offline';
     services: {

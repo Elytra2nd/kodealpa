@@ -158,7 +158,7 @@ class AiDungeonMasterController extends Controller
     }
 
     /**
-     * SSE streaming endpoint
+     * ✅ SSE streaming endpoint with hint tracking
      */
     public function stream(Request $request)
     {
@@ -170,7 +170,21 @@ class AiDungeonMasterController extends Controller
         $session = GameSession::findOrFail($validated['session_id']);
         // $this->authorize('participate', $session);
 
-        return response()->stream(function () use ($validated, $session) {
+        // ✅ Check hint availability BEFORE streaming
+        $currentStage = $session->current_stage ?? 1;
+        $maxHints = $session->max_hints_per_stage ?? 3;
+        $hintUsage = $session->hint_usage ?? [];
+        $usedHints = $hintUsage[$currentStage] ?? 0;
+
+        if ($usedHints >= $maxHints) {
+            return response()->json([
+                'error' => 'Tidak ada hint yang tersisa untuk stage ini',
+                'hintsRemaining' => 0,
+                'maxHints' => $maxHints,
+            ], 400);
+        }
+
+        return response()->stream(function () use ($validated, $session, $currentStage, $hintUsage, $usedHints) {
             // Get or create conversation
             $conversation = DmConversation::firstOrCreate(
                 ['game_session_id' => $session->id],
@@ -212,10 +226,8 @@ class AiDungeonMasterController extends Controller
                 // Start chat with system instruction & history
                 $chat = $this->gemini->startChat($systemPrompt, $history);
 
-                // Get single response (sendMessage returns Response object, not stream)
+                // Get single response
                 $response = $chat->sendMessage($validated['message']);
-
-                // Extract full text
                 $fullResponse = $response->text();
 
                 // Chunk the response manually for streaming effect
@@ -232,7 +244,7 @@ class AiDungeonMasterController extends Controller
                         if (ob_get_level() > 0) ob_flush();
                         flush();
 
-                        usleep(30000); // 0.03 second delay per chunk for natural feel
+                        usleep(30000); // 0.03 second delay per chunk
                     }
                 }
 
@@ -247,15 +259,36 @@ class AiDungeonMasterController extends Controller
                 // Update conversation stats
                 $conversation->increment('total_tokens', $aiMessage->tokens_used ?? 0);
 
-                // Send done event
+                // ✅ INCREMENT HINT USAGE
+                $hintUsage[$currentStage] = $usedHints + 1;
+                $session->hint_usage = $hintUsage;
+                $session->total_hints_used = ($session->total_hints_used ?? 0) + 1;
+                $session->save();
+
+                // Calculate remaining hints
+                $hintsRemaining = ($session->max_hints_per_stage ?? 3) - $hintUsage[$currentStage];
+
+                // Send done event with hint info
                 echo "event: done\n";
                 echo 'data: ' . json_encode([
                     'message_id' => $aiMessage->id,
-                    'tokens' => $aiMessage->tokens_used
+                    'tokens' => $aiMessage->tokens_used,
+                    'hintsRemaining' => $hintsRemaining,
+                    'hintsUsed' => $hintUsage[$currentStage],
+                    'stage' => $currentStage,
                 ]) . "\n\n";
 
                 if (ob_get_level() > 0) ob_flush();
                 flush();
+
+                // ✅ Log hint usage
+                Log::info('DM Hint Used', [
+                    'session_id' => $session->id,
+                    'stage' => $currentStage,
+                    'hints_used' => $hintUsage[$currentStage],
+                    'hints_remaining' => $hintsRemaining,
+                    'user_id' => auth()->id(),
+                ]);
 
             } catch (\Exception $e) {
                 Log::error('DM streaming failed', [
@@ -279,11 +312,110 @@ class AiDungeonMasterController extends Controller
     }
 
     /**
+     * ✅ NEW: Get hint usage statistics
+     */
+    public function getHintUsage(Request $request, $sessionId)
+    {
+        $session = GameSession::findOrFail($sessionId);
+
+        $currentStage = $session->current_stage ?? 1;
+        $maxHints = $session->max_hints_per_stage ?? 3;
+        $hintUsage = $session->hint_usage ?? [];
+        $usedHints = $hintUsage[$currentStage] ?? 0;
+
+        return response()->json([
+            'currentStage' => $currentStage,
+            'hintsUsed' => $usedHints,
+            'hintsRemaining' => max(0, $maxHints - $usedHints),
+            'maxHintsPerStage' => $maxHints,
+            'totalHintsUsed' => $session->total_hints_used ?? 0,
+            'hintHistory' => collect($hintUsage)->map(function ($used, $stage) {
+                return [
+                    'stage' => $stage,
+                    'hintsUsed' => $used,
+                ];
+            })->values(),
+        ]);
+    }
+
+    /**
+     * ✅ NEW: Use a hint (alternative REST endpoint, not streaming)
+     */
+    public function useHint(Request $request, $sessionId)
+    {
+        $validated = $request->validate([
+            'stage' => 'required|integer|min:1',
+        ]);
+
+        $session = GameSession::findOrFail($sessionId);
+
+        // Check hint availability
+        $currentStage = $validated['stage'];
+        $maxHints = $session->max_hints_per_stage ?? 3;
+        $hintUsage = $session->hint_usage ?? [];
+        $usedHints = $hintUsage[$currentStage] ?? 0;
+
+        if ($usedHints >= $maxHints) {
+            return response()->json([
+                'message' => 'Tidak ada hint yang tersisa untuk stage ini',
+                'hintsRemaining' => 0,
+            ], 400);
+        }
+
+        // Generate contextual hint
+        $hint = $this->generateContextualHint($session, $currentStage, $usedHints);
+
+        // Increment hint usage
+        $hintUsage[$currentStage] = $usedHints + 1;
+        $session->hint_usage = $hintUsage;
+        $session->total_hints_used = ($session->total_hints_used ?? 0) + 1;
+        $session->save();
+
+        // Log hint usage
+        Log::info('Hint Used', [
+            'session_id' => $session->id,
+            'stage' => $currentStage,
+            'hints_used' => $hintUsage[$currentStage],
+            'user_id' => auth()->id(),
+        ]);
+
+        return response()->json([
+            'hint' => $hint,
+            'hintsRemaining' => $maxHints - $hintUsage[$currentStage],
+            'hintsUsed' => $hintUsage[$currentStage],
+        ]);
+    }
+
+    /**
+     * ✅ Generate contextual hint based on puzzle type and stage
+     */
+    private function generateContextualHint(GameSession $session, int $stage, int $hintLevel): string
+    {
+        // Get current puzzle (you'll need to implement this based on your structure)
+        // For now, return progressive hints
+
+        $progressiveHints = [
+            0 => "Fokus pada pola yang terlihat. Amati dengan seksama dan diskusikan dengan tim!",
+            1 => "Coba hitung selisih atau rasio antar elemen. Pola sering tersembunyi di sana.",
+            2 => "Gunakan metode eliminasi. Validasi hipotesis dengan beberapa contoh sebelum submit.",
+        ];
+
+        return $progressiveHints[$hintLevel] ?? $progressiveHints[2];
+    }
+
+    /**
      * Build system prompt dengan RAG context
      */
     private function buildSystemPrompt(GameSession $session): string
     {
         $grimoire = $this->grimoire->getContextForSession($session);
+
+        // ✅ Get hint info for context
+        $currentStage = $session->current_stage ?? 1;
+        $maxHints = $session->max_hints_per_stage ?? 3;
+        $hintUsage = $session->hint_usage ?? [];
+        $usedHints = $hintUsage[$currentStage] ?? 0;
+        $hintsRemaining = max(0, $maxHints - $usedHints);
 
         return <<<PROMPT
 Kamu adalah **AI Dungeon Master** untuk CodeAlpha Dungeon, game edukasi kolaboratif berbasis peer learning.
@@ -299,6 +431,12 @@ Bahasa: Bahasa Indonesia yang natural dan hangat
 3. **Stimulator Berpikir Kritis**: Jangan beri jawaban langsung - pancing minimal 2 hipotesis berbeda
 4. **Penjaga Narasi**: Gunakan konteks Grimoire untuk konsistensi cerita dungeon
 5. **Pengamat Dinamika**: Sarankan rotasi peran jika ada anggota yang terlalu pasif/dominan
+
+## HINT SYSTEM
+- Hints tersisa untuk stage ini: **{$hintsRemaining}/{$maxHints}**
+- Berikan hint yang membantu berpikir, BUKAN jawaban langsung
+- Gunakan metode Socratic questioning untuk memandu reasoning
+- Jika hints hampir habis, ingatkan tim untuk menggunakan dengan bijak
 
 ## LARANGAN
 ❌ JANGAN beri kode lengkap atau jawaban final
@@ -320,6 +458,7 @@ Bahasa: Bahasa Indonesia yang natural dan hangat
 - **Stage**: {$session->current_stage}
 - **Team Code**: {$session->team_code}
 - **Status**: {$session->status}
+- **Hints Remaining**: {$hintsRemaining}/{$maxHints}
 
 ## GAYA BICARA
 - Gunakan emoji sesekali untuk warmth: 🤔💡✨🎯
@@ -353,7 +492,6 @@ PROMPT;
     private function getActiveRoles(GameSession $session): array
     {
         // TODO: Get from player_roles table atau session metadata
-        // For now, return mock data
         return [
             'Pengamat Simbol' => 'Player 1',
             'Pembaca Mantra' => 'Player 2',
