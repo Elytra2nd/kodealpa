@@ -17,7 +17,9 @@ const CONFIG = {
   PATTERN_ENTRANCE_DURATION: 0.6,
   PATTERN_STAGGER: 0.08,
   MAX_INPUT_LENGTH: 20,
-  MAX_ACCORDION_HEIGHT: 300,
+  MAX_ACCORDION_HEIGHT: 420, // ✅ Diperlebar dari 300px
+  MAX_EXPERT_CONTENT_HEIGHT: 450, // ✅ Diperlebar
+  PATTERN_DISPLAY_MIN_HEIGHT: 200, // ✅ Baru: Min height untuk pattern area
   MOBILE_BREAKPOINT: 768,
   DEBOUNCE_DELAY: 300,
 } as const;
@@ -314,13 +316,11 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
   // EFFECTS
   // ============================================
   useEffect(() => {
-    // Auto-focus input when component mounts (desktop only)
     if (!isMobile && inputRef.current && isDefuser) {
       inputRef.current.focus();
     }
   }, [isMobile, isDefuser]);
 
-  // Keyboard shortcuts
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
       if (e.key === 'Enter' && !submitting && jawaban.trim() && isDefuser) {
@@ -392,7 +392,7 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
 
             {/* MAIN GRID - Side by side layout */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {/* DEFUSER PANEL */}
+              {/* DEFUSER PANEL - ✅ DIPERLEBAR */}
               <AnimatePresence>
                 {(isDefuser || isHost) && (
                   <motion.div key="defuser-panel" variants={fadeInUp} initial="initial" animate="animate" exit="exit">
@@ -405,23 +405,18 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
                       <CardContent className={`space-y-3 ${isMobile ? 'p-3 pt-0' : 'p-4 pt-0'}`}>
                         {patternData.length > 0 ? (
                           <>
-                            {/* FIX: Pattern boxes - PROPERLY CENTERED WITH FLEXBOX */}
+                            {/* ✅ Pattern boxes - DIPERLEBAR dengan min-height */}
                             <motion.div
                               variants={staggerContainer}
                               className="flex items-center justify-center mb-4"
+                              style={{ minHeight: `${CONFIG.PATTERN_DISPLAY_MIN_HEIGHT}px` }}
                             >
                               <div className="flex flex-wrap gap-2 sm:gap-3 justify-center items-center max-w-full">
                                 {patternData.map((item: any, idx: number) => {
                                   const kosong = item === '?' || item == null;
                                   return <PatternBox key={idx} item={item} index={idx} isEmpty={kosong} setPatternRef={setPatternRef} isMobile={isMobile} />;
                                 })}
-                                <PatternBox
-                                  item="?"
-                                  index={patternData.length}
-                                  isEmpty={true}
-                                  setPatternRef={setPatternRef}
-                                  isMobile={isMobile}
-                                />
+                                <PatternBox item="?" index={patternData.length} isEmpty={true} setPatternRef={setPatternRef} isMobile={isMobile} />
                               </div>
                             </motion.div>
 
@@ -470,7 +465,7 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
                                   </Button>
                                 </motion.div>
 
-                                {/* Hints accordion */}
+                                {/* ✅ Hints accordion - DIPERLEBAR */}
                                 {transformedHints.length > 0 && (
                                   <Accordion type="single" collapsible>
                                     <AccordionItem value="hints" className="border-blue-700/40">
@@ -478,7 +473,7 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
                                         💡 Petunjuk Terselubung
                                       </AccordionTrigger>
                                       <AccordionContent
-                                        className="p-2 rounded-lg bg-blue-950/40 max-h-60 overflow-y-auto"
+                                        className="p-2 rounded-lg bg-blue-950/40 overflow-y-auto"
                                         style={{ maxHeight: `${CONFIG.MAX_ACCORDION_HEIGHT}px` }}
                                       >
                                         <ul className={`${isMobile ? 'text-xs' : 'text-sm'} text-blue-200/90 space-y-1.5 list-disc pl-4`}>
@@ -504,7 +499,7 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
                 )}
               </AnimatePresence>
 
-              {/* EXPERT PANEL */}
+              {/* EXPERT PANEL - ✅ DIPERLEBAR */}
               <AnimatePresence>
                 {(isExpert || isHost) && puzzle.expertView && (
                   <motion.div key="expert-panel" variants={fadeInUp} initial="initial" animate="animate" exit="exit">
@@ -526,7 +521,8 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
                           </TabsList>
 
                           <TabsContent value="guide" className="space-y-2 mt-2">
-                            <div className={`${isMobile ? 'max-h-60' : 'max-h-80'} overflow-y-auto space-y-2 pr-1`}>
+                            {/* ✅ DIPERLEBAR dengan MAX_EXPERT_CONTENT_HEIGHT */}
+                            <div className="overflow-y-auto space-y-2 pr-1" style={{ maxHeight: `${CONFIG.MAX_EXPERT_CONTENT_HEIGHT}px` }}>
                               <Accordion type="single" collapsible className="space-y-2">
                                 <AccordionItem value="runes" className="border-stone-700/40">
                                   <AccordionTrigger className="text-stone-200 text-xs hover:text-amber-300 py-2">✨ Legenda Rune</AccordionTrigger>
@@ -564,22 +560,25 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
                           </TabsContent>
 
                           <TabsContent value="tools" className="space-y-2 mt-2">
-                            <div className="p-2 rounded-lg bg-stone-900/60 border border-stone-700/40">
-                              <h6 className="text-xs text-stone-300 mb-2 font-semibold">Alat Bantu</h6>
-                              <ul className="text-xs text-stone-300 space-y-1 list-disc pl-4">
-                                <li>Uji modulo kecil (2, 3, 5) untuk siklus</li>
-                                <li>Lonjakan tajam → penggandaan/pangkat</li>
-                                <li>Validasi dengan suku berikutnya</li>
-                              </ul>
-                            </div>
+                            {/* ✅ DIPERLEBAR dengan MAX_EXPERT_CONTENT_HEIGHT */}
+                            <div className="space-y-2 overflow-y-auto" style={{ maxHeight: `${CONFIG.MAX_EXPERT_CONTENT_HEIGHT}px` }}>
+                              <div className="p-2 rounded-lg bg-stone-900/60 border border-stone-700/40">
+                                <h6 className="text-xs text-stone-300 mb-2 font-semibold">Alat Bantu</h6>
+                                <ul className="text-xs text-stone-300 space-y-1 list-disc pl-4">
+                                  <li>Uji modulo kecil (2, 3, 5) untuk siklus</li>
+                                  <li>Lonjakan tajam → penggandaan/pangkat</li>
+                                  <li>Validasi dengan suku berikutnya</li>
+                                </ul>
+                              </div>
 
-                            <div className="p-2 rounded-lg bg-stone-900/60 border border-amber-700/40">
-                              <h6 className="text-xs text-amber-300 mb-2 font-semibold">Peran Expert</h6>
-                              <ul className="text-xs text-stone-300 space-y-1 list-disc pl-4">
-                                <li>Pandu pada transformasi, bukan angka</li>
-                                <li>Minta hipotesis dan verifikasi</li>
-                                <li>Jaga ritme: amati → analisis → validasi</li>
-                              </ul>
+                              <div className="p-2 rounded-lg bg-stone-900/60 border border-amber-700/40">
+                                <h6 className="text-xs text-amber-300 mb-2 font-semibold">Peran Expert</h6>
+                                <ul className="text-xs text-stone-300 space-y-1 list-disc pl-4">
+                                  <li>Pandu pada transformasi, bukan angka</li>
+                                  <li>Minta hipotesis dan verifikasi</li>
+                                  <li>Jaga ritme: amati → analisis → validasi</li>
+                                </ul>
+                              </div>
                             </div>
                           </TabsContent>
                         </Tabs>
@@ -599,8 +598,7 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
                       <AccordionTrigger className="text-purple-300 text-xs hover:text-purple-400 py-2">💡 Tips Kolaborasi</AccordionTrigger>
                       <AccordionContent className="p-2 text-xs text-stone-300 space-y-2">
                         <div>
-                          <span className="font-semibold text-amber-300">Defuser:</span> Telusuri selisih, uji progresi, minta validasi tanpa mengungkap
-                          final
+                          <span className="font-semibold text-amber-300">Defuser:</span> Telusuri selisih, uji progresi, minta validasi tanpa mengungkap final
                         </div>
                         <div>
                           <span className="font-semibold text-blue-300">Expert:</span> Mulai observasi kualitatif, batasi petunjuk pada bentuk transformasi
