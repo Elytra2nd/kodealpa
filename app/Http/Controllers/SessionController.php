@@ -329,6 +329,13 @@ class SessionController extends Controller
 
         if ($role === 'defuser') {
             $filtered['defuserView'] = $puzzle['defuserView'];
+
+            // ✅ Tambahan penting: kirim expertView->tree ke defuser juga
+            if (isset($puzzle['expertView']['tree'])) {
+                $filtered['expertView'] = [
+                    'tree' => $puzzle['expertView']['tree']
+                ];
+            }
         } elseif ($role === 'expert') {
             $filtered['expertView'] = $puzzle['expertView'];
         } elseif ($role === 'host') {
