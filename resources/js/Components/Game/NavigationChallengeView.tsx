@@ -381,6 +381,22 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
   const isExpert = role === 'expert';
   const isHost = role === 'host';
 
+  // 🐛 DEBUG: Console log props
+  useEffect(() => {
+    console.log('🔍 NavigationChallengeView Props:', {
+      puzzle,
+      role,
+      submitting,
+      hasPuzzle: !!puzzle,
+      hasExpertView: !!puzzle?.expertView,
+      hasDefuserView: !!puzzle?.defuserView,
+      hasTreeInExpert: !!puzzle?.expertView?.tree,
+      hasTreeInDefuser: !!puzzle?.defuserView?.tree,
+      expertViewTree: puzzle?.expertView?.tree,
+      defuserViewTree: puzzle?.defuserView?.tree
+    });
+  }, [puzzle, role, submitting]);
+
   const pickLabel = useCallback(
     (dir: 'left' | 'right' | 'up' | 'down'): string => {
       const defaults = { left: 'Kiri', right: 'Kanan', up: 'Kembali', down: 'Otomatis' };
@@ -389,12 +405,23 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
     []
   );
 
-  // ✅ Extract tree structure properly
+  // ✅ FIX: Check both expertView and defuserView for tree
   const treeStructure: TreeNode | undefined = useMemo(() => {
-    const tree = puzzle?.expertView?.tree;
-    if (!tree || typeof tree !== 'object') return undefined;
+    // Try expertView first (for expert/host)
+    let tree = puzzle?.expertView?.tree;
+
+    // Fallback to defuserView if available (for defuser)
+    if (!tree && puzzle?.defuserView?.tree) {
+      tree = puzzle.defuserView.tree;
+    }
+
+    if (!tree || typeof tree !== 'object') {
+      console.warn('⚠️ No tree from backend');
+      return undefined;
+    }
+
     return tree as TreeNode;
-  }, [puzzle?.expertView?.tree]);
+  }, [puzzle?.expertView?.tree, puzzle?.defuserView?.tree]);
 
   const treeArray = useMemo(() => {
     return buildArrayFromTree(treeStructure);
@@ -479,20 +506,6 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
     },
     [path, onSubmitAttempt]
   );
-
-  // ✅ Debug log (hapus setelah testing)
-  useEffect(() => {
-    console.log('🔍 Debug Navigation:', {
-      treeStructure,
-      currentNode,
-      currentNodeValue: currentNode?.value,
-      hasLeft: currentNode ? hasLeftChild(currentNode) : false,
-      hasRight: currentNode ? hasRightChild(currentNode) : false,
-      availableDirections,
-      path,
-      pathLength: path.length
-    });
-  }, [treeStructure, currentNode, availableDirections, path]);
 
   if (!puzzle) {
     return (
@@ -586,6 +599,55 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
                         </div>
                       </div>
                     )}
+
+                    {/* 🐛 DEBUG PANEL */}
+                    <div className="rounded-lg p-3 border-2 border-yellow-600 bg-yellow-950/60">
+                      <h5 className="text-yellow-300 font-bold mb-2 text-sm flex items-center gap-2">
+                        <span>🔍</span>
+                        <span>Debug Panel</span>
+                      </h5>
+                      <div className="space-y-1 text-xs font-mono">
+                        <div className="text-yellow-200">
+                          <strong>Puzzle:</strong> {puzzle ? '✅ YES' : '❌ NO'}
+                        </div>
+                        <div className="text-yellow-200">
+                          <strong>ExpertView:</strong> {puzzle?.expertView ? '✅ YES' : '❌ NO'}
+                        </div>
+                        <div className="text-yellow-200">
+                          <strong>DefuserView:</strong> {puzzle?.defuserView ? '✅ YES' : '❌ NO'}
+                        </div>
+                        <div className="text-yellow-200">
+                          <strong>Tree exists:</strong> {treeStructure ? '✅ YES' : '❌ NO'}
+                        </div>
+                        <div className="text-yellow-200">
+                          <strong>Current node:</strong> {currentNode ? `✅ ${currentNode.value}` : '❌ NULL'}
+                        </div>
+                        <div className="text-yellow-200">
+                          <strong>Has left:</strong> {currentNode && hasLeftChild(currentNode) ? '✅ YES' : '❌ NO'}
+                        </div>
+                        <div className="text-yellow-200">
+                          <strong>Has right:</strong> {currentNode && hasRightChild(currentNode) ? '✅ YES' : '❌ NO'}
+                        </div>
+                        <div className="text-yellow-200">
+                          <strong>Available:</strong> [{availableDirections.join(', ') || 'NONE'}]
+                        </div>
+                        <div className="text-yellow-200">
+                          <strong>Path:</strong> [{path.join(' → ') || 'empty'}]
+                        </div>
+                        <div className="text-yellow-200">
+                          <strong>Role:</strong> {role || 'undefined'}
+                        </div>
+
+                        <details className="mt-2">
+                          <summary className="cursor-pointer text-yellow-300 hover:text-yellow-100 font-semibold">
+                            📦 Show Full Puzzle
+                          </summary>
+                          <pre className="mt-2 p-2 bg-stone-950 rounded text-[10px] overflow-auto max-h-40 text-green-400">
+                            {JSON.stringify(puzzle, null, 2)}
+                          </pre>
+                        </details>
+                      </div>
+                    </div>
 
                     {/* Navigation Controls */}
                     <div>
