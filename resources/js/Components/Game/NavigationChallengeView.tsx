@@ -85,11 +85,17 @@ const buildArrayFromTree = (root: TreeNode | null | undefined): any[] => {
 
 // ✅ Helper to check if node has valid children
 const hasLeftChild = (node: any): boolean => {
-  return node && node.left && typeof node.left === 'object' && 'value' in node.left;
+  if (!node || typeof node !== 'object') return false;
+  if (!node.left) return false;
+  if (typeof node.left !== 'object') return false;
+  return 'value' in node.left;
 };
 
 const hasRightChild = (node: any): boolean => {
-  return node && node.right && typeof node.right === 'object' && 'value' in node.right;
+  if (!node || typeof node !== 'object') return false;
+  if (!node.right) return false;
+  if (typeof node.right !== 'object') return false;
+  return 'value' in node.right;
 };
 
 // ============================================
@@ -327,8 +333,8 @@ const DirectionButton = memo(
 
     const classes =
       variant === 'primary'
-        ? 'bg-indigo-800 text-indigo-100 hover:bg-indigo-700 border border-indigo-600/60'
-        : 'border-stone-600/60 text-stone-200 hover:bg-stone-800/60';
+        ? 'bg-indigo-800 text-indigo-100 hover:bg-indigo-700 border border-indigo-600/60 disabled:opacity-50 disabled:cursor-not-allowed'
+        : 'border-stone-600/60 text-stone-200 hover:bg-stone-800/60 disabled:opacity-50 disabled:cursor-not-allowed';
 
     return (
       <Button
@@ -383,7 +389,7 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
     []
   );
 
-  // ✅ FIX: Extract tree structure properly
+  // ✅ Extract tree structure properly
   const treeStructure: TreeNode | undefined = useMemo(() => {
     const tree = puzzle?.expertView?.tree;
     if (!tree || typeof tree !== 'object') return undefined;
@@ -394,7 +400,7 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
     return buildArrayFromTree(treeStructure);
   }, [treeStructure]);
 
-  // ✅ FIX: Navigate through tree with proper null checks
+  // ✅ Navigate through tree with proper null checks
   const currentNode = useMemo((): TreeNode | null => {
     if (!treeStructure) return null;
 
@@ -419,7 +425,7 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
     return current;
   }, [treeStructure, path]);
 
-  // ✅ FIX: Check available directions with helper functions
+  // ✅ Check available directions
   const availableDirections = useMemo((): Direction[] => {
     const dirs: Direction[] = [];
 
@@ -467,12 +473,26 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
       e.preventDefault();
       if (path.length === 0) return;
 
-      // Format: ROOT,LEFT,RIGHT
+      // Format: ROOT,KIRI,KANAN (uppercase)
       const fullPath = ['ROOT', ...path.map(p => p.toUpperCase())].join(',');
       onSubmitAttempt(fullPath);
     },
     [path, onSubmitAttempt]
   );
+
+  // ✅ Debug log (hapus setelah testing)
+  useEffect(() => {
+    console.log('🔍 Debug Navigation:', {
+      treeStructure,
+      currentNode,
+      currentNodeValue: currentNode?.value,
+      hasLeft: currentNode ? hasLeftChild(currentNode) : false,
+      hasRight: currentNode ? hasRightChild(currentNode) : false,
+      availableDirections,
+      path,
+      pathLength: path.length
+    });
+  }, [treeStructure, currentNode, availableDirections, path]);
 
   if (!puzzle) {
     return (
@@ -682,8 +702,9 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
             {/* EXPERT PANEL - 7 cols */}
             {(isExpert || isHost) && (
               <div className="lg:col-span-7">
-                {/* Rest of expert panel code sama seperti sebelumnya */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+
+                  {/* Tree Visualization */}
                   <Card className="md:col-span-2 border border-emerald-700/40 bg-gradient-to-b from-stone-900/60 to-emerald-950/40">
                     <CardHeader className={`${isMobile ? 'pb-2 pt-2 px-3' : 'pb-2 pt-3 px-4'}`}>
                       <CardTitle className={`${isMobile ? 'text-sm' : 'text-base'} text-emerald-300 flex items-center gap-2`}>
@@ -718,7 +739,56 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
                     </CardContent>
                   </Card>
 
-                  {/* Sisa expert panel cards... (sama seperti sebelumnya) */}
+                  {/* Panduan Membimbing */}
+                  <Card className={`${isMobile ? 'p-3' : 'p-4'} rounded-lg border border-emerald-700/50 bg-gradient-to-r from-emerald-950/40 to-stone-900/30`}>
+                    <h5 className={`text-emerald-200 font-semibold mb-2 ${isMobile ? 'text-sm' : 'text-base'} flex items-center gap-2`}>
+                      <span>🧭</span>
+                      <span>Cara Membimbing Pemain</span>
+                    </h5>
+                    <ul className={`${isMobile ? 'text-xs' : 'text-sm'} text-emerald-200/90 space-y-1.5 list-disc pl-5`}>
+                      <li>Tanyakan ke pemain apa yang dia lihat</li>
+                      <li>Biarkan mereka berpikir sendiri dulu</li>
+                      <li>Berikan petunjuk bertahap, jangan langsung kasih jawaban</li>
+                      <li>Fokus pada cara berpikir, bukan hasil akhir</li>
+                    </ul>
+                  </Card>
+
+                  {/* Konsep Pohon Biner */}
+                  <Card className={`${isMobile ? 'p-3' : 'p-4'} rounded-lg border border-purple-700/50 bg-gradient-to-r from-purple-950/40 to-stone-900/30`}>
+                    <h5 className={`text-purple-200 font-semibold mb-2 ${isMobile ? 'text-sm' : 'text-base'} flex items-center gap-2`}>
+                      <span>📚</span>
+                      <span>Tentang Pohon Biner</span>
+                    </h5>
+                    <ul className={`${isMobile ? 'text-xs' : 'text-sm'} text-purple-200/90 space-y-1.5 list-disc pl-5`}>
+                      <li>Pohon Biner: setiap titik punya maksimal 2 cabang (kiri & kanan)</li>
+                      <li>BST: cabang kiri lebih kecil, cabang kanan lebih besar dari titik saat ini</li>
+                      <li>Titik akhir: tidak punya cabang lagi</li>
+                      <li>Titik awal: tempat mulai pencarian</li>
+                    </ul>
+                  </Card>
+
+                  {/* Cara Menjelajah Pohon */}
+                  <Card className={`md:col-span-2 ${isMobile ? 'p-3' : 'p-4'} rounded-lg border border-blue-700/50 bg-gradient-to-r from-blue-950/40 to-stone-900/30`}>
+                    <h5 className={`text-blue-200 font-semibold mb-2 ${isMobile ? 'text-sm' : 'text-base'} flex items-center gap-2`}>
+                      <span>🔍</span>
+                      <span>Cara Menjelajah Pohon</span>
+                    </h5>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-blue-100 font-semibold mb-1`}>Inorder</p>
+                        <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-blue-200/90`}>Kiri → Tengah → Kanan (urutan terurut)</p>
+                      </div>
+                      <div>
+                        <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-blue-100 font-semibold mb-1`}>Preorder</p>
+                        <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-blue-200/90`}>Tengah → Kiri → Kanan (salin struktur)</p>
+                      </div>
+                      <div>
+                        <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-blue-100 font-semibold mb-1`}>Postorder</p>
+                        <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-blue-200/90`}>Kiri → Kanan → Tengah (evaluasi)</p>
+                      </div>
+                    </div>
+                  </Card>
+
                 </div>
               </div>
             )}
