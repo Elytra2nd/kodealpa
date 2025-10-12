@@ -11,9 +11,13 @@ import { gsap } from 'gsap';
 const CONFIG = {
   TORCH_FLICKER_INTERVAL: 2200,
   MAX_TREE_HEIGHT: 450,
+  MAX_TREE_HEIGHT_MOBILE: 320,
   NODE_SIZE: 40,
+  NODE_SIZE_MOBILE: 32,
   LEVEL_HEIGHT: 85,
+  LEVEL_HEIGHT_MOBILE: 65,
   NODE_SPACING: 60,
+  NODE_SPACING_MOBILE: 40,
 } as const;
 
 // ============================================
@@ -43,28 +47,10 @@ const toArray = (data: any): string[] => {
   return [];
 };
 
-const obfuscate = (text: string): string => {
-  const runeMap: Record<string, string> = {
-    '0': '◇', '1': '†', '2': '♁', '3': '♆', '4': '♄',
-    '5': '♃', '6': '☿', '7': '☼', '8': '◈', '9': '★',
-  };
-
-  return String(text)
-    .replace(/\d/g, (d) => runeMap[d] ?? d)
-    .replace(/\b(akar|root)\b/gi, 'altar')
-    .replace(/\b(kiri|left)\b/gi, 'lorong barat')
-    .replace(/\b(kanan|right)\b/gi, 'lorong timur')
-    .replace(/\b(atas|up|naik)\b/gi, 'tangga menuju puncak')
-    .replace(/\b(bawah|down|turun)\b/gi, 'tangga menuju palung')
-    .replace(/\b(daun|leaf)\b/gi, 'ruang tak berujung')
-    .replace(/\b(preorder|inorder|postorder)\b/gi, 'ritus penelusuran')
-    .replace(/\b(jalur|path)\b/gi, 'jejak runik');
-};
-
 const normalizeStep = (step: string): Direction | null => {
   const normalized = step.trim().toLowerCase();
-  const leftWords = ['left', 'kiri', 'lorong barat', 'l', 'west', 'barat'];
-  const rightWords = ['right', 'kanan', 'lorong timur', 'r', 'east', 'timur'];
+  const leftWords = ['left', 'kiri', 'l'];
+  const rightWords = ['right', 'kanan', 'r'];
 
   if (leftWords.includes(normalized)) return 'left';
   if (rightWords.includes(normalized)) return 'right';
@@ -126,53 +112,76 @@ const useDungeonAtmosphere = () => {
   return { setTorchRef };
 };
 
+const useIsMobile = () => {
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth <= 768);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  return isMobile;
+};
+
 // ============================================
 // SVG BINARY TREE COMPONENT
 // ============================================
-const SvgBinaryTree = memo(({ array }: { array: any[] }) => {
+const SvgBinaryTree = memo(({ array, isMobile = false }: { array: any[]; isMobile?: boolean }) => {
   if (!Array.isArray(array) || array.length === 0) {
-    return <div className="text-stone-400 italic text-sm text-center p-6">Pohon kosong</div>;
+    return (
+      <div className="text-stone-400 italic text-sm text-center p-6">
+        Pohon kosong
+      </div>
+    );
   }
 
+  const nodeSize = isMobile ? CONFIG.NODE_SIZE_MOBILE : CONFIG.NODE_SIZE;
+  const levelHeight = isMobile ? CONFIG.LEVEL_HEIGHT_MOBILE : CONFIG.LEVEL_HEIGHT;
+  const nodeSpacing = isMobile ? CONFIG.NODE_SPACING_MOBILE : CONFIG.NODE_SPACING;
+
   const levels = Math.ceil(Math.log2(array.length + 1));
-  const nodes: Array<{ val: any, x: number, y: number, i: number }> = [];
-  const edges: Array<{ x1: number, y1: number, x2: number, y2: number }> = [];
+  const nodes: Array<{ val: any, x: number, y: number, i: number, depth: number }> = [];
+  const edges: Array<{ x1: number, y1: number, x2: number, y2: number, label: string }> = [];
 
   for (let i = 0; i < array.length; i++) {
     if (array[i] === null || array[i] === undefined) continue;
 
     const depth = Math.floor(Math.log2(i + 1));
     const posInLevel = i - (Math.pow(2, depth) - 1);
-    const levelWidth = Math.pow(2, levels - depth - 1) * CONFIG.NODE_SPACING;
+    const levelWidth = Math.pow(2, levels - depth - 1) * nodeSpacing;
 
     const x = levelWidth + posInLevel * levelWidth * 2;
-    const y = depth * CONFIG.LEVEL_HEIGHT + CONFIG.NODE_SIZE;
+    const y = depth * levelHeight + nodeSize;
 
-    nodes.push({ val: array[i], x, y, i });
+    nodes.push({ val: array[i], x, y, i, depth });
 
+    // Left child edge
     const left = 2 * i + 1;
     if (left < array.length && array[left] != null) {
       const ld = Math.floor(Math.log2(left + 1));
       const lp = left - (Math.pow(2, ld) - 1);
-      const lLevelWidth = Math.pow(2, levels - ld - 1) * CONFIG.NODE_SPACING;
+      const lLevelWidth = Math.pow(2, levels - ld - 1) * nodeSpacing;
       const lx = lLevelWidth + lp * lLevelWidth * 2;
-      const ly = ld * CONFIG.LEVEL_HEIGHT + CONFIG.NODE_SIZE;
-      edges.push({ x1: x, y1: y, x2: lx, y2: ly });
+      const ly = ld * levelHeight + nodeSize;
+      edges.push({ x1: x, y1: y, x2: lx, y2: ly, label: 'KIRI' });
     }
 
+    // Right child edge
     const right = 2 * i + 2;
     if (right < array.length && array[right] != null) {
       const rd = Math.floor(Math.log2(right + 1));
       const rp = right - (Math.pow(2, rd) - 1);
-      const rLevelWidth = Math.pow(2, levels - rd - 1) * CONFIG.NODE_SPACING;
+      const rLevelWidth = Math.pow(2, levels - rd - 1) * nodeSpacing;
       const rx = rLevelWidth + rp * rLevelWidth * 2;
-      const ry = rd * CONFIG.LEVEL_HEIGHT + CONFIG.NODE_SIZE;
-      edges.push({ x1: x, y1: y, x2: rx, y2: ry });
+      const ry = rd * levelHeight + nodeSize;
+      edges.push({ x1: x, y1: y, x2: rx, y2: ry, label: 'KANAN' });
     }
   }
 
-  const svgW = Math.max(400, Math.pow(2, levels) * CONFIG.NODE_SPACING);
-  const svgH = levels * CONFIG.LEVEL_HEIGHT + CONFIG.NODE_SIZE * 2;
+  const svgW = Math.max(400, Math.pow(2, levels) * nodeSpacing);
+  const svgH = levels * levelHeight + nodeSize * 2;
 
   return (
     <div className="w-full overflow-x-auto">
@@ -182,45 +191,105 @@ const SvgBinaryTree = memo(({ array }: { array: any[] }) => {
         viewBox={`0 0 ${svgW} ${svgH}`}
         preserveAspectRatio="xMidYMid meet"
         className="mx-auto min-w-full"
-        style={{ minHeight: '300px' }}
+        style={{ minHeight: isMobile ? '250px' : '300px' }}
       >
-        {edges.map((e, idx) => (
-          <line
-            key={`edge-${idx}`}
-            x1={e.x1}
-            y1={e.y1}
-            x2={e.x2}
-            y2={e.y2}
-            stroke="#fbbf24"
-            strokeWidth={3}
-            strokeLinecap="round"
-          />
-        ))}
-        {nodes.map((n) => (
-          <g key={`node-${n.i}`}>
-            <rect
-              x={n.x - CONFIG.NODE_SIZE / 2}
-              y={n.y - CONFIG.NODE_SIZE / 2}
-              width={CONFIG.NODE_SIZE}
-              height={CONFIG.NODE_SIZE}
-              rx={10}
-              fill="#042f2e"
-              stroke="#14b8a6"
-              strokeWidth={3}
-            />
-            <text
-              x={n.x}
-              y={n.y}
-              fontSize="16"
-              fontWeight={700}
-              fill="#a7f3d0"
-              textAnchor="middle"
-              dominantBaseline="central"
-            >
-              {String(n.val)}
-            </text>
-          </g>
-        ))}
+        {/* Draw edges with labels */}
+        {edges.map((e, idx) => {
+          const midX = (e.x1 + e.x2) / 2;
+          const midY = (e.y1 + e.y2) / 2;
+          return (
+            <g key={`edge-${idx}`}>
+              <line
+                x1={e.x1}
+                y1={e.y1}
+                x2={e.x2}
+                y2={e.y2}
+                stroke="#fbbf24"
+                strokeWidth={isMobile ? 2 : 3}
+                strokeLinecap="round"
+                opacity={0.8}
+              />
+              {/* Edge Label */}
+              <rect
+                x={midX - (isMobile ? 18 : 22)}
+                y={midY - (isMobile ? 8 : 10)}
+                width={isMobile ? 36 : 44}
+                height={isMobile ? 16 : 20}
+                rx={4}
+                fill="#78350f"
+                stroke="#fbbf24"
+                strokeWidth={1.5}
+              />
+              <text
+                x={midX}
+                y={midY}
+                fontSize={isMobile ? '8' : '9'}
+                fontWeight={700}
+                fill="#fef3c7"
+                textAnchor="middle"
+                dominantBaseline="central"
+              >
+                {e.label}
+              </text>
+            </g>
+          );
+        })}
+
+        {/* Draw nodes */}
+        {nodes.map((n) => {
+          const isRoot = n.i === 0;
+          return (
+            <g key={`node-${n.i}`}>
+              {/* Node background glow */}
+              <circle
+                cx={n.x}
+                cy={n.y}
+                r={nodeSize / 2 + 3}
+                fill={isRoot ? 'rgba(251, 191, 36, 0.2)' : 'rgba(20, 184, 166, 0.15)'}
+                filter="blur(4px)"
+              />
+
+              {/* Node shape */}
+              <rect
+                x={n.x - nodeSize / 2}
+                y={n.y - nodeSize / 2}
+                width={nodeSize}
+                height={nodeSize}
+                rx={10}
+                fill={isRoot ? '#854d0e' : '#042f2e'}
+                stroke={isRoot ? '#fbbf24' : '#14b8a6'}
+                strokeWidth={isRoot ? 4 : 3}
+              />
+
+              {/* Node value */}
+              <text
+                x={n.x}
+                y={n.y}
+                fontSize={isMobile ? '14' : '16'}
+                fontWeight={700}
+                fill={isRoot ? '#fef3c7' : '#a7f3d0'}
+                textAnchor="middle"
+                dominantBaseline="central"
+              >
+                {String(n.val)}
+              </text>
+
+              {/* Root label */}
+              {isRoot && (
+                <text
+                  x={n.x}
+                  y={n.y - nodeSize / 2 - 8}
+                  fontSize={isMobile ? '10' : '11'}
+                  fontWeight={600}
+                  fill="#fbbf24"
+                  textAnchor="middle"
+                >
+                  AWAL
+                </text>
+              )}
+            </g>
+          );
+        })}
       </svg>
     </div>
   );
@@ -236,18 +305,16 @@ const DirectionButton = memo(
     direction,
     label,
     onClick,
-    onMouseEnter,
-    onMouseLeave,
     disabled,
     variant = 'primary',
+    isMobile = false,
   }: {
     direction: string;
     label: string;
     onClick: () => void;
-    onMouseEnter?: () => void;
-    onMouseLeave?: () => void;
     disabled: boolean;
     variant?: 'primary' | 'outline';
+    isMobile?: boolean;
   }) => {
     const icons: Record<string, string> = {
       left: '⬅️',
@@ -263,12 +330,10 @@ const DirectionButton = memo(
 
     return (
       <Button
-        onMouseEnter={onMouseEnter}
-        onMouseLeave={onMouseLeave}
         onClick={onClick}
         disabled={disabled}
         size="sm"
-        className={`${classes} transition-all duration-300 text-xs`}
+        className={`${classes} transition-all duration-300 ${isMobile ? 'text-xs py-2' : 'text-sm py-2.5'}`}
       >
         {icons[direction]} {label}
       </Button>
@@ -278,14 +343,16 @@ const DirectionButton = memo(
 
 DirectionButton.displayName = 'DirectionButton';
 
-const PathDisplay = memo(({ path }: { path: string[] }) => (
-  <div className="min-h-[50px] rounded-lg p-3 border border-amber-700/50 bg-stone-900/70 flex items-center backdrop-blur-sm">
+const PathDisplay = memo(({ path, isMobile = false }: { path: string[]; isMobile?: boolean }) => (
+  <div className={`min-h-[50px] rounded-lg ${isMobile ? 'p-2' : 'p-3'} border border-amber-700/50 bg-stone-900/70 flex items-center backdrop-blur-sm`}>
     {path.length > 0 ? (
-      <span className="font-mono text-xs text-amber-300 break-all">
+      <span className={`font-mono ${isMobile ? 'text-xs' : 'text-sm'} text-amber-300 break-all`}>
         {path.join(' → ')}
       </span>
     ) : (
-      <span className="text-stone-400 italic text-xs">Belum ada jejak yang tercatat</span>
+      <span className={`text-stone-400 italic ${isMobile ? 'text-xs' : 'text-sm'}`}>
+        Belum ada langkah yang dipilih
+      </span>
     )}
   </div>
 ));
@@ -297,30 +364,20 @@ PathDisplay.displayName = 'PathDisplay';
 // ============================================
 export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt, submitting }: Props) {
   const { setTorchRef } = useDungeonAtmosphere();
+  const isMobile = useIsMobile();
 
   const [path, setPath] = useState<string[]>([]);
-  const [hoverNext, setHoverNext] = useState<Direction | null>(null);
 
   const isDefuser = role === 'defuser';
   const isExpert = role === 'expert';
+  const isHost = role === 'host';
 
   const pickLabel = useCallback(
     (dir: 'left' | 'right' | 'up' | 'down'): string => {
-      const traversalOptions = toArray(puzzle?.defuserView?.traversalOptions);
-      const maps: Record<typeof dir, string[]> = {
-        left: ['left', 'kiri', 'lorong barat', 'l', 'west', 'barat'],
-        right: ['right', 'kanan', 'lorong timur', 'r', 'east', 'timur'],
-        up: ['up', 'atas', 'naik', 'u', 'north', 'utara'],
-        down: ['down', 'bawah', 'turun', 'd', 'south', 'selatan'],
-      };
-
-      const picked = traversalOptions.find((o) => maps[dir].includes(o.toLowerCase()));
-      if (picked) return picked;
-
-      const defaults = { left: 'Kiri', right: 'Kanan', up: 'Atas', down: 'Bawah' };
+      const defaults = { left: 'Kiri', right: 'Kanan', up: 'Kembali', down: 'Otomatis' };
       return defaults[dir];
     },
-    [puzzle]
+    []
   );
 
   const root: TreeNode | undefined = puzzle?.expertView?.tree?.root;
@@ -356,29 +413,9 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
     return dirs;
   }, [currentNode]);
 
-  const syncIssue = useMemo(() => {
-    if (!currentNode) return root ? null : 'Struktur pohon belum tersedia dari grimoire.';
-
-    const hasLeft = (currentNode as TreeNode).left != null;
-    const hasRight = (currentNode as TreeNode).right != null;
-    const traversalOptions = toArray(puzzle?.defuserView?.traversalOptions);
-    const offered = traversalOptions.map((o) => normalizeStep(o)).filter(Boolean) as Direction[];
-    const anyOfferedInvalid = offered.some(
-      (d) => (d === 'left' && !hasLeft) || (d === 'right' && !hasRight)
-    );
-
-    return anyOfferedInvalid
-      ? 'Petunjuk arah pada Defuser tidak cocok dengan cabang yang tersedia. Tombol disesuaikan otomatis.'
-      : null;
-  }, [currentNode, puzzle, root]);
-
   const defuserHints = useMemo(() => {
     const base = toArray(puzzle?.defuserView?.hints);
-    const extra = [
-      'Jejak runik tak selalu lurus; teguk napas di tiap persimpangan dan amati penjaga gerbangnya.',
-      'Bandingkan nilai penjaga sebelum memilih barat atau timur; namun jangan terperangkap fatamorgana keseimbangan semu.',
-    ];
-    return [...base, ...extra].slice(0, 3).map(obfuscate);
+    return base.slice(0, 3);
   }, [puzzle]);
 
   const addDirection = useCallback(
@@ -416,90 +453,90 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
     return (
       <Alert variant="destructive" className="min-h-[180px] flex items-center justify-center">
         <AlertDescription className="text-center">
-          Data teka-teki tidak tersedia dari grimoire kuno
+          Data teka-teki tidak tersedia
         </AlertDescription>
       </Alert>
     );
   }
 
+  const maxTreeHeight = isMobile ? CONFIG.MAX_TREE_HEIGHT_MOBILE : CONFIG.MAX_TREE_HEIGHT;
+
   return (
-    <div className="space-y-4 relative max-w-[2000px] mx-auto px-2 sm:px-4">
+    <div className="space-y-4 relative w-full mx-auto px-2 sm:px-4">
       <Card className="overflow-hidden border border-amber-700/40 bg-gradient-to-br from-stone-900 via-stone-800 to-amber-950 dungeon-card-glow">
-        <CardHeader className="relative p-4 sm:p-6">
-          <div className="absolute top-2 left-2 text-lg sm:text-xl">
+        <CardHeader className={`relative ${isMobile ? 'p-3' : 'p-4 sm:p-6'}`}>
+          <div className={`absolute ${isMobile ? 'top-2 left-2 text-lg' : 'top-2 left-2 text-lg sm:text-xl'}`}>
             <span ref={setTorchRef(0)} className="dungeon-torch-flicker">🔥</span>
           </div>
-          <div className="absolute top-2 right-2 text-lg sm:text-xl">
+          <div className={`absolute ${isMobile ? 'top-2 right-2 text-lg' : 'top-2 right-2 text-lg sm:text-xl'}`}>
             <span ref={setTorchRef(1)} className="dungeon-torch-flicker">🔥</span>
           </div>
-          <CardTitle className="text-amber-300 text-xl sm:text-2xl relative z-10 dungeon-glow-text">
-            {puzzle.title || 'Navigasi Tantangan'}
+          <CardTitle className={`text-amber-300 ${isMobile ? 'text-lg' : 'text-xl sm:text-2xl'} relative z-10 dungeon-glow-text text-center`}>
+            {puzzle.title || 'Tantangan Navigasi Pohon'}
           </CardTitle>
-          <CardDescription className="text-stone-300 text-sm sm:text-base relative z-10">
-            {puzzle.description || 'Temukan jalan dalam struktur tree!'}
+          <CardDescription className={`text-stone-300 ${isMobile ? 'text-xs' : 'text-sm sm:text-base'} relative z-10 text-center`}>
+            {puzzle.description || 'Temukan jalan dalam struktur pohon!'}
           </CardDescription>
 
-          <div className="pt-2 flex flex-wrap gap-2 relative z-10">
-            <Badge className="bg-amber-800 text-amber-100 border border-amber-700/50 text-sm">
+          <div className="pt-2 flex flex-wrap gap-2 justify-center relative z-10">
+            <Badge className={`bg-amber-800 text-amber-100 border border-amber-700/50 ${isMobile ? 'text-xs' : 'text-sm'}`}>
               🏰 Mode Dungeon
             </Badge>
-            <Badge className="bg-stone-700 text-stone-200 border border-stone-600/50 text-sm">
+            <Badge className={`bg-stone-700 text-stone-200 border border-stone-600/50 ${isMobile ? 'text-xs' : 'text-sm'}`}>
               🧭 Navigasi Pohon
             </Badge>
             {role && (
-              <Badge className="bg-purple-800 text-purple-100 border border-purple-700/50 text-sm">
+              <Badge className={`bg-purple-800 text-purple-100 border border-purple-700/50 ${isMobile ? 'text-xs' : 'text-sm'}`}>
                 🎭 {role}
               </Badge>
             )}
             {puzzle?.defuserView?.targetValue != null && (
-              <Badge className="bg-indigo-800 text-indigo-100 border border-indigo-700/50 text-sm">
-                Target: {obfuscate(String(puzzle.defuserView.targetValue))}
+              <Badge className={`bg-indigo-800 text-indigo-100 border border-indigo-700/50 ${isMobile ? 'text-xs' : 'text-sm'}`}>
+                Target: {puzzle.defuserView.targetValue}
               </Badge>
             )}
           </div>
         </CardHeader>
 
-        <CardContent className="space-y-4 p-4 sm:p-6">
-          {(isDefuser || isExpert) && syncIssue && (
-            <Alert className="border-amber-700/40 bg-gradient-to-r from-amber-900/40 to-stone-900/40 backdrop-blur-sm p-3">
-              <AlertDescription className="text-amber-200 text-sm">
-                ⚠️ {syncIssue}
-              </AlertDescription>
-            </Alert>
-          )}
+        <CardContent className={`space-y-4 ${isMobile ? 'p-3' : 'p-4 sm:p-6'}`}>
+          {/* RESPONSIVE GRID LAYOUT */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
 
-          <div className="grid grid-cols-1 lg:grid-cols-7 gap-4">
-            {/* DEFUSER PANEL - 2 cols */}
-            {(isDefuser || role === 'host') && (
-              <div className="lg:col-span-2">
+            {/* DEFUSER PANEL - 3 cols on desktop */}
+            {(isDefuser || isHost) && (
+              <div className="lg:col-span-3">
                 <Card className="border border-amber-600/40 bg-gradient-to-b from-stone-900/60 to-stone-800/40 h-full">
-                  <CardHeader className="p-3 pb-2">
-                    <CardTitle className="text-sm text-amber-300 flex items-center gap-2">
+                  <CardHeader className={`${isMobile ? 'p-2 pb-1' : 'p-3 pb-2'}`}>
+                    <CardTitle className={`${isMobile ? 'text-sm' : 'text-base'} text-amber-300 flex items-center gap-2`}>
                       <span>🗺️</span>
-                      <span>Panel Defuser</span>
+                      <span>Panel Pemain</span>
                     </CardTitle>
                   </CardHeader>
 
-                  <CardContent className="space-y-3 p-3">
-                    <div className="rounded-lg p-2 border border-stone-700/40 bg-stone-800/40">
-                      <h5 className="text-stone-200 font-semibold mb-1 text-xs">📜 Arahan Misi</h5>
-                      <p className="text-stone-300 text-[10px] leading-relaxed">
-                        {obfuscate(
-                          puzzle.defuserView?.task ||
-                            'Susun urutan langkah dari altar menuju ruang tujuan.'
-                        )}
+                  <CardContent className={`space-y-3 ${isMobile ? 'p-2' : 'p-3'}`}>
+                    {/* Task */}
+                    <div className={`rounded-lg ${isMobile ? 'p-2' : 'p-3'} border border-stone-700/40 bg-stone-800/40`}>
+                      <h5 className={`text-stone-200 font-semibold mb-1 ${isMobile ? 'text-xs' : 'text-sm'}`}>
+                        📜 Tugas
+                      </h5>
+                      <p className={`text-stone-300 ${isMobile ? 'text-xs' : 'text-sm'} leading-relaxed`}>
+                        {puzzle.defuserView?.task || 'Temukan angka target dengan cara berjalan dari awal ke titik tujuan.'}
                       </p>
                     </div>
 
+                    {/* Navigation Controls */}
                     <div>
-                      <h5 className="text-stone-200 font-semibold mb-2 text-xs">🧭 Kontrol Navigasi</h5>
-                      <div className="grid grid-cols-2 gap-1.5">
+                      <h5 className={`text-stone-200 font-semibold mb-2 ${isMobile ? 'text-xs' : 'text-sm'}`}>
+                        🧭 Tombol Navigasi
+                      </h5>
+                      <div className="grid grid-cols-2 gap-2">
                         <DirectionButton
                           direction="up"
                           label={pickLabel('up')}
                           onClick={removeLastStep}
                           disabled={path.length === 0 || submitting}
                           variant="outline"
+                          isMobile={isMobile}
                         />
 
                         <DirectionButton
@@ -508,6 +545,7 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
                           onClick={descendOne}
                           disabled={submitting || availableDirections.length !== 1}
                           variant="outline"
+                          isMobile={isMobile}
                         />
 
                         {availableDirections.includes('left') && (
@@ -515,9 +553,8 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
                             direction="left"
                             label={pickLabel('left')}
                             onClick={() => addDirection('left')}
-                            onMouseEnter={() => setHoverNext('left')}
-                            onMouseLeave={() => setHoverNext(null)}
                             disabled={submitting}
+                            isMobile={isMobile}
                           />
                         )}
 
@@ -526,31 +563,33 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
                             direction="right"
                             label={pickLabel('right')}
                             onClick={() => addDirection('right')}
-                            onMouseEnter={() => setHoverNext('right')}
-                            onMouseLeave={() => setHoverNext(null)}
                             disabled={submitting}
+                            isMobile={isMobile}
                           />
                         )}
                       </div>
 
                       {availableDirections.length === 0 && (
-                        <Badge className="bg-red-800 text-red-100 border border-red-700/60 mt-2 text-xs">
+                        <Badge className={`bg-red-800 text-red-100 border border-red-700/60 mt-2 ${isMobile ? 'text-xs' : 'text-sm'}`}>
                           Tidak ada cabang
                         </Badge>
                       )}
                     </div>
 
+                    {/* Path Display */}
                     <div>
-                      <h5 className="text-stone-200 font-semibold mb-1.5 text-xs">🛤️ Jejak Saat Ini</h5>
-                      <PathDisplay path={path} />
+                      <h5 className={`text-stone-200 font-semibold mb-2 ${isMobile ? 'text-xs' : 'text-sm'}`}>
+                        🛤️ Langkah yang Dipilih
+                      </h5>
+                      <PathDisplay path={path} isMobile={isMobile} />
 
-                      <div className="flex gap-1.5 mt-2">
+                      <div className="flex gap-2 mt-2">
                         <Button
                           onClick={removeLastStep}
                           disabled={path.length === 0 || submitting}
                           variant="outline"
                           size="sm"
-                          className="border-amber-600/60 text-amber-300 hover:bg-amber-900/30 text-xs flex-1"
+                          className={`border-amber-600/60 text-amber-300 hover:bg-amber-900/30 ${isMobile ? 'text-xs' : 'text-sm'} flex-1`}
                         >
                           Hapus
                         </Button>
@@ -559,30 +598,32 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
                           disabled={path.length === 0 || submitting}
                           variant="outline"
                           size="sm"
-                          className="border-red-600/60 text-red-300 hover:bg-red-900/30 text-xs flex-1"
+                          className={`border-red-600/60 text-red-300 hover:bg-red-900/30 ${isMobile ? 'text-xs' : 'text-sm'} flex-1`}
                         >
                           Reset
                         </Button>
                       </div>
                     </div>
 
+                    {/* Submit Button */}
                     <form onSubmit={handleSubmit}>
                       <Button
                         type="submit"
                         disabled={path.length === 0 || submitting}
-                        className="w-full bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-stone-900 font-semibold text-xs py-2"
+                        className={`w-full bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-stone-900 font-semibold ${isMobile ? 'text-xs py-2' : 'text-sm py-2.5'}`}
                       >
-                        {submitting ? '⚙️ Mengirim...' : '✨ Kirim Jejak'}
+                        {submitting ? '⚙️ Mengirim...' : '✨ Kirim Jawaban'}
                       </Button>
                     </form>
 
+                    {/* Hints */}
                     {defuserHints.length > 0 && (
-                      <div className="p-2 rounded-lg border border-blue-700/40 bg-gradient-to-r from-blue-950/40 to-stone-900/30">
-                        <h5 className="text-blue-200 font-medium mb-1 text-xs flex items-center gap-1">
+                      <div className={`${isMobile ? 'p-2' : 'p-3'} rounded-lg border border-blue-700/40 bg-gradient-to-r from-blue-950/40 to-stone-900/30`}>
+                        <h5 className={`text-blue-200 font-medium mb-1 ${isMobile ? 'text-xs' : 'text-sm'} flex items-center gap-1`}>
                           <span>💡</span>
                           <span>Petunjuk</span>
                         </h5>
-                        <ul className="text-[9px] text-blue-200/90 space-y-0.5 list-disc pl-3">
+                        <ul className={`${isMobile ? 'text-xs' : 'text-sm'} text-blue-200/90 space-y-1 list-disc pl-4`}>
                           {defuserHints.map((h, i) => (
                             <li key={i}>{h}</li>
                           ))}
@@ -594,125 +635,105 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
               </div>
             )}
 
-            {/* EXPERT PANEL - BENTO GRID LAYOUT - 5 cols */}
-            {(isExpert || role === 'host') && (
-              <div className="lg:col-span-5 bento-grid-wide">
-                {/* Tree Visualization */}
-                <Card className="bento-tree-wide border border-emerald-700/40 bg-gradient-to-b from-stone-900/60 to-emerald-950/40">
-                  <CardHeader className="pb-2 pt-2 px-3">
-                    <CardTitle className="text-sm text-emerald-300 flex items-center gap-1.5">
-                      <span>🎄</span>
-                      <span>Visualisasi Pohon</span>
-                    </CardTitle>
-                    <CardDescription className="text-stone-400 text-[10px]">
-                      Lihat langsung struktur & cabang node
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="p-3">
-                    {treeArray && treeArray.length > 0 ? (
-                      <div
-                        className="rounded-lg p-3 bg-stone-950 border border-stone-700/40 overflow-y-auto"
-                        style={{ maxHeight: CONFIG.MAX_TREE_HEIGHT }}
-                      >
-                        <SvgBinaryTree array={treeArray} />
-                      </div>
-                    ) : (
-                      <div className="text-stone-400 italic text-xs text-center p-3">
-                        Data pohon tidak tersedia
-                      </div>
-                    )}
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      <Badge className="bg-emerald-800 text-emerald-100 border border-emerald-700/40 text-xs">
-                        Node
-                      </Badge>
-                      <Badge className="bg-amber-800 text-amber-100 border border-amber-700/40 text-xs">
-                        Koneksi
-                      </Badge>
-                    </div>
-                  </CardContent>
-                </Card>
+            {/* EXPERT PANEL - 9 cols on desktop, responsive grid inside */}
+            {(isExpert || isHost) && (
+              <div className="lg:col-span-9">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
 
-                {/* Prinsip Pembimbingan */}
-                <Card className="bento-prinsip-wide p-3 rounded-lg border border-emerald-700/50 bg-gradient-to-r from-emerald-950/40 to-stone-900/30">
-                  <h5 className="text-emerald-200 font-semibold mb-2 text-sm flex items-center gap-1.5">
-                    <span>🧭</span>
-                    <span>Prinsip Pembimbingan</span>
-                  </h5>
-                  <ul className="text-[10px] text-emerald-200/90 space-y-1 list-disc pl-4">
-                    <li>Ajukan pertanyaan terbuka untuk memancing analisis Defuser</li>
-                    <li>Gunakan metode Socratic: biarkan mereka menemukan pola sendiri</li>
-                    <li>Fokus pada proses berpikir, bukan jawaban langsung</li>
-                    <li>Berikan petunjuk bertingkat: umum → spesifik</li>
-                  </ul>
-                </Card>
-
-                {/* Konsep Binary Tree */}
-                <Card className="bento-konsep-wide p-3 rounded-lg border border-purple-700/50 bg-gradient-to-r from-purple-950/40 to-stone-900/30">
-                  <h5 className="text-purple-200 font-semibold mb-2 text-sm flex items-center gap-1.5">
-                    <span>📚</span>
-                    <span>Konsep Binary Tree</span>
-                  </h5>
-                  <ul className="text-[10px] text-purple-200/90 space-y-1 list-disc pl-4">
-                    <li>Binary Tree: setiap node maksimal 2 anak (left & right)</li>
-                    <li>BST: left {'<'} parent {'<'} right untuk setiap subtree</li>
-                    <li>Leaf node: tidak memiliki anak (endpoint)</li>
-                    <li>Root: node tertinggi, titik mulai penelusuran</li>
-                  </ul>
-                </Card>
-
-                {/* Strategi Traversal */}
-                <Card className="bento-strategi-wide p-3 rounded-lg border border-blue-700/50 bg-gradient-to-r from-blue-950/40 to-stone-900/30">
-                  <h5 className="text-blue-200 font-semibold mb-2 text-sm flex items-center gap-1.5">
-                    <span>🔍</span>
-                    <span>Strategi Traversal</span>
-                  </h5>
-                  <ul className="text-[10px] text-blue-200/90 space-y-1 list-disc pl-4">
-                    <li><strong>Inorder</strong>: Left-Root-Right (urutan terurut pada BST)</li>
-                    <li><strong>Preorder</strong>: Root-Left-Right (copy struktur pohon)</li>
-                    <li><strong>Postorder</strong>: Left-Right-Root (evaluasi bottom-up)</li>
-                    <li><strong>Level-order</strong>: BFS per level untuk jarak minimum</li>
-                  </ul>
-                </Card>
-
-                {/* Validasi BST */}
-                <Card className="bento-validasi-wide p-3 rounded-lg border border-teal-700/50 bg-gradient-to-r from-teal-950/40 to-stone-900/30">
-                  <h5 className="text-teal-200 font-semibold mb-2 text-sm flex items-center gap-1.5">
-                    <span>✅</span>
-                    <span>Validasi BST</span>
-                  </h5>
-                  <ul className="text-[10px] text-teal-200/90 space-y-1 list-disc pl-4">
-                    <li>Inorder traversal harus menghasilkan urutan menaik</li>
-                    <li>Gunakan range checking: update min/max saat turun</li>
-                    <li>Kompleksitas: O(log n) balanced, O(n) worst case</li>
-                  </ul>
-                </Card>
-
-                {/* Metode Traversal */}
-                {puzzle.expertView?.traversalMethods && (
-                  <Card className="bento-metode-wide p-3 rounded-lg border border-indigo-700/50 bg-gradient-to-r from-indigo-950/40 to-stone-900/30">
-                    <h5 className="text-indigo-200 font-semibold mb-2 text-sm flex items-center gap-1.5">
-                      <span>🔮</span>
-                      <span>Metode Traversal Tersedia</span>
-                    </h5>
-                    <div className="flex flex-wrap gap-1.5">
-                      {Object.keys(puzzle.expertView.traversalMethods).map((name) => (
-                        <Badge
-                          key={name}
-                          className="bg-indigo-800 text-indigo-100 border border-indigo-700/60 text-xs"
+                  {/* Tree Visualization - spans 2 cols on md+ */}
+                  <Card className="md:col-span-2 border border-emerald-700/40 bg-gradient-to-b from-stone-900/60 to-emerald-950/40">
+                    <CardHeader className={`${isMobile ? 'pb-2 pt-2 px-3' : 'pb-2 pt-3 px-4'}`}>
+                      <CardTitle className={`${isMobile ? 'text-sm' : 'text-base'} text-emerald-300 flex items-center gap-2`}>
+                        <span>🎄</span>
+                        <span>Gambar Pohon</span>
+                      </CardTitle>
+                      <CardDescription className={`text-stone-400 ${isMobile ? 'text-xs' : 'text-sm'}`}>
+                        Kotak emas = Titik awal | Label KIRI/KANAN pada garis | Kotak hijau = Titik cabang
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className={isMobile ? 'p-3' : 'p-4'}>
+                      {treeArray && treeArray.length > 0 ? (
+                        <div
+                          className="rounded-lg p-3 bg-stone-950 border border-stone-700/40 overflow-x-auto overflow-y-auto"
+                          style={{ maxHeight: `${maxTreeHeight}px` }}
                         >
-                          {name}
+                          <SvgBinaryTree array={treeArray} isMobile={isMobile} />
+                        </div>
+                      ) : (
+                        <div className={`text-stone-400 italic ${isMobile ? 'text-sm' : 'text-base'} text-center p-4`}>
+                          Data pohon tidak tersedia
+                        </div>
+                      )}
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Badge className={`bg-amber-800 text-amber-100 border border-amber-700/40 ${isMobile ? 'text-xs' : 'text-sm'}`}>
+                          🟡 Titik Awal
                         </Badge>
-                      ))}
+                        <Badge className={`bg-emerald-800 text-emerald-100 border border-emerald-700/40 ${isMobile ? 'text-xs' : 'text-sm'}`}>
+                          🟢 Titik Cabang
+                        </Badge>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Panduan Membimbing */}
+                  <Card className={`${isMobile ? 'p-3' : 'p-4'} rounded-lg border border-emerald-700/50 bg-gradient-to-r from-emerald-950/40 to-stone-900/30`}>
+                    <h5 className={`text-emerald-200 font-semibold mb-2 ${isMobile ? 'text-sm' : 'text-base'} flex items-center gap-2`}>
+                      <span>🧭</span>
+                      <span>Cara Membimbing Pemain</span>
+                    </h5>
+                    <ul className={`${isMobile ? 'text-xs' : 'text-sm'} text-emerald-200/90 space-y-1.5 list-disc pl-5`}>
+                      <li>Tanyakan ke pemain apa yang dia lihat</li>
+                      <li>Biarkan mereka berpikir sendiri dulu</li>
+                      <li>Berikan petunjuk bertahap, jangan langsung kasih jawaban</li>
+                      <li>Fokus pada cara berpikir, bukan hasil akhir</li>
+                    </ul>
+                  </Card>
+
+                  {/* Konsep Pohon Biner */}
+                  <Card className={`${isMobile ? 'p-3' : 'p-4'} rounded-lg border border-purple-700/50 bg-gradient-to-r from-purple-950/40 to-stone-900/30`}>
+                    <h5 className={`text-purple-200 font-semibold mb-2 ${isMobile ? 'text-sm' : 'text-base'} flex items-center gap-2`}>
+                      <span>📚</span>
+                      <span>Tentang Pohon Biner</span>
+                    </h5>
+                    <ul className={`${isMobile ? 'text-xs' : 'text-sm'} text-purple-200/90 space-y-1.5 list-disc pl-5`}>
+                      <li>Pohon Biner: setiap titik punya maksimal 2 cabang (kiri & kanan)</li>
+                      <li>BST: cabang kiri lebih kecil, cabang kanan lebih besar dari titik saat ini</li>
+                      <li>Titik akhir: tidak punya cabang lagi</li>
+                      <li>Titik awal: tempat mulai pencarian</li>
+                    </ul>
+                  </Card>
+
+                  {/* Cara Menjelajah Pohon */}
+                  <Card className={`md:col-span-2 ${isMobile ? 'p-3' : 'p-4'} rounded-lg border border-blue-700/50 bg-gradient-to-r from-blue-950/40 to-stone-900/30`}>
+                    <h5 className={`text-blue-200 font-semibold mb-2 ${isMobile ? 'text-sm' : 'text-base'} flex items-center gap-2`}>
+                      <span>🔍</span>
+                      <span>Cara Menjelajah Pohon</span>
+                    </h5>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-blue-100 font-semibold mb-1`}>Inorder</p>
+                        <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-blue-200/90`}>Kiri → Tengah → Kanan (urutan terurut)</p>
+                      </div>
+                      <div>
+                        <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-blue-100 font-semibold mb-1`}>Preorder</p>
+                        <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-blue-200/90`}>Tengah → Kiri → Kanan (salin struktur)</p>
+                      </div>
+                      <div>
+                        <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-blue-100 font-semibold mb-1`}>Postorder</p>
+                        <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-blue-200/90`}>Kiri → Kanan → Tengah (evaluasi)</p>
+                      </div>
                     </div>
                   </Card>
-                )}
+
+                </div>
               </div>
             )}
+
           </div>
         </CardContent>
       </Card>
 
-      {/* BENTO GRID STYLES - WIDER VERSION */}
+      {/* STYLES */}
       <style>{`
         .dungeon-torch-flicker {
           display: inline-block;
@@ -726,66 +747,34 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
           text-shadow: 0 0 15px rgba(251, 191, 36, 0.5);
         }
 
-        /* BENTO GRID LAYOUT - WIDER & MORE SPACIOUS */
-        .bento-grid-wide {
-          display: grid;
-          grid-template-columns: repeat(6, 1fr);
-          grid-template-rows: repeat(4, auto);
-          gap: 12px;
-        }
-
-        .bento-tree-wide {
-          grid-column: 1 / 4;
-          grid-row: 1 / 5;
-        }
-
-        .bento-prinsip-wide {
-          grid-column: 4 / 7;
-          grid-row: 1 / 2;
-        }
-
-        .bento-konsep-wide {
-          grid-column: 4 / 7;
-          grid-row: 2 / 3;
-        }
-
-        .bento-strategi-wide {
-          grid-column: 4 / 7;
-          grid-row: 3 / 4;
-        }
-
-        .bento-validasi-wide {
-          grid-column: 4 / 7;
-          grid-row: 4 / 5;
-        }
-
-        .bento-metode-wide {
-          grid-column: 1 / 7;
-          grid-row: 5 / 6;
-        }
-
-        /* Responsive */
-        @media (max-width: 1280px) {
-          .bento-grid-wide {
-            grid-template-columns: 1fr;
-            grid-template-rows: auto;
-          }
-
-          .bento-tree-wide,
-          .bento-prinsip-wide,
-          .bento-konsep-wide,
-          .bento-strategi-wide,
-          .bento-validasi-wide,
-          .bento-metode-wide {
-            grid-column: 1 / 2;
-            grid-row: auto;
-          }
-        }
-
         @media (max-width: 768px) {
           .dungeon-card-glow {
             box-shadow: 0 0 10px rgba(120, 113, 108, 0.25);
           }
+        }
+
+        /* Scrollbar styling */
+        .overflow-x-auto::-webkit-scrollbar,
+        .overflow-y-auto::-webkit-scrollbar {
+          width: 6px;
+          height: 6px;
+        }
+
+        .overflow-x-auto::-webkit-scrollbar-track,
+        .overflow-y-auto::-webkit-scrollbar-track {
+          background: rgba(28, 25, 23, 0.5);
+          border-radius: 3px;
+        }
+
+        .overflow-x-auto::-webkit-scrollbar-thumb,
+        .overflow-y-auto::-webkit-scrollbar-thumb {
+          background: rgba(52, 211, 153, 0.6);
+          border-radius: 3px;
+        }
+
+        .overflow-x-auto::-webkit-scrollbar-thumb:hover,
+        .overflow-y-auto::-webkit-scrollbar-thumb:hover {
+          background: rgba(52, 211, 153, 0.8);
         }
       `}</style>
     </div>
