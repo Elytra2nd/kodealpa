@@ -35,7 +35,7 @@ class SessionController extends Controller
         ]
     ];
 
-    // Puzzle databases remain the same...
+    // Puzzle databases
     private $patternPuzzles = [
         ['sequence' => [2, 4, 6, 8], 'answer' => '10', 'type' => 'arithmetic', 'rule' => 'Add 2'],
         ['sequence' => [5, 10, 15, 20], 'answer' => '25', 'type' => 'arithmetic', 'rule' => 'Add 5'],
@@ -262,9 +262,19 @@ class SessionController extends Controller
         }
     }
 
+    /**
+     * ✅ UPDATED: Get session state with role-based filtering
+     */
     public function state($sessionId)
     {
         $session = GameSession::with(['participants', 'attempts'])->findOrFail($sessionId);
+
+        // ✅ Deteksi role user saat ini
+        $participant = GameParticipant::where('game_session_id', $sessionId)
+                                      ->where('user_id', auth()->id())
+                                      ->first();
+
+        $userRole = $participant ? $participant->role : 'host';
 
         $currentStage = $session->current_stage ?? 1;
         $stageConfig = $this->stageConfigurations[$currentStage];
@@ -272,9 +282,13 @@ class SessionController extends Controller
         if ($session->status === 'running') {
             $puzzle = $this->generatePuzzleForStage($currentStage, $session->seed);
 
+            // ✅ Filter puzzle data berdasarkan role
+            $filteredPuzzle = $this->filterPuzzleByRole($puzzle, $userRole);
+
             return response()->json([
                 'session' => $session,
-                'puzzle' => $puzzle,
+                'puzzle' => $filteredPuzzle,
+                'userRole' => $userRole,  // ✅ Kirim role ke frontend
                 'stage' => [
                     'current' => $currentStage,
                     'total' => count($this->stageConfigurations),
@@ -290,6 +304,7 @@ class SessionController extends Controller
 
         return response()->json([
             'session' => $session,
+            'userRole' => $userRole,
             'stage' => [
                 'current' => $currentStage,
                 'total' => count($this->stageConfigurations),
@@ -297,6 +312,39 @@ class SessionController extends Controller
             ],
             'serverTime' => now()->toISOString()
         ]);
+    }
+
+    /**
+     * ✅ NEW: Filter puzzle berdasarkan role
+     */
+    private function filterPuzzleByRole($puzzle, $role)
+    {
+        $filtered = [
+            'key' => $puzzle['key'],
+            'title' => $puzzle['title'],
+            'description' => $puzzle['description'],
+            'type' => $puzzle['type'],
+            'learningObjectives' => $puzzle['learningObjectives'],
+        ];
+
+        // Defuser hanya dapat defuserView
+        if ($role === 'defuser') {
+            $filtered['defuserView'] = $puzzle['defuserView'];
+        }
+
+        // Expert hanya dapat expertView
+        elseif ($role === 'expert') {
+            $filtered['expertView'] = $puzzle['expertView'];
+        }
+
+        // Host dapat semua data
+        elseif ($role === 'host') {
+            $filtered['defuserView'] = $puzzle['defuserView'];
+            $filtered['expertView'] = $puzzle['expertView'];
+            $filtered['answer'] = $puzzle['answer'];
+        }
+
+        return $filtered;
     }
 
     public function attempt(Request $request, $sessionId)
@@ -412,7 +460,6 @@ class SessionController extends Controller
             'completed_at' => now(),
         ]);
 
-        // FIX: Use fresh() dengan relation
         $this->finalizeAndJournal($session->fresh('attempts'), 'ended', $session->failed_stage);
 
         return response()->json([
@@ -492,11 +539,15 @@ class SessionController extends Controller
         };
     }
 
+    /**
+     * ✅ UPDATED: Generate pattern analysis puzzle
+     * TIDAK menambahkan '?' ke pattern array - biarkan frontend yang handle
+     */
     private function generatePatternAnalysisPuzzle()
     {
         $selectedPuzzle = $this->patternPuzzles[array_rand($this->patternPuzzles)];
         $pattern = $selectedPuzzle['sequence'];
-        $pattern[] = '?';
+        // ✅ TIDAK menambahkan '?' - frontend yang akan menambahkan
 
         return [
             'key' => 'pattern_' . md5(json_encode($selectedPuzzle) . time()),
@@ -504,7 +555,7 @@ class SessionController extends Controller
             'description' => 'Lihat deret angka ini. Kamu bisa menebak angka selanjutnya?',
             'type' => 'pattern_analysis',
             'defuserView' => [
-                'pattern' => $pattern,
+                'pattern' => $pattern,  // ✅ Tanpa '?'
                 'hints' => $this->generatePatternHints($selectedPuzzle),
                 'sequenceId' => md5(json_encode($selectedPuzzle))
             ],
@@ -522,6 +573,92 @@ class SessionController extends Controller
             'answer' => $selectedPuzzle['answer']
         ];
     }
+
+    private function generateNavigationPuzzle()
+    {
+        $selectedPuzzle = $this->navigationPuzzles[array_rand($this->navigationPuzzles)];
+
+        // Generate a clearer tree structure
+        $treeStructure = [
+            'value' => 10,
+            'left' => [
+                'value' => 5,
+                'left' => ['value' => 3, 'left' => null, 'right' => null],
+                'right' => ['value' => 7, 'left' => null, 'right' => null]
+            ],
+            'right' => [
+                'value' => 15,
+                'left' => ['value' => 12, 'left' => null, 'right' => null],
+                'right' => ['value' => 20, 'left' => null, 'right' => null]
+            ]
+        ];
+
+        $targetValue = rand(3, 20);
+        $correctPath = $this->findPathInTree($treeStructure, $targetValue);
+
+        return [
+            'key' => 'nav_' . md5(json_encode($selectedPuzzle) . time()),
+            'title' => 'Navigasi Pohon Biner',
+            'description' => 'Temukan nilai target dengan navigasi melalui struktur pohon!',
+            'type' => 'navigation_challenge',
+            'defuserView' => [
+                'task' => "Temukan nilai: {$targetValue}",
+                'currentPosition' => 'ROOT',
+                'currentValue' => $treeStructure['value'],
+                'targetValue' => $targetValue,
+                'availableMoves' => ['LEFT', 'RIGHT'],
+                'hints' => [
+                    'Mulai dari node ROOT dengan nilai ' . $treeStructure['value'],
+                    'Jika nilai target lebih kecil, coba ke LEFT',
+                    'Jika nilai target lebih besar, coba ke RIGHT',
+                    'Tanyakan Expert tentang nilai node kiri dan kanan'
+                ]
+            ],
+            'expertView' => [
+                'tree' => $treeStructure,
+                'targetValue' => $targetValue,
+                'correctPath' => $correctPath,
+                'explanation' => "Untuk menemukan {$targetValue}, ikuti jalur: " . implode(' → ', $correctPath),
+                'traversalMethods' => [
+                    'inorder' => [3, 5, 7, 10, 12, 15, 20],
+                    'preorder' => [10, 5, 3, 7, 15, 12, 20],
+                    'postorder' => [3, 7, 5, 12, 20, 15, 10]
+                ],
+                'hints' => [
+                    'Visualisasikan struktur pohon untuk Defuser',
+                    'Bimbing mereka dengan properti Binary Search Tree',
+                    'Jelaskan perbandingan nilai untuk menentukan arah'
+                ]
+            ],
+            'learningObjectives' => [
+                'Memahami struktur data Binary Search Tree',
+                'Belajar navigasi berdasarkan perbandingan nilai',
+                'Berkolaborasi dalam problem solving'
+            ],
+            'answer' => implode(',', $correctPath)
+        ];
+    }
+
+    // Helper method to find path
+    private function findPathInTree($node, $target, $path = ['ROOT'])
+    {
+        if (!$node) return null;
+
+        if ($node['value'] == $target) {
+            return $path;
+        }
+
+        if ($target < $node['value'] && $node['left']) {
+            return $this->findPathInTree($node['left'], $target, array_merge($path, ['LEFT']));
+        }
+
+        if ($target > $node['value'] && $node['right']) {
+            return $this->findPathInTree($node['right'], $target, array_merge($path, ['RIGHT']));
+        }
+
+        return null;
+    }
+
 
     private function generateCodeAnalysisPuzzle()
     {
@@ -552,49 +689,6 @@ class SessionController extends Controller
                 'Berkolaborasi dalam pemecahan masalah'
             ],
             'answer' => $selectedPuzzle['answer']
-        ];
-    }
-
-    private function getSolutionMethod($puzzle)
-    {
-        switch ($puzzle['type']) {
-            case 'caesar':
-                return "Sandi Caesar: Geser setiap huruf mundur {$puzzle['shift']} posisi dalam alfabet";
-            case 'reverse':
-                return "Teks Terbalik: Baca dari kanan ke kiri";
-            default:
-                return "Metode dekripsi tidak diketahui";
-        }
-    }
-
-    private function getDecryptionSteps($puzzle)
-    {
-        switch ($puzzle['type']) {
-            case 'caesar':
-                return [
-                    "1. Identifikasi ini adalah sandi Caesar dengan pergeseran {$puzzle['shift']}",
-                    "2. Untuk setiap huruf, geser mundur {$puzzle['shift']} posisi",
-                    "3. Contoh: " . $puzzle['cipher'][0] . " → " . $puzzle['answer'][0],
-                    "4. Hasil akhir: {$puzzle['answer']}"
-                ];
-            case 'reverse':
-                return [
-                    "1. Identifikasi bahwa teks ini dibalik",
-                    "2. Baca karakter dari kanan ke kiri",
-                    "3. {$puzzle['cipher']} dibaca terbalik menjadi {$puzzle['answer']}"
-                ];
-            default:
-                return ["Langkah dekripsi tidak tersedia"];
-        }
-    }
-
-    private function getExpertHints($puzzle)
-    {
-        return [
-            "Bantu Defuser dengan memberikan petunjuk bertahap",
-            "Jangan langsung berikan jawaban",
-            "Tanyakan apa yang dilihat Defuser",
-            "Jelaskan konsep enkripsi sederhana"
         ];
     }
 
@@ -659,6 +753,9 @@ class SessionController extends Controller
         ];
     }
 
+    /**
+     * ✅ Generate hints - SUDAH BENAR, TIDAK PERLU DIUBAH
+     */
     private function generatePatternHints($puzzle)
     {
         $hints = [
@@ -705,16 +802,6 @@ class SessionController extends Controller
         return $hints[$puzzle['type']] ?? ['Ini adalah sandi sederhana'];
     }
 
-    private function generateNavigationHints($puzzle)
-    {
-        return [
-            "Mulai dari posisi {$puzzle['start']}",
-            "Target akhir adalah {$puzzle['end']}",
-            "Maksimal {$puzzle['moves']} langkah untuk mencapai tujuan",
-            "Gunakan koordinat grid {$puzzle['grid_size']}"
-        ];
-    }
-
     private function generatePatternExplanation($puzzle)
     {
         $explanations = [
@@ -737,20 +824,6 @@ class SessionController extends Controller
         return $explanations[$puzzle['type']] ?? "Metode enkripsi sederhana";
     }
 
-    private function generateOptimalPath($puzzle)
-    {
-        return "Jalan optimal dari {$puzzle['start']} ke {$puzzle['end']}";
-    }
-
-    private function generateGridLayout($puzzle)
-    {
-        return [
-            'size' => $puzzle['grid_size'],
-            'start' => $puzzle['start'],
-            'end' => $puzzle['end']
-        ];
-    }
-
     private function validateAnswer($puzzle, $userInput)
     {
         return strtoupper(trim($userInput)) === strtoupper(trim($puzzle['answer']));
@@ -764,7 +837,6 @@ class SessionController extends Controller
             'failed_stage' => $stage
         ]);
 
-        // Finalize + journal dengan fresh
         $this->finalizeAndJournal($session->fresh('attempts'), 'failed', $stage);
 
         return response()->json([
@@ -806,7 +878,6 @@ class SessionController extends Controller
                 'collaboration_score' => $this->calculateCollaborationScore($session)
             ]);
 
-            // Finalize + journal
             $this->finalizeAndJournal($session->fresh('attempts'), 'success', null);
 
             return response()->json([
