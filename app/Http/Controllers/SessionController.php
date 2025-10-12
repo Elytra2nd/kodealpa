@@ -680,7 +680,7 @@ class SessionController extends Controller
                 'Belajar navigasi berdasarkan perbandingan nilai',
                 'Berkolaborasi dalam problem solving'
             ],
-            'answer' => implode(',', $correctPath)
+            'answer' => is_array($correctPath) ? implode(',', $correctPath) : (string) $correctPath
         ];
     }
 
