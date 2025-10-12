@@ -263,13 +263,13 @@ class SessionController extends Controller
     }
 
     /**
-     * ✅ UPDATED: Get session state with role-based filtering
+     * Get session state with role-based filtering
      */
     public function state($sessionId)
     {
         $session = GameSession::with(['participants', 'attempts'])->findOrFail($sessionId);
 
-        // ✅ Deteksi role user saat ini
+        // Deteksi role user saat ini
         $participant = GameParticipant::where('game_session_id', $sessionId)
                                       ->where('user_id', auth()->id())
                                       ->first();
@@ -282,13 +282,13 @@ class SessionController extends Controller
         if ($session->status === 'running') {
             $puzzle = $this->generatePuzzleForStage($currentStage, $session->seed);
 
-            // ✅ Filter puzzle data berdasarkan role
+            // Filter puzzle data berdasarkan role
             $filteredPuzzle = $this->filterPuzzleByRole($puzzle, $userRole);
 
             return response()->json([
                 'session' => $session,
                 'puzzle' => $filteredPuzzle,
-                'userRole' => $userRole,  // ✅ Kirim role ke frontend
+                'userRole' => $userRole,
                 'stage' => [
                     'current' => $currentStage,
                     'total' => count($this->stageConfigurations),
@@ -315,7 +315,7 @@ class SessionController extends Controller
     }
 
     /**
-     * ✅ NEW: Filter puzzle berdasarkan role
+     * Filter puzzle berdasarkan role
      */
     private function filterPuzzleByRole($puzzle, $role)
     {
@@ -327,18 +327,11 @@ class SessionController extends Controller
             'learningObjectives' => $puzzle['learningObjectives'],
         ];
 
-        // Defuser hanya dapat defuserView
         if ($role === 'defuser') {
             $filtered['defuserView'] = $puzzle['defuserView'];
-        }
-
-        // Expert hanya dapat expertView
-        elseif ($role === 'expert') {
+        } elseif ($role === 'expert') {
             $filtered['expertView'] = $puzzle['expertView'];
-        }
-
-        // Host dapat semua data
-        elseif ($role === 'host') {
+        } elseif ($role === 'host') {
             $filtered['defuserView'] = $puzzle['defuserView'];
             $filtered['expertView'] = $puzzle['expertView'];
             $filtered['answer'] = $puzzle['answer'];
@@ -540,14 +533,12 @@ class SessionController extends Controller
     }
 
     /**
-     * ✅ UPDATED: Generate pattern analysis puzzle
-     * TIDAK menambahkan '?' ke pattern array - biarkan frontend yang handle
+     * Generate pattern analysis puzzle
      */
     private function generatePatternAnalysisPuzzle()
     {
         $selectedPuzzle = $this->patternPuzzles[array_rand($this->patternPuzzles)];
         $pattern = $selectedPuzzle['sequence'];
-        // ✅ TIDAK menambahkan '?' - frontend yang akan menambahkan
 
         return [
             'key' => 'pattern_' . md5(json_encode($selectedPuzzle) . time()),
@@ -555,7 +546,7 @@ class SessionController extends Controller
             'description' => 'Lihat deret angka ini. Kamu bisa menebak angka selanjutnya?',
             'type' => 'pattern_analysis',
             'defuserView' => [
-                'pattern' => $pattern,  // ✅ Tanpa '?'
+                'pattern' => $pattern,
                 'hints' => $this->generatePatternHints($selectedPuzzle),
                 'sequenceId' => md5(json_encode($selectedPuzzle))
             ],
@@ -574,6 +565,44 @@ class SessionController extends Controller
         ];
     }
 
+    /**
+     * Generate code analysis puzzle
+     */
+    private function generateCodeAnalysisPuzzle()
+    {
+        $selectedPuzzle = $this->codePuzzles[array_rand($this->codePuzzles)];
+
+        return [
+            'key' => 'code_' . md5(json_encode($selectedPuzzle) . time()),
+            'title' => 'Temukan Kesalahan',
+            'description' => 'Ada yang salah dengan kode ini. Bisakah kamu membantu menemukannya?',
+            'type' => 'code_analysis',
+            'defuserView' => [
+                'cipher' => $selectedPuzzle['cipher'],
+                'cipherText' => $selectedPuzzle['cipher'],
+                'codeLines' => [$selectedPuzzle['cipher']],
+                'hints' => $this->generateCodeHints($selectedPuzzle),
+                'cipherId' => md5(json_encode($selectedPuzzle))
+            ],
+            'expertView' => [
+                'cipher_type' => $selectedPuzzle['type'],
+                'shift' => $selectedPuzzle['shift'],
+                'answer' => $selectedPuzzle['answer'],
+                'explanation' => $this->generateCodeExplanation($selectedPuzzle),
+                'solution' => $selectedPuzzle['answer']
+            ],
+            'learningObjectives' => [
+                'Memahami konsep enkripsi sederhana',
+                'Berpikir logis untuk memecahkan kode',
+                'Berkolaborasi dalam pemecahan masalah'
+            ],
+            'answer' => $selectedPuzzle['answer']
+        ];
+    }
+
+    /**
+     * ✅ FIXED: Generate navigation puzzle - HANYA SATU VERSI
+     */
     private function generateNavigationPuzzle()
     {
         $selectedPuzzle = $this->navigationPuzzles[array_rand($this->navigationPuzzles)];
@@ -639,7 +668,9 @@ class SessionController extends Controller
         ];
     }
 
-    // Helper method to find path
+    /**
+     * Helper method to find path in tree
+     */
     private function findPathInTree($node, $target, $path = ['ROOT'])
     {
         if (!$node) return null;
@@ -648,113 +679,19 @@ class SessionController extends Controller
             return $path;
         }
 
-        if ($target < $node['value'] && $node['left']) {
+        if ($target < $node['value'] && isset($node['left'])) {
             return $this->findPathInTree($node['left'], $target, array_merge($path, ['LEFT']));
         }
 
-        if ($target > $node['value'] && $node['right']) {
+        if ($target > $node['value'] && isset($node['right'])) {
             return $this->findPathInTree($node['right'], $target, array_merge($path, ['RIGHT']));
         }
 
         return null;
     }
 
-
-    private function generateCodeAnalysisPuzzle()
-    {
-        $selectedPuzzle = $this->codePuzzles[array_rand($this->codePuzzles)];
-
-        return [
-            'key' => 'code_' . md5(json_encode($selectedPuzzle) . time()),
-            'title' => 'Temukan Kesalahan',
-            'description' => 'Ada yang salah dengan kode ini. Bisakah kamu membantu menemukannya?',
-            'type' => 'code_analysis',
-            'defuserView' => [
-                'cipher' => $selectedPuzzle['cipher'],
-                'cipherText' => $selectedPuzzle['cipher'],
-                'codeLines' => [$selectedPuzzle['cipher']],
-                'hints' => $this->generateCodeHints($selectedPuzzle),
-                'cipherId' => md5(json_encode($selectedPuzzle))
-            ],
-            'expertView' => [
-                'cipher_type' => $selectedPuzzle['type'],
-                'shift' => $selectedPuzzle['shift'],
-                'answer' => $selectedPuzzle['answer'],
-                'explanation' => $this->generateCodeExplanation($selectedPuzzle),
-                'solution' => $selectedPuzzle['answer']
-            ],
-            'learningObjectives' => [
-                'Memahami konsep enkripsi sederhana',
-                'Berpikir logis untuk memecahkan kode',
-                'Berkolaborasi dalam pemecahan masalah'
-            ],
-            'answer' => $selectedPuzzle['answer']
-        ];
-    }
-
-    private function generateNavigationPuzzle()
-    {
-        $selectedPuzzle = $this->navigationPuzzles[array_rand($this->navigationPuzzles)];
-        $targetValue = rand(1, 20);
-        $correctPath = ['ROOT', 'LEFT', 'RIGHT'];
-
-        return [
-            'key' => 'nav_' . md5(json_encode($selectedPuzzle) . time()),
-            'title' => 'Navigasi Tantangan',
-            'description' => 'Temukan jalan dalam struktur tree!',
-            'type' => 'navigation_challenge',
-            'defuserView' => [
-                'task' => "Navigate through the tree to find the target value: {$targetValue}",
-                'traversalOptions' => ['LEFT', 'RIGHT', 'UP', 'DOWN'],
-                'startPosition' => 'ROOT',
-                'targetValue' => $targetValue,
-                'hints' => [
-                    'Start from the root node',
-                    'Use LEFT to go to left child',
-                    'Use RIGHT to go to right child',
-                    'Ask Expert for tree structure guidance'
-                ]
-            ],
-            'expertView' => [
-                'tree' => [
-                    'root' => [
-                        'value' => 10,
-                        'left' => [
-                            'value' => 5,
-                            'left' => ['value' => 3, 'left' => null, 'right' => null],
-                            'right' => ['value' => 7, 'left' => null, 'right' => null]
-                        ],
-                        'right' => [
-                            'value' => 15,
-                            'left' => ['value' => 12, 'left' => null, 'right' => null],
-                            'right' => ['value' => 20, 'left' => null, 'right' => null]
-                        ]
-                    ]
-                ],
-                'answer' => $correctPath,
-                'explanation' => "To find {$targetValue}, follow path: " . implode(' → ', $correctPath),
-                'traversalMethods' => [
-                    'inorder' => [3, 5, 7, 10, 12, 15, 20],
-                    'preorder' => [10, 5, 3, 7, 15, 12, 20],
-                    'postorder' => [3, 7, 5, 12, 20, 15, 10]
-                ],
-                'hints' => [
-                    'Guide the Defuser through tree navigation',
-                    'Explain binary search tree properties',
-                    'Help them understand left/right decisions'
-                ]
-            ],
-            'learningObjectives' => [
-                'Memahami struktur data tree',
-                'Belajar navigasi binary search tree',
-                'Berkolaborasi dalam problem solving'
-            ],
-            'answer' => implode(',', $correctPath)
-        ];
-    }
-
     /**
-     * ✅ Generate hints - SUDAH BENAR, TIDAK PERLU DIUBAH
+     * Generate hints for pattern puzzles
      */
     private function generatePatternHints($puzzle)
     {
@@ -784,6 +721,9 @@ class SessionController extends Controller
         return $hints[$puzzle['type']] ?? ['Perhatikan pola dalam deret angka ini'];
     }
 
+    /**
+     * Generate hints for code puzzles
+     */
     private function generateCodeHints($puzzle)
     {
         $hints = [
@@ -802,6 +742,9 @@ class SessionController extends Controller
         return $hints[$puzzle['type']] ?? ['Ini adalah sandi sederhana'];
     }
 
+    /**
+     * Generate explanation for pattern
+     */
     private function generatePatternExplanation($puzzle)
     {
         $explanations = [
@@ -814,6 +757,9 @@ class SessionController extends Controller
         return $explanations[$puzzle['type']] ?? "Pola: {$puzzle['rule']}";
     }
 
+    /**
+     * Generate explanation for code
+     */
     private function generateCodeExplanation($puzzle)
     {
         $explanations = [
@@ -824,11 +770,17 @@ class SessionController extends Controller
         return $explanations[$puzzle['type']] ?? "Metode enkripsi sederhana";
     }
 
+    /**
+     * Validate answer
+     */
     private function validateAnswer($puzzle, $userInput)
     {
         return strtoupper(trim($userInput)) === strtoupper(trim($puzzle['answer']));
     }
 
+    /**
+     * Handle stage failed
+     */
     private function handleStageFailed($session, $stage)
     {
         $session->update([
@@ -847,6 +799,9 @@ class SessionController extends Controller
         ]);
     }
 
+    /**
+     * Handle stage completion
+     */
     private function handleStageCompletion($session, $completedStage)
     {
         $stagesCompleted = $session->stages_completed ?? [];
@@ -906,6 +861,9 @@ class SessionController extends Controller
         ]);
     }
 
+    /**
+     * Calculate stage score
+     */
     private function calculateStageScore($session, $stage)
     {
         $attempts = $session->attempts()->where('stage', $stage)->count();
@@ -917,6 +875,9 @@ class SessionController extends Controller
         return max(0, $baseScore - $attemptPenalty + $timeBonus);
     }
 
+    /**
+     * Calculate time bonus
+     */
     private function calculateTimeBonus($session, $stage)
     {
         $stageStarted = $session->stage_started_at ?? $session->started_at;
@@ -930,6 +891,9 @@ class SessionController extends Controller
         return floor($timeRemaining / 10);
     }
 
+    /**
+     * Calculate collaboration score
+     */
     private function calculateCollaborationScore($session)
     {
         $totalAttempts = $session->attempts()->count();
@@ -951,3 +915,4 @@ class SessionController extends Controller
         return max(0, $collaborationScore);
     }
 }
+
