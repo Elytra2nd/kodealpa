@@ -333,6 +333,7 @@ const DirectionButton = memo(
         onClick={onClick}
         disabled={disabled}
         size="sm"
+        type="button"
         className={`${classes} transition-all duration-300 ${isMobile ? 'text-xs py-2' : 'text-sm py-2.5'}`}
       >
         {icons[direction]} {label}
@@ -344,9 +345,9 @@ const DirectionButton = memo(
 DirectionButton.displayName = 'DirectionButton';
 
 const PathDisplay = memo(({ path, isMobile = false }: { path: string[]; isMobile?: boolean }) => (
-  <div className={`min-h-[50px] rounded-lg ${isMobile ? 'p-2' : 'p-3'} border border-amber-700/50 bg-stone-900/70 flex items-center backdrop-blur-sm`}>
+  <div className={`min-h-[60px] rounded-lg ${isMobile ? 'p-3' : 'p-4'} border border-amber-700/50 bg-stone-900/70 flex items-center backdrop-blur-sm`}>
     {path.length > 0 ? (
-      <span className={`font-mono ${isMobile ? 'text-xs' : 'text-sm'} text-amber-300 break-all`}>
+      <span className={`font-mono ${isMobile ? 'text-xs' : 'text-sm'} text-amber-300 break-all leading-relaxed`}>
         {path.join(' → ')}
       </span>
     ) : (
@@ -380,17 +381,16 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
     []
   );
 
-  const root: TreeNode | undefined = puzzle?.expertView?.tree?.root;
+  // ✅ Fix: Ambil tree dari expertView langsung, bukan dari root
+  const treeStructure: TreeNode | undefined = puzzle?.expertView?.tree;
 
   const treeArray = useMemo(() => {
-    if (puzzle?.expertView?.arrayTree) {
-      return puzzle.expertView.arrayTree;
-    }
-    return buildArrayFromTree(root);
-  }, [root, puzzle?.expertView?.arrayTree]);
+    return buildArrayFromTree(treeStructure);
+  }, [treeStructure]);
 
+  // ✅ Fix: currentNode navigation
   const currentNode = useMemo(() => {
-    let current: TreeNode | null | undefined = root;
+    let current: TreeNode | null | undefined = treeStructure;
 
     for (const stepRaw of path) {
       const step = normalizeStep(stepRaw);
@@ -402,7 +402,7 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
     }
 
     return current ?? null;
-  }, [root, path]);
+  }, [treeStructure, path]);
 
   const availableDirections = useMemo((): Direction[] => {
     const dirs: Direction[] = [];
@@ -415,7 +415,7 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
 
   const defuserHints = useMemo(() => {
     const base = toArray(puzzle?.defuserView?.hints);
-    return base.slice(0, 3);
+    return base;
   }, [puzzle]);
 
   const addDirection = useCallback(
@@ -444,7 +444,10 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
     (e: React.FormEvent) => {
       e.preventDefault();
       if (path.length === 0) return;
-      onSubmitAttempt(path.join(','));
+
+      // ✅ Tambahkan ROOT di awal path
+      const fullPath = ['ROOT', ...path].join(',');
+      onSubmitAttempt(fullPath);
     },
     [path, onSubmitAttempt]
   );
@@ -492,44 +495,64 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
             )}
             {puzzle?.defuserView?.targetValue != null && (
               <Badge className={`bg-indigo-800 text-indigo-100 border border-indigo-700/50 ${isMobile ? 'text-xs' : 'text-sm'}`}>
-                Target: {puzzle.defuserView.targetValue}
+                🎯 Target: {puzzle.defuserView.targetValue}
               </Badge>
             )}
           </div>
         </CardHeader>
 
         <CardContent className={`space-y-4 ${isMobile ? 'p-3' : 'p-4 sm:p-6'}`}>
-          {/* RESPONSIVE GRID LAYOUT */}
+          {/* ✅ IMPROVED GRID: Defuser 5 cols, Expert 7 cols */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
 
-            {/* DEFUSER PANEL - 3 cols on desktop */}
+            {/* ✅ DEFUSER PANEL - 5 cols on desktop (diperluas dari 3) */}
             {(isDefuser || isHost) && (
-              <div className="lg:col-span-3">
+              <div className="lg:col-span-5">
                 <Card className="border border-amber-600/40 bg-gradient-to-b from-stone-900/60 to-stone-800/40 h-full">
-                  <CardHeader className={`${isMobile ? 'p-2 pb-1' : 'p-3 pb-2'}`}>
-                    <CardTitle className={`${isMobile ? 'text-sm' : 'text-base'} text-amber-300 flex items-center gap-2`}>
+                  <CardHeader className={`${isMobile ? 'p-3 pb-2' : 'p-4 pb-3'}`}>
+                    <CardTitle className={`${isMobile ? 'text-base' : 'text-lg'} text-amber-300 flex items-center gap-2`}>
                       <span>🗺️</span>
                       <span>Panel Pemain</span>
                     </CardTitle>
                   </CardHeader>
 
-                  <CardContent className={`space-y-3 ${isMobile ? 'p-2' : 'p-3'}`}>
+                  <CardContent className={`space-y-4 ${isMobile ? 'p-3' : 'p-4'}`}>
                     {/* Task */}
-                    <div className={`rounded-lg ${isMobile ? 'p-2' : 'p-3'} border border-stone-700/40 bg-stone-800/40`}>
-                      <h5 className={`text-stone-200 font-semibold mb-1 ${isMobile ? 'text-xs' : 'text-sm'}`}>
-                        📜 Tugas
+                    <div className={`rounded-lg ${isMobile ? 'p-3' : 'p-4'} border border-stone-700/40 bg-stone-800/40`}>
+                      <h5 className={`text-stone-200 font-semibold mb-2 ${isMobile ? 'text-sm' : 'text-base'} flex items-center gap-2`}>
+                        <span>📜</span>
+                        <span>Tugas</span>
                       </h5>
-                      <p className={`text-stone-300 ${isMobile ? 'text-xs' : 'text-sm'} leading-relaxed`}>
+                      <p className={`text-stone-300 ${isMobile ? 'text-sm' : 'text-base'} leading-relaxed`}>
                         {puzzle.defuserView?.task || 'Temukan angka target dengan cara berjalan dari awal ke titik tujuan.'}
                       </p>
                     </div>
 
+                    {/* Current Position */}
+                    {currentNode && (
+                      <div className={`rounded-lg ${isMobile ? 'p-3' : 'p-4'} border border-blue-700/40 bg-blue-950/40`}>
+                        <h5 className={`text-blue-200 font-semibold mb-2 ${isMobile ? 'text-sm' : 'text-base'} flex items-center gap-2`}>
+                          <span>📍</span>
+                          <span>Posisi Saat Ini</span>
+                        </h5>
+                        <div className="flex items-center gap-3">
+                          <div className="text-3xl font-bold text-blue-300">
+                            {currentNode.value ?? '?'}
+                          </div>
+                          <div className="text-sm text-blue-200">
+                            {path.length === 0 ? 'Di titik awal' : `Sudah ${path.length} langkah`}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Navigation Controls */}
                     <div>
-                      <h5 className={`text-stone-200 font-semibold mb-2 ${isMobile ? 'text-xs' : 'text-sm'}`}>
-                        🧭 Tombol Navigasi
+                      <h5 className={`text-stone-200 font-semibold mb-3 ${isMobile ? 'text-sm' : 'text-base'} flex items-center gap-2`}>
+                        <span>🧭</span>
+                        <span>Tombol Navigasi</span>
                       </h5>
-                      <div className="grid grid-cols-2 gap-2">
+                      <div className="grid grid-cols-2 gap-3">
                         <DirectionButton
                           direction="up"
                           label={pickLabel('up')}
@@ -548,7 +571,7 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
                           isMobile={isMobile}
                         />
 
-                        {availableDirections.includes('left') && (
+                        {availableDirections.includes('left') ? (
                           <DirectionButton
                             direction="left"
                             label={pickLabel('left')}
@@ -556,9 +579,13 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
                             disabled={submitting}
                             isMobile={isMobile}
                           />
+                        ) : (
+                          <div className="flex items-center justify-center border-2 border-dashed border-stone-700/40 rounded-lg py-2 text-stone-600 text-xs">
+                            Tidak tersedia
+                          </div>
                         )}
 
-                        {availableDirections.includes('right') && (
+                        {availableDirections.includes('right') ? (
                           <DirectionButton
                             direction="right"
                             label={pickLabel('right')}
@@ -566,41 +593,48 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
                             disabled={submitting}
                             isMobile={isMobile}
                           />
+                        ) : (
+                          <div className="flex items-center justify-center border-2 border-dashed border-stone-700/40 rounded-lg py-2 text-stone-600 text-xs">
+                            Tidak tersedia
+                          </div>
                         )}
                       </div>
 
-                      {availableDirections.length === 0 && (
-                        <Badge className={`bg-red-800 text-red-100 border border-red-700/60 mt-2 ${isMobile ? 'text-xs' : 'text-sm'}`}>
-                          Tidak ada cabang
+                      {availableDirections.length === 0 && path.length > 0 && (
+                        <Badge className={`bg-green-800 text-green-100 border border-green-700/60 mt-3 w-full justify-center ${isMobile ? 'text-xs' : 'text-sm'}`}>
+                          ✓ Sampai di titik akhir!
                         </Badge>
                       )}
                     </div>
 
                     {/* Path Display */}
                     <div>
-                      <h5 className={`text-stone-200 font-semibold mb-2 ${isMobile ? 'text-xs' : 'text-sm'}`}>
-                        🛤️ Langkah yang Dipilih
+                      <h5 className={`text-stone-200 font-semibold mb-3 ${isMobile ? 'text-sm' : 'text-base'} flex items-center gap-2`}>
+                        <span>🛤️</span>
+                        <span>Langkah yang Dipilih</span>
                       </h5>
                       <PathDisplay path={path} isMobile={isMobile} />
 
-                      <div className="flex gap-2 mt-2">
+                      <div className="flex gap-2 mt-3">
                         <Button
                           onClick={removeLastStep}
                           disabled={path.length === 0 || submitting}
                           variant="outline"
                           size="sm"
+                          type="button"
                           className={`border-amber-600/60 text-amber-300 hover:bg-amber-900/30 ${isMobile ? 'text-xs' : 'text-sm'} flex-1`}
                         >
-                          Hapus
+                          ↶ Hapus
                         </Button>
                         <Button
                           onClick={clearPath}
                           disabled={path.length === 0 || submitting}
                           variant="outline"
                           size="sm"
+                          type="button"
                           className={`border-red-600/60 text-red-300 hover:bg-red-900/30 ${isMobile ? 'text-xs' : 'text-sm'} flex-1`}
                         >
-                          Reset
+                          ✖ Reset
                         </Button>
                       </div>
                     </div>
@@ -610,7 +644,7 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
                       <Button
                         type="submit"
                         disabled={path.length === 0 || submitting}
-                        className={`w-full bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-stone-900 font-semibold ${isMobile ? 'text-xs py-2' : 'text-sm py-2.5'}`}
+                        className={`w-full bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-stone-900 font-semibold ${isMobile ? 'text-sm py-3' : 'text-base py-3.5'}`}
                       >
                         {submitting ? '⚙️ Mengirim...' : '✨ Kirim Jawaban'}
                       </Button>
@@ -618,12 +652,12 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
 
                     {/* Hints */}
                     {defuserHints.length > 0 && (
-                      <div className={`${isMobile ? 'p-2' : 'p-3'} rounded-lg border border-blue-700/40 bg-gradient-to-r from-blue-950/40 to-stone-900/30`}>
-                        <h5 className={`text-blue-200 font-medium mb-1 ${isMobile ? 'text-xs' : 'text-sm'} flex items-center gap-1`}>
+                      <div className={`${isMobile ? 'p-3' : 'p-4'} rounded-lg border border-blue-700/40 bg-gradient-to-r from-blue-950/40 to-stone-900/30`}>
+                        <h5 className={`text-blue-200 font-medium mb-2 ${isMobile ? 'text-sm' : 'text-base'} flex items-center gap-2`}>
                           <span>💡</span>
                           <span>Petunjuk</span>
                         </h5>
-                        <ul className={`${isMobile ? 'text-xs' : 'text-sm'} text-blue-200/90 space-y-1 list-disc pl-4`}>
+                        <ul className={`${isMobile ? 'text-xs' : 'text-sm'} text-blue-200/90 space-y-1.5 list-disc pl-5`}>
                           {defuserHints.map((h, i) => (
                             <li key={i}>{h}</li>
                           ))}
@@ -635,9 +669,9 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
               </div>
             )}
 
-            {/* EXPERT PANEL - 9 cols on desktop, responsive grid inside */}
+            {/* EXPERT PANEL - 7 cols on desktop, responsive grid inside */}
             {(isExpert || isHost) && (
-              <div className="lg:col-span-9">
+              <div className="lg:col-span-7">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
 
                   {/* Tree Visualization - spans 2 cols on md+ */}
