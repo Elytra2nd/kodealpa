@@ -21,6 +21,40 @@ export interface VoiceChatSettings {
   autoGainControl: boolean;
 }
 
+// ✅ NEW: Interface untuk Tournament Cleanup Stats
+export interface TournamentCleanupStats {
+  enabled: boolean;
+  last_cleanup: {
+    executed_at: string;
+    total_deleted: number;
+    breakdown: {
+      completed: number;
+      empty: number;
+      inactive: number;
+      stuck: number;
+    };
+  } | null;
+  next_cleanup: string;
+  stats: {
+    total_tournaments: number;
+    active: number;
+    completed: number;
+    stale_tournaments: {
+      completed_old: number;
+      empty_waiting: number;
+      stuck: number;
+    };
+  };
+  config: {
+    completed_after_days: number;
+    waiting_empty_after_hours: number;
+    waiting_inactive_after_hours: number;
+    minimum_active_groups: number;
+    stuck_after_hours: number;
+    auto_cleanup_enabled: boolean;
+  };
+}
+
 // Create separate axios instance for CSRF calls (no baseURL prefix)
 const csrfAxios = axios.create({
   withCredentials: true,
@@ -424,6 +458,35 @@ export const gameApi = {
       return response.data;
     } catch (error: any) {
       console.error('❌ Failed to leave tournament:', error);
+      throw error;
+    }
+  },
+
+  // ✅ NEW: Delete Tournament (Admin/Host only - optional, backend will validate)
+  deleteTournament: async (tournamentId: number): Promise<{
+    success: boolean;
+    message: string;
+  }> => {
+    try {
+      await initializeCSRF();
+      const response = await api.delete(`/tournaments/${tournamentId}`);
+
+      console.log('🏆 Tournament deleted:', response.data);
+      return response.data;
+    } catch (error: any) {
+      console.error('❌ Failed to delete tournament:', error);
+      throw error;
+    }
+  },
+
+  // ✅ NEW: Get Tournament Cleanup Statistics
+  getTournamentCleanupStats: async (): Promise<TournamentCleanupStats> => {
+    try {
+      const response = await api.get('/tournaments/cleanup-stats');
+      console.log('🧹 Tournament cleanup stats loaded:', response.data);
+      return response.data;
+    } catch (error: any) {
+      console.error('❌ Failed to load tournament cleanup stats:', error);
       throw error;
     }
   },

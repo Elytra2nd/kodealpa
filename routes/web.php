@@ -3,6 +3,7 @@
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\Game\AiDungeonMasterController;
 use App\Http\Controllers\Admin\AdminGrimoireController;
+use App\Http\Controllers\TournamentStatsController; // ✅ NEW
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\StageController;
@@ -222,7 +223,7 @@ Route::middleware(['auth', 'verified'])->get('/game/grimoire', function () {
 
 /*
 |--------------------------------------------------------------------------
-| Admin Routes - Grimoire Management
+| Admin Routes - Grimoire Management & Tournament Monitoring
 |--------------------------------------------------------------------------
 */
 Route::middleware(['auth', 'verified', 'admin'])->prefix('admin')->name('admin.')->group(function () {
@@ -231,6 +232,11 @@ Route::middleware(['auth', 'verified', 'admin'])->prefix('admin')->name('admin.'
     })->name('dashboard');
 
     Route::resource('grimoire', AdminGrimoireController::class)->except(['show']);
+
+    // ✅ NEW: Tournament Cleanup Monitoring Page
+    Route::get('/tournaments/cleanup', function () {
+        return Inertia::render('Admin/TournamentCleanup');
+    })->name('tournaments.cleanup');
 });
 
 /*
@@ -274,7 +280,7 @@ Route::prefix('api')->middleware(['auth', 'verified'])->group(function () {
     Route::post('/sessions/{id}/feedback', [SessionController::class, 'provideFeedback'])->name('api.sessions.feedback');
     Route::get('/sessions/{id}/analytics', [SessionController::class, 'getAnalytics'])->name('api.sessions.analytics');
 
-    // ✅ NEW: DM Hint System API
+    // ✅ DM Hint System API
     Route::prefix('sessions/{session}')->name('api.sessions.')->group(function () {
         Route::get('/dm-hint/usage', [AiDungeonMasterController::class, 'getHintUsage'])
             ->name('dm-hint.usage');
@@ -335,6 +341,9 @@ Route::prefix('api')->middleware(['auth', 'verified'])->group(function () {
         Route::get('/stats/global', [TournamentController::class, 'getGlobalStats'])->name('stats.global');
         Route::get('/stats/user/{userId}', [TournamentController::class, 'getUserStats'])->name('stats.user')->where('userId', '[0-9]+');
         Route::get('/history/user', [TournamentController::class, 'getUserHistory'])->name('history.user');
+
+        // ✅ NEW: Tournament Cleanup Stats API
+        Route::get('/cleanup-stats', [TournamentStatsController::class, 'cleanupStats'])->name('cleanup.stats');
     });
 
     /*

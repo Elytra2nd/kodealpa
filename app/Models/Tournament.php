@@ -5,6 +5,10 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
+use Illuminate\Support\Facades\Log;
 
 class Tournament extends Model
 {
@@ -22,16 +26,91 @@ class Tournament extends Model
         'winner_group_id',
     ];
 
-    protected $casts = [
-        'tournament_rules' => 'array',
-        'starts_at' => 'datetime',
-        'completed_at' => 'datetime',
-    ];
+    /**
+     * Laravel 12: Updated casts() method
+     */
+    protected function casts(): array
+    {
+        return [
+            'tournament_rules' => 'array',
+            'starts_at' => 'datetime',
+            'completed_at' => 'datetime',
+            'created_at' => 'datetime',
+            'updated_at' => 'datetime',
+            'deleted_at' => 'datetime',
+        ];
+    }
+
+    /**
+     * Boot method untuk handle events (Laravel 12 style)
+     */
+    protected static function booted(): void
+    {
+        // Event sebelum tournament dihapus
+        static::deleting(function (Tournament $tournament) {
+            // Hitung jumlah related data
+            $groupsCount = $tournament->groups()->count();
+            $participantsCount = TournamentParticipant::whereHas('group', function ($query) use ($tournament) {
+                $query->where('tournament_id', $tournament->id);
+            })->count();
+            $matchesCount = $tournament->matches()->count();
+            $sessionsCount = $tournament->sessions()->count();
+
+            // Hapus related data secara cascade
+            $tournament->groups()->delete();
+            $tournament->matches()->delete();
+
+            // Log untuk tracking
+            Log::info('Tournament deleted', [
+                'tournament_id' => $tournament->id,
+                'tournament_name' => $tournament->name,
+                'status' => $tournament->status,
+                'created_at' => $tournament->created_at?->toDateTimeString(),
+                'updated_at' => $tournament->updated_at?->toDateTimeString(),
+                'groups_deleted' => $groupsCount,
+                'participants_affected' => $participantsCount,
+                'matches_deleted' => $matchesCount,
+                'sessions_affected' => $sessionsCount,
+                'deleted_at' => now()->toDateTimeString(),
+                'deleted_by' => 'auto_cleanup',
+            ]);
+        });
+
+        // Event setelah tournament dibuat
+        static::created(function (Tournament $tournament) {
+            Log::info('Tournament created', [
+                'tournament_id' => $tournament->id,
+                'tournament_name' => $tournament->name,
+                'max_groups' => $tournament->max_groups,
+                'created_by' => $tournament->created_by,
+                'created_at' => now()->toDateTimeString(),
+            ]);
+        });
+
+        // Event ketika tournament status berubah
+        static::updated(function (Tournament $tournament) {
+            if ($tournament->isDirty('status')) {
+                Log::info('Tournament status changed', [
+                    'tournament_id' => $tournament->id,
+                    'tournament_name' => $tournament->name,
+                    'old_status' => $tournament->getOriginal('status'),
+                    'new_status' => $tournament->status,
+                    'updated_at' => now()->toDateTimeString(),
+                ]);
+            }
+        });
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Relationships
+    |--------------------------------------------------------------------------
+    */
 
     /**
      * Tournament belongs to creator
      */
-    public function creator()
+    public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
     }
@@ -39,16 +118,15 @@ class Tournament extends Model
     /**
      * Tournament has many groups
      */
-    public function groups()
+    public function groups(): HasMany
     {
         return $this->hasMany(TournamentGroup::class);
     }
 
     /**
      * Tournament has many matches
-     * FIXED: Added proper relationship
      */
-    public function matches()
+    public function matches(): HasMany
     {
         return $this->hasMany(TournamentMatch::class);
     }
@@ -56,7 +134,7 @@ class Tournament extends Model
     /**
      * Tournament has winner group
      */
-    public function winnerGroup()
+    public function winnerGroup(): BelongsTo
     {
         return $this->belongsTo(TournamentGroup::class, 'winner_group_id');
     }
@@ -64,22 +142,28 @@ class Tournament extends Model
     /**
      * Tournament has many sessions through groups
      */
-    public function sessions()
+    public function sessions(): HasManyThrough
     {
         return $this->hasManyThrough(
             GameSession::class,
             TournamentGroup::class,
-            'tournament_id',   // Foreign key on tournament_groups table
-            'tournament_group_id', // Foreign key on game_sessions table
-            'id',              // Local key on tournaments table
-            'id'               // Local key on tournament_groups table
+            'tournament_id',        // Foreign key on tournament_groups table
+            'tournament_group_id',  // Foreign key on game_sessions table
+            'id',                   // Local key on tournaments table
+            'id'                    // Local key on tournament_groups table
         );
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Accessors & Attributes
+    |--------------------------------------------------------------------------
+    */
 
     /**
      * Get active participants count
      */
-    public function getActiveParticipantsCountAttribute()
+    public function getActiveParticipantsCountAttribute(): int
     {
         return $this->groups()
             ->whereNotIn('status', ['eliminated'])
@@ -89,17 +173,9 @@ class Tournament extends Model
     }
 
     /**
-     * Check if tournament is full
-     */
-    public function isFull()
-    {
-        return $this->groups()->count() >= $this->max_groups;
-    }
-
-    /**
      * Get elimination progress
      */
-    public function getEliminationProgressAttribute()
+    public function getEliminationProgressAttribute(): array
     {
         $total = $this->groups()->count();
         $eliminated = $this->groups()->where('status', 'eliminated')->count();
@@ -110,6 +186,73 @@ class Tournament extends Model
             'remaining' => $total - $eliminated,
             'percentage' => $total > 0 ? round(($eliminated / $total) * 100, 2) : 0,
         ];
+    }
+
+    /**
+     * Get tournament statistics
+     */
+    public function getStatsAttribute(): array
+    {
+        $groups = $this->groups;
+
+        return [
+            'total_groups' => $groups->count(),
+            'active_groups' => $groups->whereNotIn('status', ['eliminated'])->count(),
+            'eliminated_groups' => $groups->where('status', 'eliminated')->count(),
+            'completed_groups' => $groups->where('status', 'completed')->count(),
+            'average_completion_time' => $groups->where('completion_time', '>', 0)->avg('completion_time'),
+            'fastest_completion' => $groups->where('completion_time', '>', 0)->min('completion_time'),
+            'slowest_completion' => $groups->where('completion_time', '>', 0)->max('completion_time'),
+            'total_participants' => $groups->sum(function ($group) {
+                return $group->participants->count();
+            }),
+            'age_in_hours' => $this->created_at?->diffInHours(now()),
+            'inactive_duration' => $this->updated_at?->diffInHours(now()),
+        ];
+    }
+
+    /**
+     * Check if tournament is stale/inactive
+     */
+    public function getIsStaleAttribute(): bool
+    {
+        $config = config('tournament.cleanup');
+
+        // Tournament completed dan sudah lama
+        if ($this->status === 'completed') {
+            return $this->updated_at?->diffInDays(now()) >= $config['completed_after_days'];
+        }
+
+        // Tournament waiting tanpa peserta
+        if ($this->status === 'waiting' && $this->groups()->count() === 0) {
+            return $this->created_at?->diffInHours(now()) >= $config['waiting_empty_after_hours'];
+        }
+
+        // Tournament waiting dengan sedikit peserta
+        if ($this->status === 'waiting' && $this->groups()->count() < $config['minimum_active_groups']) {
+            return $this->created_at?->diffInHours(now()) >= $config['waiting_inactive_after_hours'];
+        }
+
+        // Tournament stuck
+        if (in_array($this->status, ['qualification', 'semifinals', 'finals'])) {
+            return $this->updated_at?->diffInHours(now()) >= $config['stuck_after_hours'];
+        }
+
+        return false;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Query Methods
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * Check if tournament is full
+     */
+    public function isFull(): bool
+    {
+        return $this->groups()->count() >= $this->max_groups;
     }
 
     /**
@@ -127,7 +270,7 @@ class Tournament extends Model
     /**
      * Get tournament bracket structure
      */
-    public function getBracketStructure()
+    public function getBracketStructure(): array
     {
         $brackets = [];
 
@@ -177,25 +320,53 @@ class Tournament extends Model
     }
 
     /**
-     * Get tournament statistics
+     * Check if user can join tournament
      */
-    public function getStatsAttribute()
+    public function canUserJoin(int $userId): bool
     {
-        $groups = $this->groups;
+        if ($this->status !== 'waiting') {
+            return false;
+        }
 
-        return [
-            'total_groups' => $groups->count(),
-            'active_groups' => $groups->whereNotIn('status', ['eliminated'])->count(),
-            'eliminated_groups' => $groups->where('status', 'eliminated')->count(),
-            'completed_groups' => $groups->where('status', 'completed')->count(),
-            'average_completion_time' => $groups->where('completion_time', '>', 0)->avg('completion_time'),
-            'fastest_completion' => $groups->where('completion_time', '>', 0)->min('completion_time'),
-            'slowest_completion' => $groups->where('completion_time', '>', 0)->max('completion_time'),
-            'total_participants' => $groups->sum(function ($group) {
-                return $group->participants->count();
-            }),
-        ];
+        if ($this->groups()->count() >= $this->max_groups) {
+            return false;
+        }
+
+        // Check if user is already participating
+        $existingParticipation = TournamentParticipant::whereHas('group', function ($query) {
+            $query->where('tournament_id', $this->id);
+        })->where('user_id', $userId)->exists();
+
+        return !$existingParticipation;
     }
+
+    /**
+     * Get user's group in this tournament
+     */
+    public function getUserGroup(int $userId): ?TournamentGroup
+    {
+        return $this->groups()
+            ->whereHas('participants', function ($query) use ($userId) {
+                $query->where('user_id', $userId);
+            })
+            ->first();
+    }
+
+    /**
+     * Check if tournament is ready to start
+     */
+    public function isReadyToStart(): bool
+    {
+        return $this->status === 'waiting' &&
+               $this->groups()->count() === $this->max_groups &&
+               $this->groups()->where('status', 'ready')->count() === $this->max_groups;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Query Scopes
+    |--------------------------------------------------------------------------
+    */
 
     /**
      * Scope for active tournaments
@@ -225,45 +396,50 @@ class Tournament extends Model
     }
 
     /**
-     * Check if user can join tournament
+     * Scope for stale/inactive tournaments (untuk cleanup)
      */
-    public function canUserJoin($userId)
+    public function scopeStale($query)
     {
-        if ($this->status !== 'waiting') {
-            return false;
-        }
+        $config = config('tournament.cleanup');
 
-        if ($this->groups()->count() >= $this->max_groups) {
-            return false;
-        }
-
-        // Check if user is already participating
-        $existingParticipation = TournamentParticipant::whereHas('group', function ($query) {
-            $query->where('tournament_id', $this->id);
-        })->where('user_id', $userId)->exists();
-
-        return !$existingParticipation;
+        return $query->where(function ($query) use ($config) {
+            // Completed tournaments yang sudah lama
+            $query->where('status', 'completed')
+                  ->where('updated_at', '<', now()->subDays($config['completed_after_days']));
+        })->orWhere(function ($query) use ($config) {
+            // Waiting tournaments kosong
+            $query->where('status', 'waiting')
+                  ->whereDoesntHave('groups')
+                  ->where('created_at', '<', now()->subHours($config['waiting_empty_after_hours']));
+        })->orWhere(function ($query) use ($config) {
+            // Waiting tournaments dengan sedikit peserta
+            $query->where('status', 'waiting')
+                  ->where('created_at', '<', now()->subHours($config['waiting_inactive_after_hours']))
+                  ->whereHas('groups', function ($q) use ($config) {
+                      // Filter akan dilakukan di aplikasi level
+                  }, '<', $config['minimum_active_groups']);
+        })->orWhere(function ($query) use ($config) {
+            // Stuck tournaments
+            $query->whereIn('status', ['qualification', 'semifinals', 'finals'])
+                  ->where('updated_at', '<', now()->subHours($config['stuck_after_hours']));
+        });
     }
 
     /**
-     * Get user's group in this tournament
+     * Scope for empty tournaments
      */
-    public function getUserGroup($userId)
+    public function scopeEmpty($query)
     {
-        return $this->groups()
-            ->whereHas('participants', function ($query) use ($userId) {
-                $query->where('user_id', $userId);
-            })
-            ->first();
+        return $query->where('status', 'waiting')
+                     ->whereDoesntHave('groups');
     }
 
     /**
-     * Check if tournament is ready to start
+     * Scope for abandoned tournaments
      */
-    public function isReadyToStart()
+    public function scopeAbandoned($query, int $hours = 48)
     {
-        return $this->status === 'waiting' &&
-               $this->groups()->count() === $this->max_groups &&
-               $this->groups()->where('status', 'ready')->count() === $this->max_groups;
+        return $query->whereIn('status', ['qualification', 'semifinals', 'finals'])
+                     ->where('updated_at', '<', now()->subHours($hours));
     }
 }
