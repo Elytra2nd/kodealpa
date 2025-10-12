@@ -601,7 +601,7 @@ class SessionController extends Controller
     }
 
     /**
-     * ✅ FIXED: Generate navigation puzzle - HANYA SATU VERSI
+     * ✅ FIXED: Generate navigation puzzle
      */
     private function generateNavigationPuzzle()
     {
@@ -622,8 +622,17 @@ class SessionController extends Controller
             ]
         ];
 
-        $targetValue = rand(3, 20);
+        // ✅ Pilih target value yang pasti ada di tree
+        $validValues = [3, 5, 7, 10, 12, 15, 20];
+        $targetValue = $validValues[array_rand($validValues)];
+
         $correctPath = $this->findPathInTree($treeStructure, $targetValue);
+
+        // ✅ Fallback jika path tidak ditemukan
+        if ($correctPath === null || empty($correctPath)) {
+            $correctPath = ['ROOT'];
+            $targetValue = 10; // Root value
+        }
 
         return [
             'key' => 'nav_' . md5(json_encode($selectedPuzzle) . time()),
@@ -669,22 +678,34 @@ class SessionController extends Controller
     }
 
     /**
-     * Helper method to find path in tree
+     * ✅ IMPROVED: Helper method to find path in tree
      */
     private function findPathInTree($node, $target, $path = ['ROOT'])
     {
-        if (!$node) return null;
+        // ✅ Handle null node
+        if (!$node || !is_array($node)) {
+            return null;
+        }
 
-        if ($node['value'] == $target) {
+        // ✅ Target found
+        if (isset($node['value']) && $node['value'] == $target) {
             return $path;
         }
 
-        if ($target < $node['value'] && isset($node['left'])) {
-            return $this->findPathInTree($node['left'], $target, array_merge($path, ['LEFT']));
+        // ✅ Search left subtree
+        if ($target < $node['value'] && isset($node['left']) && $node['left'] !== null) {
+            $leftPath = $this->findPathInTree($node['left'], $target, array_merge($path, ['LEFT']));
+            if ($leftPath !== null) {
+                return $leftPath;
+            }
         }
 
-        if ($target > $node['value'] && isset($node['right'])) {
-            return $this->findPathInTree($node['right'], $target, array_merge($path, ['RIGHT']));
+        // ✅ Search right subtree
+        if ($target > $node['value'] && isset($node['right']) && $node['right'] !== null) {
+            $rightPath = $this->findPathInTree($node['right'], $target, array_merge($path, ['RIGHT']));
+            if ($rightPath !== null) {
+                return $rightPath;
+            }
         }
 
         return null;
@@ -915,4 +936,3 @@ class SessionController extends Controller
         return max(0, $collaborationScore);
     }
 }
-
