@@ -7,6 +7,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { gsap } from 'gsap';
 import { toast } from 'sonner';
 
+
 // ============================================
 // CONSTANTS & CONFIGURATIONS
 // ============================================
@@ -19,6 +20,7 @@ const CONFIG = {
   MOBILE_BREAKPOINT: 768,
 } as const;
 
+
 // ============================================
 // TYPE DEFINITIONS
 // ============================================
@@ -29,11 +31,13 @@ interface Props {
   submitting: boolean;
 }
 
+
 // ============================================
 // CUSTOM HOOKS
 // ============================================
 const useIsMobile = () => {
   const [isMobile, setIsMobile] = useState(false);
+
 
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth <= CONFIG.MOBILE_BREAKPOINT);
@@ -43,13 +47,16 @@ const useIsMobile = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+
   return isMobile;
 };
+
 
 const useDungeonAtmosphere = () => {
   const torchRefs = useRef<(HTMLElement | null)[]>([]);
   const patternRefs = useRef<(HTMLElement | null)[]>([]);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+
 
   useEffect(() => {
     intervalRef.current = setInterval(() => {
@@ -65,10 +72,12 @@ const useDungeonAtmosphere = () => {
       });
     }, CONFIG.TORCH_FLICKER_INTERVAL);
 
+
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, []);
+
 
   useEffect(() => {
     const validPatterns = patternRefs.current.filter((p): p is HTMLElement => p !== null);
@@ -88,16 +97,20 @@ const useDungeonAtmosphere = () => {
     }
   });
 
+
   const setTorchRef = useCallback((index: number) => (el: HTMLDivElement | null) => {
     torchRefs.current[index] = el;
   }, []);
+
 
   const setPatternRef = useCallback((index: number) => (el: HTMLDivElement | null) => {
     patternRefs.current[index] = el;
   }, []);
 
+
   return { setTorchRef, setPatternRef };
 };
+
 
 // ============================================
 // ANIMATION VARIANTS
@@ -108,17 +121,20 @@ const fadeInUp = {
   exit: { opacity: 0, y: -20 },
 };
 
+
 const scaleIn = {
   initial: { scale: 0.95, opacity: 0 },
   animate: { scale: 1, opacity: 1 },
   exit: { scale: 0.95, opacity: 0 },
 };
 
+
 const staggerContainer = {
   animate: {
     transition: { staggerChildren: 0.05 },
   },
 };
+
 
 // ============================================
 // MEMOIZED COMPONENTS
@@ -157,7 +173,9 @@ const PatternBox = memo(
   )
 );
 
+
 PatternBox.displayName = 'PatternBox';
+
 
 const LoadingState = memo(() => (
   <motion.div variants={scaleIn} initial="initial" animate="animate">
@@ -177,7 +195,9 @@ const LoadingState = memo(() => (
   </motion.div>
 ));
 
+
 LoadingState.displayName = 'LoadingState';
+
 
 // ============================================
 // MAIN COMPONENT
@@ -186,8 +206,10 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
   const isMobile = useIsMobile();
   const { setTorchRef, setPatternRef } = useDungeonAtmosphere();
 
+
   const [jawaban, setJawaban] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+
 
   // ============================================
   // MEMOIZED VALUES
@@ -196,16 +218,18 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
   const isExpert = useMemo(() => role === 'expert', [role]);
   const isHost = useMemo(() => role === 'host', [role]);
 
+
   const transformedHints = useMemo<string[]>(() => {
     const base = Array.isArray(puzzle?.defuserView?.hints) ? puzzle.defuserView.hints : [];
-    // ✅ Gunakan hints dari backend saja
     return base;
   }, [puzzle]);
+
 
   const patternData = useMemo(() => {
     if (!Array.isArray(puzzle?.defuserView?.pattern)) return [];
     return puzzle.defuserView.pattern;
   }, [puzzle?.defuserView?.pattern]);
+
 
   // ============================================
   // CALLBACKS
@@ -215,15 +239,18 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
       e.preventDefault();
       const trimmed = jawaban.trim();
 
+
       if (!trimmed) {
         toast.error('Mohon masukkan angka');
         return;
       }
 
+
       if (isNaN(Number(trimmed))) {
         toast.error('Input harus berupa angka');
         return;
       }
+
 
       onSubmitAttempt(trimmed);
       setJawaban('');
@@ -232,12 +259,14 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
     [jawaban, onSubmitAttempt]
   );
 
+
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     if (value.length <= CONFIG.MAX_INPUT_LENGTH) {
       setJawaban(value);
     }
   }, []);
+
 
   // ============================================
   // EFFECTS
@@ -248,6 +277,7 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
     }
   }, [isMobile, isDefuser]);
 
+
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
       if (e.key === 'Enter' && !submitting && jawaban.trim() && isDefuser) {
@@ -255,9 +285,11 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
       }
     };
 
+
     window.addEventListener('keydown', handleKeyPress);
     return () => window.removeEventListener('keydown', handleKeyPress);
   }, [handleSubmit, submitting, jawaban, isDefuser]);
+
 
   // ============================================
   // RENDER CONDITIONS
@@ -265,6 +297,7 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
   if (!puzzle) {
     return <LoadingState />;
   }
+
 
   return (
     <motion.div variants={staggerContainer} initial="initial" animate="animate" className="space-y-4 relative w-full mx-auto px-2 sm:px-4">
@@ -303,6 +336,7 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
             </div>
           </CardHeader>
 
+
           <CardContent className={`space-y-4 ${isMobile ? 'p-3' : 'p-4 sm:p-6'}`}>
             {/* Rule hint for expert/host */}
             {(isExpert || isHost) && puzzle.expertView?.rule && (
@@ -317,8 +351,10 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
               </motion.div>
             )}
 
+
             {/* RESPONSIVE GRID LAYOUT */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+
 
               {/* DEFUSER PANEL - 4 cols on desktop */}
               <AnimatePresence>
@@ -333,13 +369,13 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
                       <CardContent className={`space-y-3 ${isMobile ? 'p-2' : 'p-3'}`}>
                         {patternData.length > 0 ? (
                           <>
-                            {/* Pattern boxes */}
+                            {/* ✅ Pattern boxes - HORIZONTAL LAYOUT */}
                             <motion.div
                               variants={staggerContainer}
-                              className="flex items-center justify-center mb-4"
+                              className="flex items-center justify-center mb-4 overflow-x-auto"
                               style={{ minHeight: `${CONFIG.PATTERN_DISPLAY_MIN_HEIGHT}px` }}
                             >
-                              <div className="flex flex-wrap gap-2 sm:gap-3 justify-center items-center max-w-full">
+                              <div className="flex flex-row gap-2 sm:gap-3 items-center">
                                 {patternData.map((item: any, idx: number) => {
                                   const kosong = item === '?' || item == null;
                                   return <PatternBox key={idx} item={item} index={idx} isEmpty={kosong} setPatternRef={setPatternRef} isMobile={isMobile} />;
@@ -348,6 +384,7 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
                                 <PatternBox item="?" index={patternData.length} isEmpty={true} setPatternRef={setPatternRef} isMobile={isMobile} />
                               </div>
                             </motion.div>
+
 
                             {/* Input form */}
                             {isDefuser && (
@@ -394,6 +431,7 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
                                   </Button>
                                 </motion.div>
 
+
                                 {/* Hints */}
                                 {transformedHints.length > 0 && (
                                   <Accordion type="single" collapsible>
@@ -425,11 +463,13 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
                 )}
               </AnimatePresence>
 
+
               {/* EXPERT PANEL - 8 cols on desktop, responsive grid inside */}
               <AnimatePresence>
                 {(isExpert || isHost) && puzzle.expertView && (
                   <motion.div key="expert-panel" variants={fadeInUp} initial="initial" animate="animate" exit="exit" className="lg:col-span-8">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 h-full">
+
 
                       {/* Cara Mendeteksi Pola */}
                       <Card className={`${isMobile ? 'p-3' : 'p-4'} rounded-lg border border-emerald-700/50 bg-gradient-to-r from-emerald-950/40 to-stone-900/30`}>
@@ -445,6 +485,7 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
                         </ul>
                       </Card>
 
+
                       {/* Cara Membimbing */}
                       <Card className={`${isMobile ? 'p-3' : 'p-4'} rounded-lg border border-purple-700/50 bg-gradient-to-r from-purple-950/40 to-stone-900/30`}>
                         <h5 className={`text-purple-200 font-semibold mb-2 ${isMobile ? 'text-sm' : 'text-base'} flex items-center gap-2`}>
@@ -458,6 +499,7 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
                           <li>Validasi cara berpikir, bukan hasil akhir</li>
                         </ul>
                       </Card>
+
 
                       {/* Jenis-jenis Pola */}
                       <Card className={`md:col-span-2 ${isMobile ? 'p-3' : 'p-4'} rounded-lg border border-blue-700/50 bg-gradient-to-r from-blue-950/40 to-stone-900/30`}>
@@ -485,6 +527,7 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
                         </div>
                       </Card>
 
+
                       {/* Alat Bantu */}
                       <Card className={`md:col-span-2 ${isMobile ? 'p-3' : 'p-4'} rounded-lg border border-teal-700/50 bg-gradient-to-r from-teal-950/40 to-stone-900/30`}>
                         <h5 className={`text-teal-200 font-semibold mb-2 ${isMobile ? 'text-sm' : 'text-base'} flex items-center gap-2`}>
@@ -499,12 +542,15 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
                         </ul>
                       </Card>
 
+
                     </div>
                   </motion.div>
                 )}
               </AnimatePresence>
 
+
             </div>
+
 
             {/* Tips Kolaborasi */}
             <motion.div variants={fadeInUp}>
@@ -532,6 +578,7 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
         </Card>
       </motion.div>
 
+
       {/* Styles */}
       <style>{`
         .dungeon-torch-flicker { display: inline-block; }
@@ -544,13 +591,16 @@ export default function PatternAnalysisView({ puzzle, role, onSubmitAttempt, sub
         .dungeon-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
 
-        .overflow-y-auto::-webkit-scrollbar { width: 6px; }
-        .overflow-y-auto::-webkit-scrollbar-track { background: rgba(28, 25, 23, 0.5); border-radius: 3px; }
-        .overflow-y-auto::-webkit-scrollbar-thumb { background: rgba(180, 83, 9, 0.6); border-radius: 3px; }
-        .overflow-y-auto::-webkit-scrollbar-thumb:hover { background: rgba(180, 83, 9, 0.8); }
+
+        .overflow-y-auto::-webkit-scrollbar, .overflow-x-auto::-webkit-scrollbar { width: 6px; height: 6px; }
+        .overflow-y-auto::-webkit-scrollbar-track, .overflow-x-auto::-webkit-scrollbar-track { background: rgba(28, 25, 23, 0.5); border-radius: 3px; }
+        .overflow-y-auto::-webkit-scrollbar-thumb, .overflow-x-auto::-webkit-scrollbar-thumb { background: rgba(180, 83, 9, 0.6); border-radius: 3px; }
+        .overflow-y-auto::-webkit-scrollbar-thumb:hover, .overflow-x-auto::-webkit-scrollbar-thumb:hover { background: rgba(180, 83, 9, 0.8); }
+
 
         .touch-manipulation { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
         *:focus-visible { outline: 2px solid rgba(251, 191, 36, 0.8); outline-offset: 2px; }
+
 
         @media (max-width: 768px) {
           .dungeon-card-glow, .dungeon-card-glow-blue, .dungeon-card-glow-green, .dungeon-card-glow-red {

@@ -7,6 +7,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { gsap } from 'gsap';
 import { toast } from 'sonner';
 
+
 // ============================================
 // CONSTANTS & CONFIGURATIONS
 // ============================================
@@ -19,6 +20,7 @@ const CONFIG = {
   MOBILE_BREAKPOINT: 768,
 } as const;
 
+
 // ============================================
 // TYPE DEFINITIONS
 // ============================================
@@ -28,12 +30,14 @@ interface PuzzleDefuserView {
   codeLines?: string[];
 }
 
+
 interface PuzzleExpertView {
   cipher_type?: string;
   shift?: number;
   category?: string;
   bugs?: number[];
 }
+
 
 interface Puzzle {
   title?: string;
@@ -42,6 +46,7 @@ interface Puzzle {
   expertView?: PuzzleExpertView;
 }
 
+
 interface Props {
   puzzle: Puzzle | null;
   role?: 'defuser' | 'expert' | 'host';
@@ -49,11 +54,13 @@ interface Props {
   submitting: boolean;
 }
 
+
 // ============================================
 // CUSTOM HOOKS
 // ============================================
 const useIsMobile = () => {
   const [isMobile, setIsMobile] = useState(false);
+
 
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth <= CONFIG.MOBILE_BREAKPOINT);
@@ -63,12 +70,15 @@ const useIsMobile = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+
   return isMobile;
 };
+
 
 const useDungeonAtmosphere = () => {
   const torchRefs = useRef<(HTMLElement | null)[]>([]);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+
 
   useEffect(() => {
     intervalRef.current = setInterval(() => {
@@ -84,17 +94,21 @@ const useDungeonAtmosphere = () => {
       });
     }, CONFIG.TORCH_FLICKER_INTERVAL);
 
+
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, []);
 
+
   const setTorchRef = useCallback((index: number) => (el: HTMLDivElement | null) => {
     torchRefs.current[index] = el;
   }, []);
 
+
   return { setTorchRef };
 };
+
 
 // ============================================
 // ANIMATION VARIANTS
@@ -105,17 +119,20 @@ const fadeInUp = {
   exit: { opacity: 0, y: -20 },
 };
 
+
 const scaleIn = {
   initial: { scale: 0.95, opacity: 0 },
   animate: { scale: 1, opacity: 1 },
   exit: { scale: 0.95, opacity: 0 },
 };
 
+
 const staggerContainer = {
   animate: {
     transition: { staggerChildren: 0.05 },
   },
 };
+
 
 // ============================================
 // MEMOIZED COMPONENTS
@@ -128,7 +145,9 @@ const LoadingState = memo(() => (
   </motion.div>
 ));
 
+
 LoadingState.displayName = 'LoadingState';
+
 
 const ErrorState = memo(() => (
   <motion.div variants={scaleIn} initial="initial" animate="animate">
@@ -138,7 +157,9 @@ const ErrorState = memo(() => (
   </motion.div>
 ));
 
+
 ErrorState.displayName = 'ErrorState';
+
 
 const CodeLine = memo(
   ({
@@ -160,6 +181,7 @@ const CodeLine = memo(
   }) => {
     const lineRef = useRef<HTMLDivElement>(null);
 
+
     useEffect(() => {
       if (lineRef.current && isActive) {
         gsap.to(lineRef.current, {
@@ -167,6 +189,7 @@ const CodeLine = memo(
           duration: CONFIG.LINE_HOVER_DURATION,
           ease: 'power2.out',
         });
+
 
         return () => {
           if (lineRef.current) {
@@ -179,6 +202,7 @@ const CodeLine = memo(
         };
       }
     }, [isActive]);
+
 
     return (
       <div
@@ -206,7 +230,9 @@ const CodeLine = memo(
   }
 );
 
+
 CodeLine.displayName = 'CodeLine';
+
 
 // ============================================
 // MAIN COMPONENT
@@ -215,10 +241,12 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
   const isMobile = useIsMobile();
   const { setTorchRef } = useDungeonAtmosphere();
 
+
   const [foundBugs, setFoundBugs] = useState<number[]>([]);
   const [selectedLine, setSelectedLine] = useState<number | null>(null);
   const [input, setInput] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+
 
   // ============================================
   // MEMOIZED VALUES
@@ -226,25 +254,33 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
   const isCipherPuzzle = useMemo(() => !!(puzzle?.defuserView?.cipher || puzzle?.expertView?.cipher_type), [puzzle]);
   const isBugPuzzle = useMemo(() => !!(puzzle?.expertView?.bugs || puzzle?.defuserView?.codeLines), [puzzle]);
 
+
   const isDefuser = role === 'defuser';
   const isExpert = role === 'expert';
   const isHost = role === 'host';
 
+
   const cipherType = puzzle?.expertView?.cipher_type;
   const isCaesarCipher = cipherType === 'caesar';
+
 
   const numericShift = useMemo(() => {
     if (!isCaesarCipher || typeof puzzle?.expertView?.shift !== 'number') return null;
     return Math.abs(puzzle.expertView.shift % 26);
   }, [isCaesarCipher, puzzle?.expertView?.shift]);
 
+
   const alphabet = useMemo(() => 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split(''), []);
 
+
+  // ✅ FIX: Ubah tabel untuk DEKRIPSI (shift mundur, bukan maju)
   const rotated = useMemo(() => {
     if (numericShift == null) return alphabet;
     const k = numericShift % 26;
-    return alphabet.map((_, i) => alphabet[(i + k) % 26]);
+    // Untuk dekripsi, shift MUNDUR: (i - k + 26) % 26
+    return alphabet.map((_, i) => alphabet[(i - k + 26) % 26]);
   }, [alphabet, numericShift]);
+
 
   const defuserHintsCipher = useMemo(() => {
     if (!isCipherPuzzle) return [];
@@ -252,11 +288,13 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
     return base;
   }, [isCipherPuzzle, puzzle?.defuserView?.hints]);
 
+
   const defuserHintsBug = useMemo(() => {
     if (!isBugPuzzle) return [];
     const base = Array.isArray(puzzle?.defuserView?.hints) ? puzzle.defuserView.hints : [];
     return base;
   }, [isBugPuzzle, puzzle?.defuserView?.hints]);
+
 
   // ============================================
   // CALLBACKS
@@ -289,6 +327,7 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
     }
   }, [isCipherPuzzle, isBugPuzzle, input, foundBugs, onSubmitAttempt]);
 
+
   const handleLineClick = useCallback(
     (lineNumber: number) => {
       if (!isDefuser || !isBugPuzzle) return;
@@ -302,6 +341,7 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
     [isDefuser, isBugPuzzle]
   );
 
+
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     try {
       const value = e.target.value.toUpperCase();
@@ -313,6 +353,7 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
     }
   }, []);
 
+
   // ============================================
   // EFFECTS
   // ============================================
@@ -322,6 +363,7 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
     }
   }, [isMobile, isDefuser, isCipherPuzzle]);
 
+
   // ============================================
   // RENDER CONDITIONS
   // ============================================
@@ -329,11 +371,14 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
     return <ErrorState />;
   }
 
+
   if (!puzzle.defuserView && !puzzle.expertView) {
     return <LoadingState />;
   }
 
+
   const maxCodeHeight = isMobile ? CONFIG.MAX_CODE_HEIGHT_MOBILE : CONFIG.MAX_CODE_HEIGHT;
+
 
   return (
     <motion.div variants={staggerContainer} initial="initial" animate="animate" className="space-y-3 w-full mx-auto px-2 sm:px-4">
@@ -353,6 +398,7 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
               {puzzle.description || 'Pecahkan teka-teki kode di CodeAlpha Dungeon'}
             </CardDescription>
 
+
             {(isExpert || isHost) && puzzle.expertView && (
               <div className="pt-2 flex flex-wrap gap-1 justify-center">
                 <Badge className={`bg-stone-800 text-stone-200 border border-stone-700/60 ${isMobile ? 'text-xs' : 'text-sm'}`}>
@@ -361,6 +407,7 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
               </div>
             )}
           </CardHeader>
+
 
           <CardContent className={isMobile ? 'p-3 space-y-3' : 'p-4 space-y-3'}>
             {/* CIPHER PUZZLE */}
@@ -390,6 +437,7 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
                           </div>
                         )}
 
+
                         {isDefuser && isCaesarCipher && numericShift != null && (
                           <div className="p-2 rounded-lg bg-amber-900/30 border border-amber-700/50">
                             <div className="flex items-center gap-2">
@@ -400,6 +448,7 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
                             </div>
                           </div>
                         )}
+
 
                         {isDefuser && (
                           <>
@@ -430,6 +479,7 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
                               </Button>
                             </motion.div>
 
+
                             {defuserHintsCipher.length > 0 && (
                               <Accordion type="single" collapsible>
                                 <AccordionItem value="hints" className="border-blue-700/40">
@@ -453,27 +503,29 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
                   </motion.div>
                 )}
 
+
                 {/* Expert Panel - 8 cols, responsive grid inside */}
                 {(isExpert || isHost) && (
                   <motion.div variants={fadeInUp} className="lg:col-span-8">
                     <div className="grid grid-cols-1 gap-3 h-full">
 
-                      {/* Tabel Caesar Cipher */}
+
+                      {/* Tabel Caesar Cipher - DEKRIPSI */}
                       {isCaesarCipher && (
                         <Card className={`${isMobile ? 'p-3' : 'p-4'} rounded-lg border border-emerald-700/50 bg-gradient-to-r from-emerald-950/40 to-stone-900/30`}>
                           <h5 className={`text-emerald-200 font-semibold mb-2 ${isMobile ? 'text-sm' : 'text-base'} flex items-center gap-2 text-center justify-center`}>
                             <span>🔑</span>
-                            <span>Tabel Caesar Cipher (Geser: {numericShift})</span>
+                            <span>Tabel Dekripsi Caesar Cipher (Geser Mundur: {numericShift})</span>
                           </h5>
                           <div className="overflow-x-auto">
                             <table className={`w-full ${isMobile ? 'text-xs' : 'text-sm'} border-collapse`}>
                               <thead>
                                 <tr className="bg-stone-800/80">
                                   <th className={`border border-stone-700/60 ${isMobile ? 'px-1 py-1' : 'px-2 py-1'} text-amber-200 font-semibold`}>
-                                    Asli
+                                    Enkripsi
                                   </th>
                                   {alphabet.map((ch) => (
-                                    <th key={ch} className={`border border-stone-700/60 ${isMobile ? 'px-0.5 py-1' : 'px-1 py-1'} text-stone-100 font-mono`}>
+                                    <th key={ch} className={`border border-stone-700/60 ${isMobile ? 'px-0.5 py-1' : 'px-1 py-1'} text-amber-300 font-mono bg-amber-950/30`}>
                                       {ch}
                                     </th>
                                   ))}
@@ -482,10 +534,10 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
                               <tbody>
                                 <tr className="bg-stone-900/80">
                                   <td className={`border border-stone-700/60 ${isMobile ? 'px-1 py-1' : 'px-2 py-1'} text-amber-200 font-semibold`}>
-                                    Enkripsi
+                                    Asli
                                   </td>
                                   {rotated.map((ch, idx) => (
-                                    <td key={idx} className={`border border-stone-700/60 ${isMobile ? 'px-0.5 py-1' : 'px-1 py-1'} text-amber-300 font-mono text-center bg-amber-950/30`}>
+                                    <td key={idx} className={`border border-stone-700/60 ${isMobile ? 'px-0.5 py-1' : 'px-1 py-1'} text-stone-100 font-mono text-center`}>
                                       {ch}
                                     </td>
                                   ))}
@@ -494,10 +546,11 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
                             </table>
                           </div>
                           <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-stone-400 mt-2 text-center italic`}>
-                            Gunakan tabel untuk decode: Cari huruf enkripsi, lihat huruf asli di atasnya
+                            Untuk dekripsi: Cari huruf terenkripsi di baris atas, lihat huruf asli di bawahnya
                           </p>
                         </Card>
                       )}
+
 
                       {/* Cara Memecahkan Cipher */}
                       <Card className={`${isMobile ? 'p-3' : 'p-4'} rounded-lg border border-purple-700/50 bg-gradient-to-r from-purple-950/40 to-stone-900/30`}>
@@ -506,12 +559,13 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
                           <span>Cara Membimbing Pemain</span>
                         </h5>
                         <ul className={`${isMobile ? 'text-xs' : 'text-sm'} text-purple-200/90 space-y-1.5 list-disc pl-5`}>
-                          <li>Jelaskan bahwa setiap huruf digeser sejumlah posisi tertentu</li>
-                          <li>Minta mereka menggunakan tabel untuk mencocokkan huruf</li>
+                          <li>Jelaskan bahwa untuk dekripsi, kita geser huruf ke arah sebaliknya</li>
+                          <li>Minta mereka menggunakan tabel: cari huruf enkripsi, lalu lihat huruf asli di bawahnya</li>
                           <li>Bimbing mereka mencoba beberapa huruf pertama sebagai contoh</li>
                           <li>Validasi proses berpikir, bukan langsung memberi jawaban</li>
                         </ul>
                       </Card>
+
 
                       {/* Tentang Caesar Cipher */}
                       <Card className={`${isMobile ? 'p-3' : 'p-4'} rounded-lg border border-blue-700/50 bg-gradient-to-r from-blue-950/40 to-stone-900/30`}>
@@ -520,17 +574,20 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
                           <span>Tentang Caesar Cipher</span>
                         </h5>
                         <div className={`${isMobile ? 'text-xs' : 'text-sm'} text-blue-200/90 space-y-1.5`}>
-                          <p><span className="font-semibold">Caesar Cipher</span> adalah metode enkripsi sederhana yang menggeser setiap huruf dalam alfabet.</p>
-                          <p>Contoh: Jika geser = 3, maka A → D, B → E, C → F, dan seterusnya.</p>
-                          <p>Untuk dekripsi, geser ke arah sebaliknya: D → A, E → B, F → C.</p>
+                          <p><span className="font-semibold">Caesar Cipher</span> adalah metode enkripsi yang menggeser setiap huruf dalam alfabet.</p>
+                          <p>Contoh enkripsi (geser +3): A → D, B → E, C → F</p>
+                          <p>Untuk dekripsi (geser -3): D → A, E → B, F → C</p>
+                          <p className="text-amber-300 font-semibold">Teks yang diberikan sudah terenkripsi, jadi gunakan shift mundur untuk dekripsi!</p>
                         </div>
                       </Card>
+
 
                     </div>
                   </motion.div>
                 )}
               </div>
             )}
+
 
             {/* BUG PUZZLE */}
             {isBugPuzzle && (
@@ -572,6 +629,7 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
                               </div>
                             </div>
 
+
                             {isDefuser && (
                               <>
                                 <motion.div whileTap={{ scale: 0.98 }}>
@@ -583,6 +641,7 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
                                     {submitting ? '⚙️ Mengirim...' : `✨ Kirim Bug (${foundBugs.length})`}
                                   </Button>
                                 </motion.div>
+
 
                                 {defuserHintsBug.length > 0 && (
                                   <Accordion type="single" collapsible>
@@ -609,10 +668,12 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
                   </motion.div>
                 )}
 
+
                 {/* Expert Panel - 7 cols */}
                 {(isExpert || isHost) && (
                   <motion.div variants={fadeInUp} className="lg:col-span-7">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 h-full">
+
 
                       {/* Cara Membimbing */}
                       <Card className={`${isMobile ? 'p-3' : 'p-4'} rounded-lg border border-emerald-700/50 bg-gradient-to-r from-emerald-950/40 to-stone-900/30`}>
@@ -628,6 +689,7 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
                         </ul>
                       </Card>
 
+
                       {/* Checklist Bug Umum */}
                       <Card className={`${isMobile ? 'p-3' : 'p-4'} rounded-lg border border-purple-700/50 bg-gradient-to-r from-purple-950/40 to-stone-900/30`}>
                         <h5 className={`text-purple-200 font-semibold mb-2 ${isMobile ? 'text-sm' : 'text-base'} flex items-center gap-2`}>
@@ -642,6 +704,7 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
                           <li>Loop yang tidak pernah berhenti</li>
                         </ul>
                       </Card>
+
 
                       {/* Tips Debugging */}
                       <Card className={`md:col-span-2 ${isMobile ? 'p-3' : 'p-4'} rounded-lg border border-blue-700/50 bg-gradient-to-r from-blue-950/40 to-stone-900/30`}>
@@ -685,6 +748,7 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
                         </div>
                       </Card>
 
+
                     </div>
                   </motion.div>
                 )}
@@ -694,19 +758,23 @@ export default function CodeAnalysisView({ puzzle, role = 'defuser', onSubmitAtt
         </Card>
       </motion.div>
 
+
       <style>{`
         .dungeon-torch-flicker { display: inline-block; }
         .dungeon-line-glow { box-shadow: 0 0 15px rgba(251, 191, 36, 0.5); }
         .dungeon-glow-text { text-shadow: 0 0 20px rgba(251, 191, 36, 0.6); }
+
 
         .overflow-y-auto::-webkit-scrollbar { width: 6px; }
         .overflow-y-auto::-webkit-scrollbar-track { background: rgba(28, 25, 23, 0.5); border-radius: 3px; }
         .overflow-y-auto::-webkit-scrollbar-thumb { background: rgba(180, 83, 9, 0.6); border-radius: 3px; }
         .overflow-y-auto::-webkit-scrollbar-thumb:hover { background: rgba(180, 83, 9, 0.8); }
 
+
         .overflow-x-auto::-webkit-scrollbar { height: 6px; }
         .overflow-x-auto::-webkit-scrollbar-track { background: rgba(28, 25, 23, 0.5); border-radius: 3px; }
         .overflow-x-auto::-webkit-scrollbar-thumb { background: rgba(180, 83, 9, 0.6); border-radius: 3px; }
+
 
         .touch-manipulation { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
         *:focus-visible { outline: 2px solid rgba(251, 191, 36, 0.8); outline-offset: 2px; }
