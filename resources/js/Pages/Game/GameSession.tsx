@@ -579,10 +579,9 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
   const finalizeRef = useRef(false);
 
   // ============================================
-  // ✅ SOLUTION 5: MEMOIZED VALUES WITH SESSIONSTORAGE
+  // MEMOIZED VALUES WITH SESSIONSTORAGE
   // ============================================
   const getCurrentRole = useCallback((): 'defuser' | 'expert' | 'host' | 'observer' => {
-    // ✅ Try to get from sessionStorage first (survives refresh)
     const storageKey = `game_role_${sessionId}`;
     const storedRole = sessionStorage.getItem(storageKey);
 
@@ -594,19 +593,16 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
     const urlParams = new URLSearchParams(window.location.search);
     const urlRole = urlParams.get('role');
     if (urlRole && ['defuser', 'expert', 'host'].includes(urlRole)) {
-      // ✅ Store to sessionStorage for future use
       sessionStorage.setItem(storageKey, urlRole);
       return urlRole as 'defuser' | 'expert' | 'host';
     }
     if (propRole && ['defuser', 'expert', 'host'].includes(propRole)) {
-      // ✅ Store to sessionStorage
       sessionStorage.setItem(storageKey, propRole);
       return propRole;
     }
     const participants = gameState?.session?.participants || [];
     const userParticipant = participants.find((p) => p.user_id === auth?.user?.id);
     if (userParticipant?.role) {
-      // ✅ Store to sessionStorage
       sessionStorage.setItem(storageKey, userParticipant.role);
       return userParticipant.role as 'defuser' | 'expert' | 'host';
     }
@@ -617,7 +613,6 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
   const participants = useMemo(() => gameState?.session?.participants || [], [gameState?.session?.participants]);
   const isValidSessionId = useMemo(() => sessionId && !isNaN(Number(sessionId)), [sessionId]);
 
-  // ✅ Store role when determined
   useEffect(() => {
     if (currentRole && currentRole !== 'observer') {
       const storageKey = `game_role_${sessionId}`;
@@ -644,7 +639,6 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
       console.log('✅ Session finalized and history saved');
       toast.success('Riwayat permainan berhasil disimpan!');
 
-      // ✅ Clear role from sessionStorage after finalization
       const storageKey = `game_role_${sessionId}`;
       sessionStorage.removeItem(storageKey);
     } catch (error: any) {
@@ -732,7 +726,7 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
   const handleStartSession = useCallback(async () => {
     try {
       await gameApi.startSession(sessionId);
-      toast.success('Sesi dimulai!');
+      toast.success('Sesi dimulai! ⚔️');
       setTimeout(loadGameState, 1000);
     } catch (err: any) {
       console.error('❌ Gagal memulai sesi:', err);
@@ -742,6 +736,7 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
     }
   }, [sessionId, loadGameState]);
 
+  // ✅ SOLUTION 1: UPDATED handleAttemptSubmit with Toast Notification
   const handleAttemptSubmit = useCallback(
     async (inputValue: string) => {
       if (!gameState) return;
@@ -749,6 +744,7 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
       try {
         const result = await gameApi.submitAttempt(gameState.session.id, gameState.puzzle.key, inputValue);
 
+        // Check if stage or game complete
         if (result.stageComplete || result.gameComplete) {
           setStageResult(result);
           setShowTransition(true);
@@ -764,6 +760,7 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
             loadGameState();
           }, CONFIG.TRANSITION_DURATION);
         } else {
+          // Update game state with new attempts
           setGameState({
             ...gameState,
             session: {
@@ -771,6 +768,36 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
               attempts: result.session?.attempts || gameState.session.attempts,
             },
           });
+
+          // ✅ NEW: Show toast feedback for correct/incorrect answer
+          const lastAttempt = result.session?.attempts?.[result.session.attempts.length - 1];
+
+          if (lastAttempt) {
+            if (lastAttempt.is_correct) {
+              // Jawaban benar
+              toast.success('✅ Jawaban Benar!', {
+                description: 'Percobaan berhasil. Lanjutkan ke tahap selanjutnya!',
+                duration: 3000,
+              });
+            } else {
+              // Jawaban salah - hitung sisa percobaan
+              const maxAttempts = gameState.stage?.config?.maxAttempts || 10;
+              const currentAttempts = gameState.session.attempts.length;
+              const attemptsRemaining = result.attemptsRemaining ?? (maxAttempts - currentAttempts);
+
+              if (attemptsRemaining > 0) {
+                toast.error('❌ Jawaban Salah!', {
+                  description: `Coba lagi! Sisa percobaan: ${attemptsRemaining}`,
+                  duration: 4000,
+                });
+              } else {
+                toast.error('💥 Jawaban Salah!', {
+                  description: 'Ini percobaan terakhir Anda. Berhati-hatilah!',
+                  duration: 5000,
+                });
+              }
+            }
+          }
         }
       } catch (err: any) {
         console.error('❌ Gagal mengirim percobaan:', err);
@@ -836,24 +863,21 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
     };
   }, [loadGameState, isValidSessionId]);
 
-  // ✅ SOLUTION 2: VISIBILITYCHANGE + BEFOREUNLOAD
+  // VISIBILITYCHANGE + BEFOREUNLOAD
   useEffect(() => {
     let tabClosing = false;
     let closeTimeout: NodeJS.Timeout | null = null;
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
-        // Tab is hidden (might be closing or just switching tabs/refreshing)
         tabClosing = true;
         console.log('👁️ Tab hidden - potential close detected');
 
-        // Wait to see if tab actually closes
         closeTimeout = setTimeout(() => {
           tabClosing = false;
           console.log('✅ Tab still alive - was just a refresh or tab switch');
         }, CONFIG.TAB_CLOSE_DETECTION_DELAY);
       } else if (document.visibilityState === 'visible') {
-        // Tab is visible again (user came back)
         tabClosing = false;
         if (closeTimeout) {
           clearTimeout(closeTimeout);
@@ -864,12 +888,11 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
     };
 
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      // ✅ Only finalize if tab is actually closing (not just refreshing)
       if (
         gameState?.session?.status === 'running' &&
         !isFinalized &&
         gameState?.session?.id &&
-        tabClosing // Only trigger if visibilitychange detected potential close
+        tabClosing
       ) {
         try {
           const xhr = new XMLHttpRequest();
@@ -889,7 +912,6 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
         }
       }
 
-      // ✅ Always show warning if game is running (even on refresh)
       if (gameState?.session?.status === 'running') {
         e.preventDefault();
         e.returnValue = 'Permainan sedang berlangsung. Yakin ingin keluar?';
@@ -921,7 +943,7 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
   }, [showVoiceChat, isMobile, handleToggleVoiceChat]);
 
   // ============================================
-  // RENDER CONDITIONS
+  // RENDER CONDITIONS & FUNCTIONS
   // ============================================
   if (!isValidSessionId) {
     return (
@@ -977,10 +999,6 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
       </Authenticated>
     );
   }
-
-  // ============================================
-  // RENDER FUNCTIONS
-  // ============================================
 
   const renderWaiting = () => (
     <motion.div variants={scaleIn} initial="initial" animate="animate" className="py-4 sm:py-6">
@@ -1410,8 +1428,8 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
                   sessionId={session.id}
                   participants={getValidParticipants()}
                   role={getValidRole()}
-                  userId={auth.user.id}
-                  nickname={auth.user.name}
+                  userId={auth?.user?.id}
+                  nickname={auth?.user?.name}
                 />
               </motion.div>
             )}
