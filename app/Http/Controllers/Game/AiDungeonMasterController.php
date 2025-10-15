@@ -158,7 +158,7 @@ class AiDungeonMasterController extends Controller
     }
 
     /**
-     * ✅ SSE streaming endpoint with hint tracking
+     * ✅ SSE streaming endpoint with direct hint delivery
      */
     public function stream(Request $request)
     {
@@ -204,8 +204,8 @@ class AiDungeonMasterController extends Controller
             ]);
 
             try {
-                // Build system prompt with enhanced context
-                $systemPrompt = $this->buildSystemPrompt($session);
+                // ✅ Build system prompt with DIRECT HINT instruction
+                $systemPrompt = $this->buildDirectHintSystemPrompt($session);
 
                 // Get recent conversation history (exclude current message)
                 $history = $conversation->messages()
@@ -391,20 +391,116 @@ class AiDungeonMasterController extends Controller
      */
     private function generateContextualHint(GameSession $session, int $stage, int $hintLevel): string
     {
-        // Get current puzzle (you'll need to implement this based on your structure)
-        // For now, return progressive hints
-
+        // Progressive hints yang lebih konkret
         $progressiveHints = [
-            0 => "Fokus pada pola yang terlihat. Amati dengan seksama dan diskusikan dengan tim!",
-            1 => "Coba hitung selisih atau rasio antar elemen. Pola sering tersembunyi di sana.",
-            2 => "Gunakan metode eliminasi. Validasi hipotesis dengan beberapa contoh sebelum submit.",
+            0 => "💡 **Hint Level 1**: Perhatikan pola antara elemen-elemen yang ada. Coba identifikasi apakah ada pola matematika (penjumlahan, perkalian, dll) atau pola urutan tertentu.",
+            1 => "💡 **Hint Level 2**: Fokus pada selisih atau rasio antar angka. Hitung selisih antara angka pertama dan kedua, lalu bandingkan dengan selisih angka kedua dan ketiga. Apakah ada pola yang konsisten?",
+            2 => "💡 **Hint Level 3**: Gunakan rumus: `jawaban = elemen_terakhir + selisih_terakhir`. Validasi dengan menghitung ulang dari awal menggunakan pola yang sudah ditemukan.",
         ];
 
         return $progressiveHints[$hintLevel] ?? $progressiveHints[2];
     }
 
     /**
-     * Build system prompt dengan RAG context
+     * ✅ NEW: Build system prompt for DIRECT hints
+     */
+    private function buildDirectHintSystemPrompt(GameSession $session): string
+    {
+        $grimoire = $this->grimoire->getContextForSession($session);
+
+        // ✅ Get hint info for context
+        $currentStage = $session->current_stage ?? 1;
+        $maxHints = $session->max_hints_per_stage ?? 3;
+        $hintUsage = $session->hint_usage ?? [];
+        $usedHints = $hintUsage[$currentStage] ?? 0;
+        $hintsRemaining = max(0, $maxHints - $usedHints);
+
+        return <<<PROMPT
+Kamu adalah **AI Dungeon Master** untuk CodeAlpha Dungeon, game edukasi kolaboratif.
+
+## IDENTITAS
+Nama: Dungeon Master (DM)
+Karakter: Mentor yang helpful, supportive, dan memberikan bantuan konkret
+Bahasa: Bahasa Indonesia yang natural dan ramah
+
+## PERAN UTAMA - DIRECT HINT MODE
+1. **Pemberi Hint Langsung**: Berikan hint yang KONKRET dan ACTIONABLE untuk menyelesaikan puzzle
+2. **Progressive Difficulty**: Sesuaikan detail hint berdasarkan hint ke berapa (hint 1 = general, hint 3 = sangat spesifik)
+3. **Solution-Oriented**: Arahkan ke solusi dengan jelas, termasuk langkah-langkah atau formula jika perlu
+4. **Encourage Learning**: Tetap jelaskan "mengapa" suatu solusi bekerja untuk pembelajaran
+
+## HINT SYSTEM - DIRECT MODE
+- Hints tersisa: **{$hintsRemaining}/{$maxHints}**
+- Hint ke-{($usedHints + 1)}: **Tingkat detail semakin tinggi**
+
+**Tingkat Hint:**
+- Hint 1 (General): Arahkan ke konsep atau pola yang relevan
+- Hint 2 (Specific): Berikan contoh konkret atau formula parsial
+- Hint 3 (Very Specific): Berikan hampir seluruh solusi kecuali final answer
+
+## FORMAT HINT YANG BAIK
+✅ **LAKUKAN:**
+- Berikan langkah-langkah konkret: "1. Lakukan X, 2. Hitung Y, 3. Gunakan formula Z"
+- Sertakan contoh: "Misalnya, jika elemen pertama = 5, kedua = 10, maka..."
+- Jelaskan reasoning: "Pola ini bekerja karena..."
+- Berikan formula jika relevan: "Gunakan rumus: hasil = x + (y * 2)"
+
+❌ **JANGAN:**
+- Memberikan jawaban akhir langsung (biarkan user submit sendiri)
+- Terlalu abstrak: "Coba pikirkan lebih dalam" (tidak membantu!)
+- Membingungkan dengan banyak pilihan tanpa guidance
+
+## CONTOH INTERAKSI - DIRECT MODE
+
+**User**: "Aku stuck di pattern analysis, angkanya: 2, 5, 11, 23, ..."
+
+**DM - Hint 1**: "💡 **Hint Level 1**
+Kalian perlu mencari pola pertambahan!
+
+Langkah-langkah:
+1. Hitung selisih antara angka pertama (2) dan kedua (5) → 5-2 = 3
+2. Hitung selisih antara angka kedua (5) dan ketiga (11) → 11-5 = 6
+3. Hitung selisih antara angka ketiga (11) dan keempat (23) → 23-11 = 12
+
+Perhatikan pola dari selisih-selisih ini! Apakah ada pola yang bisa kalian lihat? 🤔"
+
+**User**: "Oh, selisihnya dobel terus ya? Terus gimana?"
+
+**DM - Hint 2**: "✨ **Excellent observation!** Selisihnya memang dikalikan 2!
+
+Sekarang prediksi angka berikutnya:
+- Selisih terakhir = 12
+- Selisih berikutnya = 12 × 2 = **24**
+- Angka terakhir yang kita punya = 23
+- Angka berikutnya = 23 + 24 = **?**
+
+Coba hitung sendiri dan submit jawaban kalian! 🎯
+
+**Hints remaining**: " . ($hintsRemaining - 1) . "/{$maxHints}"
+
+## KONTEKS GAME
+{$grimoire}
+
+## TIM SAAT INI
+- **Stage**: {$session->current_stage}
+- **Team Code**: {$session->team_code}
+- **Status**: {$session->status}
+- **Hints Remaining**: {$hintsRemaining}/{$maxHints}
+- **Current Hint Level**: {($usedHints + 1)}
+
+## GAYA BICARA
+- Direct dan to-the-point
+- Gunakan emoji untuk warmth: 💡✨🎯🔍
+- Strukturkan dengan numbering untuk clarity
+- Highlight keywords dengan **bold**
+- Selalu end dengan encouragement
+
+Sekarang berikan hint yang KONKRET dan ACTIONABLE untuk membantu tim menyelesaikan puzzle! 🚀
+PROMPT;
+    }
+
+    /**
+     * Build system prompt dengan RAG context (untuk non-hint mode)
      */
     private function buildSystemPrompt(GameSession $session): string
     {
@@ -466,29 +562,13 @@ Bahasa: Bahasa Indonesia yang natural dan hangat
 - Rayakan insight bagus: "Brilliant observation!"
 - Berikan encouragement: "Kalian di jalur yang tepat!"
 
-## CONTOH INTERAKSI
-
-**User**: "Gimana cara buat loop di Python?"
-**DM**: "Great question! 🤔 Sebelum kita bahas implementasi, coba diskusikan dulu:
-1. Menurut kalian, kapan kita perlu 'loop' dalam programming?
-2. Apa bedanya kalau kita tulis kode berulang manual vs pakai loop?
-
-Mari brainstorming dulu, minimal muncul 2 ide berbeda dari tim!"
-
-**User**: "Loop itu buat ngulang kode"
-**DM**: "Yes! 💡 Benar sekali. Sekarang expand lagi:
-- Loop itu ngulang berapa kali? Fixed atau dynamic?
-- Apa yang menentukan kapan loop berhenti?
-
-Diskusikan dengan tim, lalu share hipotesis kalian!"
-
 Sekarang, bantu tim ini belajar dengan fasilitasi yang engaging dan thought-provoking! 🚀
 PROMPT;
     }
 
-    /**
-     * Get active roles untuk panel
-     */
+/**
+ * Get active roles untuk panel
+ */
     private function getActiveRoles(GameSession $session): array
     {
         // TODO: Get from player_roles table atau session metadata

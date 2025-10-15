@@ -276,6 +276,7 @@ export default function GamePlay({ gameState, role, onGameStateUpdate, onSubmitA
   // ============================================
   // HANDLERS
   // ============================================
+  // ✅ FIXED: Updated handleSubmitAttempt dengan pengecekan status lengkap
   const handleSubmitAttempt = useCallback(
     async (inputValue: string) => {
       if (onSubmitAttempt) {
@@ -298,11 +299,37 @@ export default function GamePlay({ gameState, role, onGameStateUpdate, onSubmitA
         };
         onGameStateUpdate(newGameState);
         setInput('');
-        if (result.session.status === 'success') {
+
+        // ✅ FIXED: Prioritas pengecekan status yang benar
+        // 1. Cek game complete dulu (prioritas tertinggi)
+        if (result.gameComplete) {
+          showNotice('info', '🎉 Semua tahap selesai! Sesi berhasil diselesaikan.');
           setShowFeedbackForm(true);
-          showNotice('info', 'Dungeon berhasil ditaklukkan! Bagikan pengalaman Anda.');
-        } else {
-          showNotice('info', 'Percobaan tercatat dalam kronik guild.');
+        }
+        // 2. Cek status session
+        else if (result.session.status === 'success') {
+          setShowFeedbackForm(true);
+          showNotice('info', '✨ Dungeon berhasil ditaklukkan! Bagikan pengalaman Anda.');
+        }
+        else if (result.session.status === 'failed') {
+          showNotice('error', '💥 Misi Gagal! Waktu habis atau percobaan maksimal tercapai.');
+        }
+        // 3. Cek stage complete
+        else if (result.stageComplete) {
+          showNotice('info', '⚡ Tahap diselesaikan! Melanjutkan ke tahap berikutnya...');
+        }
+        // 4. Cek result dari attempt
+        else {
+          if (result.correct) {
+            showNotice('info', '✅ Jawaban benar! Lanjutkan ke tahap selanjutnya.');
+          } else {
+            const attemptsRemaining = result.attemptsRemaining ?? 0;
+            if (attemptsRemaining > 0) {
+              showNotice('warn', `❌ Jawaban salah. Sisa percobaan: ${attemptsRemaining}`);
+            } else {
+              showNotice('error', '❌ Jawaban salah. Percobaan terakhir!');
+            }
+          }
         }
       } catch (err: any) {
         showNotice('error', err?.response?.data?.message || 'Gagal mengirim percobaan ke altar.');
