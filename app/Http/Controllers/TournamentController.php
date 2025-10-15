@@ -29,10 +29,7 @@ class TournamentController extends Controller
     {
         try {
             $tournaments = Tournament::with([
-                'groups.participants.user',
-                'matches.group1',
-                'matches.group2',
-                'matches.winnerGroup'
+                'groups.participants.user'
             ])->orderBy('created_at', 'desc')->get();
 
             return response()->json([
@@ -43,7 +40,7 @@ class TournamentController extends Controller
                         'name' => $tournament->name,
                         'status' => $tournament->status,
                         'current_round' => $tournament->current_round,
-                        'max_groups' => $tournament->max_groups,
+                        'max_groups' => $tournament->max_groups ?? 4,
                         'groups' => $tournament->groups->map(function ($group) {
                             return [
                                 'id' => $group->id,
@@ -58,12 +55,12 @@ class TournamentController extends Controller
                                     ];
                                 }),
                                 'completion_time' => $group->completion_time,
-                                'score' => $group->score,
+                                'score' => $group->score ?? 0,
                                 'rank' => $group->rank,
                             ];
                         }),
                         'bracket' => $this->generateBracketStructure($tournament),
-                        'created_at' => $tournament->created_at->toISOString(),
+                        'created_at' => $tournament->created_at?->toISOString(),
                         'starts_at' => $tournament->starts_at?->toISOString(),
                     ];
                 })
@@ -81,6 +78,7 @@ class TournamentController extends Controller
             ], 500);
         }
     }
+
 
     public function create(Request $request)
     {
