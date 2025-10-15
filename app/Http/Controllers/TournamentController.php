@@ -144,7 +144,7 @@ class TournamentController extends Controller
     }
 
     /**
-     * ✅ RACE CONDITION SAFE: Join tournament
+     * ✅ RACE CONDITION SAFE: Join tournament (Fixed for 8 participants)
      */
     public function join(Request $request, $tournamentId)
     {
@@ -175,7 +175,7 @@ class TournamentController extends Controller
                     throw new \RuntimeException('Tournament is not accepting new participants');
                 }
 
-                // ✅ Atomic count with lock
+                // ✅ Atomic count with lock - Total participants across all groups
                 $totalParticipants = TournamentParticipant::whereHas('group', function ($query) use ($tournamentId) {
                     $query->where('tournament_id', $tournamentId)
                           ->lockForUpdate();
@@ -196,23 +196,43 @@ class TournamentController extends Controller
                     throw new \RuntimeException('You are already participating in this tournament');
                 }
 
-                // ✅ Lock and count groups atomically
-                $currentGroupsCount = $tournament->groups()->lockForUpdate()->count();
-
-                if ($currentGroupsCount >= self::MAX_GROUPS) {
-                    throw new \RuntimeException(sprintf('Maximum %d groups exceeded', self::MAX_GROUPS));
-                }
-
-                // ✅ Find or create group atomically
+                // ✅ Find existing group by name (allow joining existing groups)
                 $group = TournamentGroup::lockForUpdate()
                     ->where('tournament_id', $tournamentId)
                     ->where('name', $validated['group_name'])
                     ->first();
 
-                if (!$group) {
-                    // ✅ Double-check before create
+                if ($group) {
+                    // ✅ JOINING EXISTING GROUP
+
+                    // Lock and count participants in this group
+                    $currentParticipantsInGroup = $group->participants()->lockForUpdate()->count();
+
+                    if ($currentParticipantsInGroup >= self::MAX_PARTICIPANTS_PER_GROUP) {
+                        throw new \RuntimeException(sprintf('Group "%s" is full (%d/%d participants)',
+                            $group->name, $currentParticipantsInGroup, self::MAX_PARTICIPANTS_PER_GROUP));
+                    }
+
+                    // ✅ Check role availability with lock
+                    $roleExists = $group->participants()
+                        ->lockForUpdate()
+                        ->where('role', $validated['role'])
+                        ->exists();
+
+                    if ($roleExists) {
+                        $availableRole = $validated['role'] === 'defuser' ? 'expert' : 'defuser';
+                        throw new \RuntimeException(sprintf('Role "%s" is already taken in group "%s". Available role: "%s"',
+                            $validated['role'], $group->name, $availableRole));
+                    }
+                } else {
+                    // ✅ CREATING NEW GROUP
+
+                    // Check if we can create a new group
+                    $currentGroupsCount = $tournament->groups()->lockForUpdate()->count();
+
                     if ($currentGroupsCount >= self::MAX_GROUPS) {
-                        throw new \RuntimeException(sprintf('Cannot create new group. Maximum %d groups allowed', self::MAX_GROUPS));
+                        throw new \RuntimeException(sprintf('Cannot create new group. Maximum %d groups allowed. Please join an existing group.',
+                            self::MAX_GROUPS));
                     }
 
                     $group = TournamentGroup::create([
@@ -227,26 +247,6 @@ class TournamentController extends Controller
                         'group_id' => $group->id,
                         'group_name' => $group->name
                     ]);
-                }
-
-                // ✅ Lock and count participants in group
-                $currentParticipantsInGroup = $group->participants()->lockForUpdate()->count();
-
-                if ($currentParticipantsInGroup >= self::MAX_PARTICIPANTS_PER_GROUP) {
-                    throw new \RuntimeException(sprintf('Group "%s" is full (%d/%d participants)',
-                        $group->name, $currentParticipantsInGroup, self::MAX_PARTICIPANTS_PER_GROUP));
-                }
-
-                // ✅ Check role availability with lock
-                $roleExists = $group->participants()
-                    ->lockForUpdate()
-                    ->where('role', $validated['role'])
-                    ->exists();
-
-                if ($roleExists) {
-                    $availableRole = $validated['role'] === 'defuser' ? 'expert' : 'defuser';
-                    throw new \RuntimeException(sprintf('Role "%s" is already taken in group "%s". Available role: "%s"',
-                        $validated['role'], $group->name, $availableRole));
                 }
 
                 // ✅ Create participant
@@ -264,7 +264,7 @@ class TournamentController extends Controller
                     'user_id' => $userId,
                     'role' => $validated['role'],
                     'nickname' => $validated['nickname'],
-                    'participants_in_group' => $currentParticipantsInGroup + 1,
+                    'participants_in_group' => $group->participants()->count(),
                     'total_participants' => $totalParticipants + 1
                 ]);
 
@@ -272,8 +272,12 @@ class TournamentController extends Controller
                 $newParticipantsInGroup = $group->participants()->count();
                 $newTotalParticipants = $totalParticipants + 1;
 
-                // Check if group is ready
-                if ($newParticipantsInGroup >= self::MAX_PARTICIPANTS_PER_GROUP) {
+                // Check if group is ready (has 2 participants with both roles)
+                $groupRoles = $group->participants()->pluck('role')->toArray();
+                $hasDefuser = in_array('defuser', $groupRoles);
+                $hasExpert = in_array('expert', $groupRoles);
+
+                if ($newParticipantsInGroup >= self::MAX_PARTICIPANTS_PER_GROUP && $hasDefuser && $hasExpert) {
                     $group->update(['status' => 'ready']);
                     Log::info('Group is now ready', [
                         'group_id' => $group->id,
@@ -295,6 +299,10 @@ class TournamentController extends Controller
                     'max_participants' => self::TOTAL_MAX_PARTICIPANTS
                 ]);
 
+                // ✅ Tournament starts when all conditions met:
+                // - All 4 groups exist
+                // - All 4 groups are ready (2 participants each)
+                // - Total 8 participants
                 $canStart = $readyGroupsCount >= self::MAX_GROUPS &&
                            $totalGroupsCount >= self::MAX_GROUPS &&
                            $newTotalParticipants >= self::TOTAL_MAX_PARTICIPANTS;
