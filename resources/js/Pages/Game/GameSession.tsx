@@ -31,6 +31,7 @@ const CONFIG = {
   MAX_RETRY_ATTEMPTS: 3,
   MOBILE_BREAKPOINT: 768,
   DEBOUNCE_DELAY: 300,
+  TAB_CLOSE_DETECTION_DELAY: 300,
 } as const;
 
 const STATUS_CONFIG = {
@@ -405,7 +406,6 @@ const ErrorCard = memo(({ error, onRetry }: { error: string; onRetry: () => void
 
 ErrorCard.displayName = 'ErrorCard';
 
-// ✅ UPDATED: SessionHeader with Team Code Display
 const SessionHeader = memo(
   ({
     session,
@@ -424,7 +424,6 @@ const SessionHeader = memo(
     const statusConfig = STATUS_CONFIG[session.status as keyof typeof STATUS_CONFIG] || STATUS_CONFIG.waiting;
     const roleConfig = ROLE_CONFIG[currentRole as keyof typeof ROLE_CONFIG] || ROLE_CONFIG.observer;
 
-    // ✅ NEW: Copy to clipboard function
     const copyTeamCode = useCallback(() => {
       navigator.clipboard.writeText(session.team_code);
       toast.success('Kode tim berhasil disalin! 📋');
@@ -447,13 +446,11 @@ const SessionHeader = memo(
               </span>
             </div>
 
-            {/* ✅ UPDATED: Team Code Display with Copy Button */}
             <div className="text-center sm:text-left space-y-2 pt-8 sm:pt-0">
               <CardTitle className="text-amber-300 text-lg sm:text-2xl md:text-3xl dungeon-glow-text">
                 🎮 Game Session
               </CardTitle>
 
-              {/* ✅ NEW: Prominent Team Code Display */}
               <div className="flex flex-col sm:flex-row items-center sm:items-center gap-2 bg-stone-900/60 p-3 sm:p-4 rounded-lg border-2 border-amber-600 dungeon-crystal-glow">
                 <div className="flex-1 text-center sm:text-left">
                   <div className="text-xs sm:text-sm text-stone-400 mb-1">Kode Tim:</div>
@@ -462,7 +459,6 @@ const SessionHeader = memo(
                   </div>
                 </div>
 
-                {/* ✅ NEW: Copy Button */}
                 <motion.button
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
@@ -583,28 +579,52 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
   const finalizeRef = useRef(false);
 
   // ============================================
-  // MEMOIZED VALUES
+  // ✅ SOLUTION 5: MEMOIZED VALUES WITH SESSIONSTORAGE
   // ============================================
   const getCurrentRole = useCallback((): 'defuser' | 'expert' | 'host' | 'observer' => {
+    // ✅ Try to get from sessionStorage first (survives refresh)
+    const storageKey = `game_role_${sessionId}`;
+    const storedRole = sessionStorage.getItem(storageKey);
+
+    if (storedRole && ['defuser', 'expert', 'host'].includes(storedRole)) {
+      console.log('✅ Role restored from sessionStorage:', storedRole);
+      return storedRole as 'defuser' | 'expert' | 'host';
+    }
+
     const urlParams = new URLSearchParams(window.location.search);
     const urlRole = urlParams.get('role');
     if (urlRole && ['defuser', 'expert', 'host'].includes(urlRole)) {
+      // ✅ Store to sessionStorage for future use
+      sessionStorage.setItem(storageKey, urlRole);
       return urlRole as 'defuser' | 'expert' | 'host';
     }
     if (propRole && ['defuser', 'expert', 'host'].includes(propRole)) {
+      // ✅ Store to sessionStorage
+      sessionStorage.setItem(storageKey, propRole);
       return propRole;
     }
     const participants = gameState?.session?.participants || [];
     const userParticipant = participants.find((p) => p.user_id === auth?.user?.id);
     if (userParticipant?.role) {
+      // ✅ Store to sessionStorage
+      sessionStorage.setItem(storageKey, userParticipant.role);
       return userParticipant.role as 'defuser' | 'expert' | 'host';
     }
     return 'observer';
-  }, [auth?.user?.id, gameState?.session?.participants, propRole]);
+  }, [auth?.user?.id, gameState?.session?.participants, propRole, sessionId]);
 
   const currentRole = useMemo(() => getCurrentRole(), [getCurrentRole]);
   const participants = useMemo(() => gameState?.session?.participants || [], [gameState?.session?.participants]);
   const isValidSessionId = useMemo(() => sessionId && !isNaN(Number(sessionId)), [sessionId]);
+
+  // ✅ Store role when determined
+  useEffect(() => {
+    if (currentRole && currentRole !== 'observer') {
+      const storageKey = `game_role_${sessionId}`;
+      sessionStorage.setItem(storageKey, currentRole);
+      console.log('✅ Role persisted to sessionStorage:', currentRole);
+    }
+  }, [currentRole, sessionId]);
 
   // ============================================
   // FINALIZE SESSION FUNCTION
@@ -623,6 +643,10 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
       setIsFinalized(true);
       console.log('✅ Session finalized and history saved');
       toast.success('Riwayat permainan berhasil disimpan!');
+
+      // ✅ Clear role from sessionStorage after finalization
+      const storageKey = `game_role_${sessionId}`;
+      sessionStorage.removeItem(storageKey);
     } catch (error: any) {
       console.error('❌ Failed to finalize session:', error);
 
@@ -641,7 +665,7 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
         setIsFinalized(true);
       }
     }
-  }, [gameState?.session?.id]);
+  }, [gameState?.session?.id, sessionId]);
 
   // ============================================
   // CALLBACKS
@@ -812,27 +836,40 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
     };
   }, [loadGameState, isValidSessionId]);
 
+  // ✅ SOLUTION 2: VISIBILITYCHANGE + BEFOREUNLOAD
   useEffect(() => {
-    return () => {
-      if (
-        gameState?.session?.status === 'running' &&
-        !isFinalized &&
-        gameState?.session?.id
-      ) {
-        console.log('🚪 Component unmounting, finalizing session...');
-        gameApi.endSession(gameState.session.id).catch(err => {
-          console.error('❌ Failed to finalize on unmount:', err);
-        });
+    let tabClosing = false;
+    let closeTimeout: NodeJS.Timeout | null = null;
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        // Tab is hidden (might be closing or just switching tabs/refreshing)
+        tabClosing = true;
+        console.log('👁️ Tab hidden - potential close detected');
+
+        // Wait to see if tab actually closes
+        closeTimeout = setTimeout(() => {
+          tabClosing = false;
+          console.log('✅ Tab still alive - was just a refresh or tab switch');
+        }, CONFIG.TAB_CLOSE_DETECTION_DELAY);
+      } else if (document.visibilityState === 'visible') {
+        // Tab is visible again (user came back)
+        tabClosing = false;
+        if (closeTimeout) {
+          clearTimeout(closeTimeout);
+          closeTimeout = null;
+        }
+        console.log('✅ Tab visible again - continuing session');
       }
     };
-  }, [gameState?.session?.status, gameState?.session?.id, isFinalized]);
 
-  useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      // ✅ Only finalize if tab is actually closing (not just refreshing)
       if (
         gameState?.session?.status === 'running' &&
         !isFinalized &&
-        gameState?.session?.id
+        gameState?.session?.id &&
+        tabClosing // Only trigger if visibilitychange detected potential close
       ) {
         try {
           const xhr = new XMLHttpRequest();
@@ -846,19 +883,30 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
           }
 
           xhr.send();
-          console.log('🚪 Session finalized on page unload');
+          console.log('🚪 Session finalized on page close');
         } catch (err) {
           console.error('❌ Failed to finalize on beforeunload:', err);
         }
+      }
 
+      // ✅ Always show warning if game is running (even on refresh)
+      if (gameState?.session?.status === 'running') {
         e.preventDefault();
         e.returnValue = 'Permainan sedang berlangsung. Yakin ingin keluar?';
         return e.returnValue;
       }
     };
 
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      if (closeTimeout) {
+        clearTimeout(closeTimeout);
+      }
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
   }, [gameState?.session?.status, gameState?.session?.id, isFinalized]);
 
   useEffect(() => {
@@ -934,7 +982,6 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
   // RENDER FUNCTIONS
   // ============================================
 
-  // ✅ UPDATED: renderWaiting with Join Instructions
   const renderWaiting = () => (
     <motion.div variants={scaleIn} initial="initial" animate="animate" className="py-4 sm:py-6">
       <Card className="border-2 sm:border-4 border-amber-700 bg-gradient-to-b from-stone-900 to-amber-950 dungeon-card-glow">
@@ -955,7 +1002,6 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
               : 'Tim lengkap! Menunggu permainan dimulai...'}
           </p>
 
-          {/* ✅ NEW: Join Instructions */}
           {participants.length < CONFIG.MAX_PARTICIPANTS && (
             <Card className="bg-indigo-900/40 border-2 border-indigo-600 max-w-lg mx-auto mb-6 dungeon-card-glow">
               <CardContent className="p-4 sm:p-6">
@@ -1364,8 +1410,8 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
                   sessionId={session.id}
                   participants={getValidParticipants()}
                   role={getValidRole()}
-                  userId={auth?.user?.id}
-                  nickname={auth?.user?.name}
+                  userId={auth.user.id}
+                  nickname={auth.user.name}
                 />
               </motion.div>
             )}
