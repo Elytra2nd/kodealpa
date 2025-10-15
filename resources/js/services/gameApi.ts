@@ -1,4 +1,3 @@
-// resources/js/services/gameApi.ts
 import axios from 'axios';
 import type {
   Stage,
@@ -12,6 +11,7 @@ import type {
   TournamentCreateRequest
 } from '@/types/game';
 
+
 // Interface khusus untuk Voice Chat (tidak ada di game.ts)
 export interface VoiceChatSettings {
   enabled: boolean;
@@ -20,6 +20,7 @@ export interface VoiceChatSettings {
   noiseSuppression: boolean;
   autoGainControl: boolean;
 }
+
 
 // ✅ NEW: Interface untuk Tournament Cleanup Stats
 export interface TournamentCleanupStats {
@@ -55,6 +56,7 @@ export interface TournamentCleanupStats {
   };
 }
 
+
 // Create separate axios instance for CSRF calls (no baseURL prefix)
 const csrfAxios = axios.create({
   withCredentials: true,
@@ -62,6 +64,7 @@ const csrfAxios = axios.create({
     'X-Requested-With': 'XMLHttpRequest',
   }
 });
+
 
 // Create main API instance for other calls (with /api prefix)
 const api = axios.create({
@@ -74,6 +77,7 @@ const api = axios.create({
   withCredentials: true,
 });
 
+
 // Initialize CSRF Cookie using separate instance
 export const initializeCSRF = async (): Promise<void> => {
   try {
@@ -85,12 +89,14 @@ export const initializeCSRF = async (): Promise<void> => {
   }
 };
 
+
 // Get CSRF token from meta tag and set as default header
 const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
 if (token) {
   api.defaults.headers.common['X-CSRF-TOKEN'] = token;
   csrfAxios.defaults.headers.common['X-CSRF-TOKEN'] = token;
 }
+
 
 // Add response interceptor to handle CSRF token expiration
 api.interceptors.response.use(
@@ -145,6 +151,7 @@ api.interceptors.response.use(
   }
 );
 
+
 // Add request interceptor for debugging
 api.interceptors.request.use(
   (config) => {
@@ -156,6 +163,7 @@ api.interceptors.request.use(
     return Promise.reject(error);
   }
 );
+
 
 export const gameApi = {
   // Initialize CSRF before making authenticated requests
@@ -211,6 +219,24 @@ export const gameApi = {
   startSession: async (sessionId: number): Promise<GameSession> => {
     const response = await api.post(`/sessions/${sessionId}/start`);
     return response.data;
+  },
+
+  // ✅ NEW: End session for regular games (non-tournament)
+  endSession: async (sessionId: number): Promise<{
+    success: boolean;
+    session: GameSession;
+    message: string;
+  }> => {
+    try {
+      await initializeCSRF();
+      const response = await api.post(`/sessions/${sessionId}/end`);
+
+      console.log('🏁 Session ended:', response.data);
+      return response.data;
+    } catch (error: any) {
+      console.error('❌ Failed to end session:', error);
+      throw error;
+    }
   },
 
   getGameState: async (sessionId: number): Promise<GameState> => {
@@ -783,6 +809,7 @@ export const gameApi = {
     }
   },
 };
+
 
 // Export both instances for advanced usage
 export { api, csrfAxios };

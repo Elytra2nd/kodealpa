@@ -123,6 +123,7 @@ interface StageResult {
   attemptsRemaining?: number;
 }
 
+// ✅ FIXED: Updated to match StageConfig from game.ts
 interface MultiStageGameState {
   session: GameState['session'];
   puzzle: GameState['puzzle'];
@@ -130,9 +131,12 @@ interface MultiStageGameState {
     current?: number;
     total?: number;
     config?: {
-      title?: string;
-      timeLimit?: number;
-      maxAttempts?: number;
+      title: string;        // Required (not optional)
+      timeLimit: number;    // Required (not optional)
+      maxAttempts: number;  // Required (not optional)
+      maxHints?: number;
+      difficulty?: 'beginner' | 'intermediate' | 'advanced';
+      learningObjectives?: string[];
     };
     progress?: {
       completed?: number[];
@@ -539,9 +543,12 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
   const [showTransition, setShowTransition] = useState(false);
   const [stageResult, setStageResult] = useState<StageResult | null>(null);
   const [showVoiceChat, setShowVoiceChat] = useState(!isMobile);
-  const [isVoiceChatCollapsed, setIsVoiceChatCollapsed] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
+
+  // ✅ NEW: Finalization state
+  const [isFinalized, setIsFinalized] = useState(false);
+  const finalizeRef = useRef(false);
 
   // ============================================
   // MEMOIZED VALUES
@@ -564,10 +571,48 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
   }, [auth?.user?.id, gameState?.session?.participants, propRole]);
 
   const currentRole = useMemo(() => getCurrentRole(), [getCurrentRole]);
-
   const participants = useMemo(() => gameState?.session?.participants || [], [gameState?.session?.participants]);
-
   const isValidSessionId = useMemo(() => sessionId && !isNaN(Number(sessionId)), [sessionId]);
+
+  // ============================================
+  // ✅ NEW: FINALIZE SESSION FUNCTION
+  // ============================================
+  const finalizeSession = useCallback(async () => {
+    if (finalizeRef.current || !gameState?.session?.id) {
+      console.log('⚠️ Finalize skipped - already finalized or no session');
+      return;
+    }
+
+    // Prevent double finalization
+    finalizeRef.current = true;
+
+    try {
+      console.log('🏁 Finalizing session:', gameState.session.id);
+      await gameApi.endSession(gameState.session.id);
+      setIsFinalized(true);
+      console.log('✅ Session finalized and history saved');
+      toast.success('Riwayat permainan berhasil disimpan!');
+    } catch (error: any) {
+      console.error('❌ Failed to finalize session:', error);
+
+      // Only retry if not 404/403 (session might already be closed)
+      if (![404, 403].includes(error.response?.status)) {
+        toast.error('Gagal menyimpan riwayat. Mencoba lagi...', {
+          action: {
+            label: 'Coba Lagi',
+            onClick: () => {
+              finalizeRef.current = false;
+              finalizeSession();
+            }
+          },
+          duration: 10000,
+        });
+      } else {
+        // Session already ended or not found - mark as finalized anyway
+        setIsFinalized(true);
+      }
+    }
+  }, [gameState?.session?.id]);
 
   // ============================================
   // CALLBACKS
@@ -645,15 +690,24 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
     }
   }, [sessionId, loadGameState]);
 
+  // ✅ UPDATED: handleAttemptSubmit dengan finalisasi
   const handleAttemptSubmit = useCallback(
     async (inputValue: string) => {
       if (!gameState) return;
+
       try {
         const result = await gameApi.submitAttempt(gameState.session.id, gameState.puzzle.key, inputValue);
 
         if (result.stageComplete || result.gameComplete) {
           setStageResult(result);
           setShowTransition(true);
+
+          // ✅ KRITIS: Finalize saat game complete
+          if (result.gameComplete && !isFinalized) {
+            console.log('🎮 Game completed, triggering finalization...');
+            await finalizeSession();
+          }
+
           setTimeout(() => {
             setShowTransition(false);
             setStageResult(null);
@@ -678,7 +732,7 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
         setError(errorMessage);
       }
     },
-    [gameState, loadGameState]
+    [gameState, loadGameState, finalizeSession, isFinalized]
   );
 
   const handleGameStateUpdate = useCallback((updatedState: GameState) => {
@@ -702,9 +756,18 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
     setShowVoiceChat((prev) => !prev);
   }, []);
 
-  const handleToggleVoiceChatCollapse = useCallback(() => {
-    setIsVoiceChatCollapsed((prev) => !prev);
-  }, []);
+  // ✅ NEW: Helper functions for type-safe props
+  // Helper to get valid role for components that don't support 'observer'
+  const getValidRole = useCallback((): 'defuser' | 'expert' | 'host' => {
+    return currentRole === 'observer' ? 'host' : currentRole;
+  }, [currentRole]);
+
+  // Helper to filter participants with valid user_id
+  const getValidParticipants = useCallback(() => {
+    return participants.filter((p): p is typeof p & { user_id: number } =>
+      p.user_id !== undefined
+    );
+  }, [participants]);
 
   // ============================================
   // EFFECTS
@@ -725,6 +788,60 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
       }
     };
   }, [loadGameState, isValidSessionId]);
+
+  // ✅ NEW: Cleanup saat component unmount
+  useEffect(() => {
+    return () => {
+      // Finalize when user leaves the page if session is still running
+      if (
+        gameState?.session?.status === 'running' &&
+        !isFinalized &&
+        gameState?.session?.id
+      ) {
+        console.log('🚪 Component unmounting, finalizing session...');
+        gameApi.endSession(gameState.session.id).catch(err => {
+          console.error('❌ Failed to finalize on unmount:', err);
+        });
+      }
+    };
+  }, [gameState?.session?.status, gameState?.session?.id, isFinalized]);
+
+  // ✅ NEW: beforeunload handler untuk menutup tab/browser
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (
+        gameState?.session?.status === 'running' &&
+        !isFinalized &&
+        gameState?.session?.id
+      ) {
+        // Use synchronous XHR for beforeunload (fetch/axios may not complete)
+        try {
+          const xhr = new XMLHttpRequest();
+          xhr.open('POST', `/api/sessions/${gameState.session.id}/end`, false);
+          xhr.setRequestHeader('Content-Type', 'application/json');
+          xhr.setRequestHeader('Accept', 'application/json');
+
+          const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+          if (csrfToken) {
+            xhr.setRequestHeader('X-CSRF-TOKEN', csrfToken);
+          }
+
+          xhr.send();
+          console.log('🚪 Session finalized on page unload');
+        } catch (err) {
+          console.error('❌ Failed to finalize on beforeunload:', err);
+        }
+
+        // Show browser confirmation dialog
+        e.preventDefault();
+        e.returnValue = 'Permainan sedang berlangsung. Yakin ingin keluar?';
+        return e.returnValue;
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [gameState?.session?.status, gameState?.session?.id, isFinalized]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -802,292 +919,57 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
   // ============================================
   // RENDER FUNCTIONS
   // ============================================
-  const renderWaiting = () => (
-    <motion.div variants={staggerContainer} initial="initial" animate="animate" className="grid lg:grid-cols-4 gap-4 sm:gap-6">
-      <div className="lg:col-span-3">
-        <motion.div variants={fadeInUp}>
-          <Card className="border-2 sm:border-4 border-amber-700 bg-gradient-to-b from-stone-900 to-stone-800 dungeon-card-glow">
-            <CardContent className="p-4 sm:p-6 md:p-8">
-              <div className="text-center">
-                <motion.div
-                  ref={setRuneRef(0)}
-                  className="text-5xl sm:text-6xl mb-4 dungeon-icon-glow mx-auto inline-block"
-                  animate={{ y: [-10, 10, -10] }}
-                  transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
-                  aria-hidden="true"
-                >
-                  🗝️
-                </motion.div>
-                <h2 className="text-xl sm:text-2xl font-semibold text-amber-300 mb-4 dungeon-glow-text">Persiapan Ujian Multi-Tahap</h2>
-                {participants.length < CONFIG.MAX_PARTICIPANTS ? (
-                  <motion.div variants={fadeInUp}>
-                    <p className="text-stone-300 mb-6 sm:mb-8 text-sm sm:text-base md:text-lg">
-                      Menunggu rekan seperjuangan bergabung... ({participants.length}/{CONFIG.MAX_PARTICIPANTS})
-                    </p>
-                    <Card className="max-w-md mx-auto border-2 border-blue-700 bg-gradient-to-b from-stone-900 to-blue-950 dungeon-card-glow-blue">
-                      <CardContent className="p-4 sm:p-6">
-                        <p className="text-blue-200 font-medium mb-3 text-sm sm:text-base">Ajak teman untuk menembus dungeon ini!</p>
-                        <div className="rounded-xl p-3 border border-blue-700 bg-stone-950 text-center">
-                          <p className="text-xs sm:text-sm text-blue-300 mb-1">Kode guild:</p>
-                          <p className="font-mono font-bold text-base sm:text-lg text-blue-200">{session.team_code}</p>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </motion.div>
-                ) : (
-                  <motion.div variants={fadeInUp}>
-                    <p className="text-stone-300 mb-6 sm:mb-8 text-sm sm:text-base md:text-lg">
-                      Tim lengkap! Saatnya memulai ujian 3 tahap. ({participants.length}/{CONFIG.MAX_PARTICIPANTS})
-                    </p>
-                    <Card className="max-w-2xl mx-auto mb-6 border-2 border-emerald-700 bg-gradient-to-b from-stone-900 to-emerald-950 dungeon-card-glow-green">
-                      <CardHeader className="pb-3">
-                        <CardTitle className="text-emerald-300 dungeon-glow-text text-base sm:text-lg">Gambaran Misi</CardTitle>
-                      </CardHeader>
-                      <CardContent className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs sm:text-sm">
-                        {[
-                          { stage: 1, title: 'Analisis Pola' },
-                          { stage: 2, title: 'Analisis Kode' },
-                          { stage: 3, title: 'Navigasi Pohon' },
-                        ].map(({ stage, title }) => (
-                          <motion.div key={stage} variants={fadeInUp} className="text-center">
-                            <motion.div
-                              ref={setCrystalRef(stage - 1)}
-                              className="bg-emerald-900/40 rounded-full w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center mx-auto mb-2 border border-emerald-700 dungeon-crystal-glow"
-                              whileHover={{ scale: 1.1 }}
-                              whileTap={{ scale: 0.95 }}
-                            >
-                              <span className="font-bold text-emerald-300">{stage}</span>
-                            </motion.div>
-                            <p className="font-medium text-emerald-200">{title}</p>
-                          </motion.div>
-                        ))}
-                      </CardContent>
-                    </Card>
-                    <motion.div whileTap={{ scale: 0.95 }}>
-                      <Button
-                        onClick={handleStartSession}
-                        className="bg-gradient-to-r from-amber-600 via-amber-700 to-red-600 hover:from-amber-500 hover:via-amber-600 hover:to-red-500 text-stone-900 font-bold py-3 sm:py-4 px-6 sm:px-8 md:px-12 text-sm sm:text-base md:text-lg dungeon-button-glow touch-manipulation"
-                      >
-                        <span className="mr-2" aria-hidden="true">
-                          ⚔️
-                        </span>
-                        Mulai Ujian Multi-Tahap
-                      </Button>
-                    </motion.div>
-                  </motion.div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </motion.div>
-      </div>
 
-      {/* Sidebar Voice Chat */}
-      {!isMobile && (
-        <AnimatePresence>
-          {showVoiceChat && (
-            <motion.div
-              className="lg:col-span-1"
-              initial={{ x: 100, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: 100, opacity: 0 }}
-              transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-            >
-              <div className="space-y-4 sticky top-4">
-                <VoiceChat
-                  sessionId={sessionId}
-                  userId={auth?.user?.id}
-                  nickname={auth?.user?.name || 'Unknown'}
-                  role={['defuser', 'expert', 'host'].includes(currentRole) ? (currentRole as 'defuser' | 'expert' | 'host') : 'host'}
-                  participants={participants.map((p: any) => ({
-                    id: p.id,
-                    user_id: p.user_id ?? 0,
-                    nickname: p.nickname,
-                    role: p.role,
-                  }))}
-                />
-              </div>
+  const renderWaiting = () => (
+    <motion.div variants={scaleIn} initial="initial" animate="animate" className="py-4 sm:py-6">
+      <Card className="border-2 sm:border-4 border-amber-700 bg-gradient-to-b from-stone-900 to-amber-950 dungeon-card-glow">
+        <CardContent className="p-6 sm:p-8 text-center">
+          <motion.div
+            ref={setRuneRef(0)}
+            className="text-5xl sm:text-6xl mb-4 dungeon-icon-glow mx-auto inline-block"
+            animate={{ rotate: [0, 360] }}
+            transition={{ duration: 3, repeat: Infinity, ease: 'linear' }}
+            aria-hidden="true"
+          >
+            🎲
+          </motion.div>
+          <h2 className="text-2xl sm:text-3xl font-bold text-amber-200 mb-4 dungeon-glow-text">Menunggu Pemain</h2>
+          <p className="text-amber-100 mb-6 text-sm sm:text-base md:text-lg">
+            {participants.length < CONFIG.MAX_PARTICIPANTS
+              ? 'Menunggu pemain lain bergabung...'
+              : 'Tim lengkap! Menunggu permainan dimulai...'}
+          </p>
+          {currentRole === 'host' && participants.length >= CONFIG.MAX_PARTICIPANTS && (
+            <motion.div whileTap={{ scale: 0.95 }}>
+              <Button
+                onClick={handleStartSession}
+                className="bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-stone-900 font-bold dungeon-button-glow touch-manipulation"
+              >
+                Mulai Tantangan
+              </Button>
             </motion.div>
           )}
-        </AnimatePresence>
-      )}
+        </CardContent>
+      </Card>
     </motion.div>
   );
 
   const renderRunning = () => (
-    <motion.div variants={staggerContainer} initial="initial" animate="animate" className="space-y-4 sm:space-y-6">
-      {stage && (
-        <motion.div variants={fadeInUp}>
-          <StageProgress
-            current={stage.current || 1}
-            total={stage.total || 3}
-            completed={stage.progress?.completed || []}
-            totalScore={stage.progress?.totalScore || 0}
-          />
-        </motion.div>
-      )}
-
-      <motion.div variants={fadeInUp}>
-        <Card className="border-2 sm:border-4 border-amber-700 bg-gradient-to-r from-stone-900 via-stone-800 to-amber-950 dungeon-card-glow">
-          <CardContent className="p-4 sm:p-6 text-center">
-            <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-amber-300 mb-3 dungeon-glow-text">
-              {stage?.config?.title || puzzle?.title || 'Tahap Saat Ini'}
-            </h1>
-            <div className="flex flex-wrap justify-center gap-3 sm:gap-4 md:gap-6 text-xs sm:text-sm text-stone-200">
-              <span className="flex items-center">
-                <span className="mr-1 sm:mr-2" aria-hidden="true">
-                  ⏱️
-                </span>
-                Batas: {Math.floor((stage?.config?.timeLimit || 0) / 60)}m
-              </span>
-              <span className="flex items-center">
-                <span className="mr-1 sm:mr-2" aria-hidden="true">
-                  🎯
-                </span>
-                Max: {stage?.config?.maxAttempts || 'N/A'}
-              </span>
-              <span className="flex items-center">
-                <span className="mr-1 sm:mr-2" aria-hidden="true">
-                  📊
-                </span>
-                Tahap: {stage?.current || 1}/{stage?.total || 3}
-              </span>
-            </div>
-          </CardContent>
-        </Card>
-      </motion.div>
-
-      <div className="grid lg:grid-cols-4 gap-4 sm:gap-6">
-        <motion.div
-          variants={fadeInUp}
-          className={`transition-all duration-300 ${showVoiceChat && !isVoiceChatCollapsed && !isMobile ? 'lg:col-span-3' : 'lg:col-span-4'}`}
-        >
-          <Card className="border-2 border-stone-700 bg-gradient-to-b from-stone-900 to-stone-800">
-            <CardContent className="p-3 sm:p-4 md:p-6">
-              <GamePlay
-                gameState={gameState as GameState}
-                role={['defuser', 'expert', 'host'].includes(currentRole) ? (currentRole as 'defuser' | 'expert' | 'host') : undefined}
-                onGameStateUpdate={handleGameStateUpdate}
-                onSubmitAttempt={handleAttemptSubmit}
-              />
-            </CardContent>
-          </Card>
-        </motion.div>
-
-        <AnimatePresence>
-          {showVoiceChat && !isVoiceChatCollapsed && !isMobile && (
-            <motion.div
-              className="lg:col-span-1"
-              initial={{ x: 100, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: 100, opacity: 0 }}
-              transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-            >
-              <div className="sticky top-4">
-                <VoiceChat
-                  sessionId={sessionId}
-                  userId={auth?.user?.id}
-                  nickname={auth?.user?.name || 'Unknown'}
-                  role={['defuser', 'expert', 'host'].includes(currentRole) ? (currentRole as 'defuser' | 'expert' | 'host') : 'host'}
-                  participants={participants.map((p: any) => ({
-                    id: p.id,
-                    user_id: p.user_id ?? 0,
-                    nickname: p.nickname,
-                    role: p.role,
-                  }))}
-                />
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-
-      {/* Voice Chat FAB */}
-      <div className="fixed bottom-4 right-4 z-50 flex flex-col space-y-2">
-        {!showVoiceChat && (
-          <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} whileTap={{ scale: 0.9 }}>
-            <Button
-              onClick={handleToggleVoiceChat}
-              className="bg-indigo-700 hover:bg-indigo-600 rounded-full p-3 shadow-lg dungeon-button-glow touch-manipulation"
-              title="Tampilkan Voice Chat"
-              aria-label="Tampilkan Voice Chat"
-            >
-              <span className="text-xl" aria-hidden="true">
-                🎙️
-              </span>
-            </Button>
-          </motion.div>
-        )}
-        {showVoiceChat && !isMobile && (
-          <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} whileTap={{ scale: 0.9 }}>
-            <Button
-              onClick={handleToggleVoiceChatCollapse}
-              variant="outline"
-              className="border-stone-600 text-stone-200 hover:bg-stone-800/60 rounded-full p-2 shadow-lg touch-manipulation"
-              title={isVoiceChatCollapsed ? 'Perluas Voice Chat' : 'Ciutkan Voice Chat'}
-              aria-label={isVoiceChatCollapsed ? 'Perluas Voice Chat' : 'Ciutkan Voice Chat'}
-            >
-              <span className="text-base" aria-hidden="true">
-                {isVoiceChatCollapsed ? '📱' : '📵'}
-              </span>
-            </Button>
-          </motion.div>
-        )}
-        {showVoiceChat && (
-          <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} whileTap={{ scale: 0.9 }}>
-            <Button
-              onClick={handleToggleVoiceChat}
-              className="bg-red-700 hover:bg-red-600 rounded-full p-2 shadow-lg touch-manipulation"
-              title="Sembunyikan Voice Chat"
-              aria-label="Sembunyikan Voice Chat"
-            >
-              <span className="text-base" aria-hidden="true">
-                ✕
-              </span>
-            </Button>
-          </motion.div>
-        )}
-      </div>
-
-      {/* Mobile Voice Chat Modal */}
-      <AnimatePresence>
-        {showVoiceChat && isMobile && (
-          <motion.div className="fixed inset-0 z-50 bg-stone-900" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <div className="h-full flex flex-col">
-              <div className="flex items-center justify-between p-4 border-b border-gray-700">
-                <h3 className="text-xl font-bold text-green-300 flex items-center gap-2 dungeon-glow-text">
-                  <span aria-hidden="true">🎙️</span>
-                  Voice Chat
-                </h3>
-                <motion.button
-                  whileTap={{ scale: 0.9 }}
-                  onClick={handleToggleVoiceChat}
-                  className="bg-red-600/30 hover:bg-red-600/50 text-red-300 px-4 py-2 rounded-lg touch-manipulation font-semibold"
-                  aria-label="Tutup voice chat"
-                >
-                  ✕ Tutup
-                </motion.button>
-              </div>
-              <div className="flex-1 overflow-auto p-4">
-                <VoiceChat
-                  sessionId={sessionId}
-                  userId={auth?.user?.id}
-                  nickname={auth?.user?.name || 'Unknown'}
-                  role={['defuser', 'expert', 'host'].includes(currentRole) ? (currentRole as 'defuser' | 'expert' | 'host') : 'host'}
-                  participants={participants.map((p: any) => ({
-                    id: p.id,
-                    user_id: p.user_id ?? 0,
-                    nickname: p.nickname,
-                    role: p.role,
-                  }))}
-                />
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+    <motion.div variants={scaleIn} initial="initial" animate="animate" className="py-4 sm:py-6">
+        <GamePlay
+        gameState={{
+            session,
+            puzzle,
+            stage,
+            serverTime: gameState.serverTime
+        }}
+        role={getValidRole()}
+        onGameStateUpdate={handleGameStateUpdate}
+        onSubmitAttempt={handleAttemptSubmit}
+        submitting={false}
+        />
     </motion.div>
-  );
+    );
 
   const renderSuccess = () => (
     <motion.div variants={scaleIn} initial="initial" animate="animate" className="py-4 sm:py-6">
@@ -1134,19 +1016,25 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
             <motion.div whileTap={{ scale: 0.95 }}>
               <Button
-                onClick={() => router.visit('/game', { preserveState: false })}
+                onClick={async () => {
+                  await finalizeSession();
+                  router.visit('/game', { preserveState: false });
+                }}
                 className="w-full sm:w-auto bg-indigo-700 hover:bg-indigo-600 touch-manipulation"
               >
-                Main Lagi
+                🎮 Main Lagi
               </Button>
             </motion.div>
             <motion.div whileTap={{ scale: 0.95 }}>
               <Button
-                onClick={() => router.visit('/dashboard', { preserveState: false })}
+                onClick={async () => {
+                  await finalizeSession();
+                  router.visit('/dashboard', { preserveState: false });
+                }}
                 variant="outline"
                 className="w-full sm:w-auto border-stone-600 text-stone-200 hover:bg-stone-800/60 touch-manipulation"
               >
-                Kembali ke Dasbor
+                📊 Lihat Riwayat
               </Button>
             </motion.div>
           </div>
@@ -1200,19 +1088,25 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
             <motion.div whileTap={{ scale: 0.95 }}>
               <Button
-                onClick={() => router.visit('/game', { preserveState: false })}
+                onClick={async () => {
+                  await finalizeSession();
+                  router.visit('/game', { preserveState: false });
+                }}
                 className="w-full sm:w-auto bg-indigo-700 hover:bg-indigo-600 touch-manipulation"
               >
-                Coba Lagi
+                🔄 Coba Lagi
               </Button>
             </motion.div>
             <motion.div whileTap={{ scale: 0.95 }}>
               <Button
-                onClick={() => router.visit('/dashboard', { preserveState: false })}
+                onClick={async () => {
+                  await finalizeSession();
+                  router.visit('/dashboard', { preserveState: false });
+                }}
                 variant="outline"
                 className="w-full sm:w-auto border-stone-600 text-stone-200 hover:bg-stone-800/60 touch-manipulation"
               >
-                Kembali ke Dasbor
+                📊 Kembali ke Dasbor
               </Button>
             </motion.div>
           </div>
@@ -1222,49 +1116,87 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
   );
 
   const renderPaused = () => (
-    <motion.div variants={scaleIn} initial="initial" animate="animate">
+    <motion.div variants={scaleIn} initial="initial" animate="animate" className="py-4 sm:py-6">
       <Card className="border-2 sm:border-4 border-amber-700 bg-gradient-to-b from-stone-900 to-amber-950 dungeon-card-glow">
         <CardContent className="p-6 sm:p-8 text-center">
-          <div className="text-4xl sm:text-5xl mb-4" aria-hidden="true">
+          <motion.div
+            ref={setRuneRef(2)}
+            className="text-5xl sm:text-6xl mb-4 mx-auto inline-block"
+            animate={{ scale: [1, 1.05, 1] }}
+            transition={{ duration: 1.5, repeat: Infinity }}
+            aria-hidden="true"
+          >
             ⏸️
-          </div>
-          <h2 className="text-xl sm:text-2xl font-bold text-amber-300 mb-4 dungeon-glow-text">Permainan Dijeda</h2>
-          <p className="text-stone-300 mb-6 text-sm sm:text-base">Sesi dijeda sementara, tunggu hingga dilanjutkan kembali.</p>
-          <motion.div whileTap={{ scale: 0.95 }}>
-            <Button onClick={() => window.location.reload()} className="bg-amber-700 hover:bg-amber-600 touch-manipulation">
-              Segarkan Status
-            </Button>
           </motion.div>
+          <h2 className="text-2xl sm:text-3xl font-bold text-amber-200 mb-4 dungeon-glow-text">Permainan Dijeda</h2>
+          <p className="text-amber-100 mb-6 text-sm sm:text-base md:text-lg">
+            Sesi sedang dijeda. Menunggu untuk dilanjutkan...
+          </p>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+            <motion.div whileTap={{ scale: 0.95 }}>
+              <Button
+                onClick={() => router.visit('/game', { preserveState: false })}
+                variant="outline"
+                className="w-full sm:w-auto border-stone-600 text-stone-200 hover:bg-stone-800/60 touch-manipulation"
+              >
+                Kembali ke Lobi
+              </Button>
+            </motion.div>
+          </div>
         </CardContent>
       </Card>
     </motion.div>
   );
 
   const renderEnded = () => (
-    <motion.div variants={scaleIn} initial="initial" animate="animate">
-      <Card className="border-2 sm:border-4 border-stone-700 bg-gradient-to-b from-stone-900 to-stone-800">
+    <motion.div variants={scaleIn} initial="initial" animate="animate" className="py-4 sm:py-6">
+      <Card className="border-2 sm:border-4 border-stone-700 bg-gradient-to-b from-stone-900 to-stone-800 dungeon-card-glow">
         <CardContent className="p-6 sm:p-8 text-center">
-          <div className="text-4xl sm:text-5xl mb-4" aria-hidden="true">
+          <motion.div
+            ref={setRuneRef(3)}
+            className="text-5xl sm:text-6xl mb-4 mx-auto inline-block"
+            animate={{ opacity: [1, 0.5, 1] }}
+            transition={{ duration: 2, repeat: Infinity }}
+            aria-hidden="true"
+          >
             🏁
-          </div>
-          <h2 className="text-xl sm:text-2xl font-bold text-stone-200 mb-4 dungeon-glow-text">Sesi Berakhir</h2>
-          <p className="text-stone-300 mb-6 text-sm sm:text-base">Terima kasih telah berpartisipasi di ujian dungeon ini.</p>
+          </motion.div>
+          <h2 className="text-2xl sm:text-3xl font-bold text-stone-200 mb-4 dungeon-glow-text">Sesi Berakhir</h2>
+          <p className="text-stone-300 mb-6 text-sm sm:text-base md:text-lg">
+            Sesi permainan telah berakhir.
+          </p>
+          {stage && (
+            <div className="mb-6">
+              <StageProgress
+                current={stage.current || 1}
+                total={stage.total || 3}
+                completed={stage.progress?.completed || []}
+                totalScore={stage.progress?.totalScore || 0}
+              />
+            </div>
+          )}
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
             <motion.div whileTap={{ scale: 0.95 }}>
               <Button
-                onClick={() => router.visit('/game', { preserveState: false })}
+                onClick={async () => {
+                  await finalizeSession();
+                  router.visit('/game', { preserveState: false });
+                }}
                 className="w-full sm:w-auto bg-indigo-700 hover:bg-indigo-600 touch-manipulation"
               >
-                Ujian Baru
+                Mulai Sesi Baru
               </Button>
             </motion.div>
             <motion.div whileTap={{ scale: 0.95 }}>
               <Button
-                onClick={() => router.visit('/dashboard', { preserveState: false })}
+                onClick={async () => {
+                  await finalizeSession();
+                  router.visit('/dashboard', { preserveState: false });
+                }}
                 variant="outline"
                 className="w-full sm:w-auto border-stone-600 text-stone-200 hover:bg-stone-800/60 touch-manipulation"
               >
-                Dasbor
+                📊 Kembali ke Dasbor
               </Button>
             </motion.div>
           </div>
@@ -1274,19 +1206,28 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
   );
 
   const renderUnknown = () => (
-    <motion.div variants={scaleIn} initial="initial" animate="animate">
-      <Card className="border-2 sm:border-4 border-red-700 bg-gradient-to-b from-stone-900 to-red-950 dungeon-card-glow-red">
+    <motion.div variants={scaleIn} initial="initial" animate="animate" className="py-4 sm:py-6">
+      <Card className="border-2 sm:border-4 border-purple-700 bg-gradient-to-b from-stone-900 to-purple-950 dungeon-card-glow">
         <CardContent className="p-6 sm:p-8 text-center">
-          <div className="text-4xl sm:text-5xl mb-4" aria-hidden="true">
+          <motion.div
+            ref={setTorchRef(3)}
+            className="text-5xl sm:text-6xl mb-4 mx-auto inline-block"
+            animate={{ rotate: [0, 10, -10, 0], scale: [1, 1.1, 1] }}
+            transition={{ duration: 2, repeat: Infinity }}
+            aria-hidden="true"
+          >
             ❓
-          </div>
-          <h2 className="text-lg sm:text-xl font-bold text-red-200 mb-4 dungeon-glow-text">Status Tidak Dikenal</h2>
-          <p className="text-red-100 mb-6 text-sm sm:text-base">
-            Status: <code className="bg-red-900/40 px-2 py-1 rounded border border-red-700 text-xs sm:text-sm">{session.status}</code>
+          </motion.div>
+          <h2 className="text-2xl sm:text-3xl font-bold text-purple-200 mb-4 dungeon-glow-text">Status Tidak Dikenal</h2>
+          <p className="text-purple-100 mb-6 text-sm sm:text-base md:text-lg">
+            Status sesi: <span className="font-bold">{session.status}</span>
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
             <motion.div whileTap={{ scale: 0.95 }}>
-              <Button onClick={() => window.location.reload()} className="w-full sm:w-auto bg-red-700 hover:bg-red-600 touch-manipulation">
+              <Button
+                onClick={handleRetry}
+                className="w-full sm:w-auto bg-purple-700 hover:bg-purple-600 touch-manipulation"
+              >
                 Muat Ulang
               </Button>
             </motion.div>
@@ -1324,141 +1265,94 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
     }
   };
 
+  // ============================================
+  // MAIN RENDER
+  // ============================================
   return (
     <Authenticated>
       <Head title={`Tantangan Multi-Tahap - ${session.team_code}`} />
-      <div className="min-h-screen bg-gradient-to-br from-stone-900 via-stone-800 to-amber-950 py-4 sm:py-6 md:py-8 pb-20 sm:pb-8">
-        <div className="max-w-7xl mx-auto px-3 sm:px-4 space-y-4 sm:space-y-6">
-          {/* Header Sesi */}
-          <SessionHeader session={session} currentRole={currentRole} participants={participants} showVoiceChat={showVoiceChat} isMobile={isMobile} />
+      <div className="min-h-screen bg-gradient-to-br from-stone-900 via-stone-800 to-amber-950 py-4 sm:py-6 md:py-8 px-4">
+        <div className="max-w-6xl mx-auto">
+          <motion.div
+            variants={staggerContainer}
+            initial="initial"
+            animate="animate"
+            className="space-y-4 sm:space-y-6"
+          >
+            <SessionHeader
+              session={session}
+              currentRole={currentRole}
+              participants={participants}
+              showVoiceChat={showVoiceChat}
+              isMobile={isMobile}
+            />
 
-          {/* Konten utama */}
-          {renderGameContent()}
+            {session.status === 'waiting' && (
+              <motion.div variants={fadeInUp}>
+                <Card className="border-2 sm:border-4 border-stone-700 bg-gradient-to-br from-stone-900/80 to-stone-800/60">
+                  <CardHeader>
+                    <CardTitle className="text-amber-300 text-base sm:text-lg md:text-xl dungeon-glow-text">
+                      Anggota Tim
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {participants.length === 0 ? (
+                      <p className="text-stone-400 text-center py-4 text-sm sm:text-base">Belum ada pemain yang bergabung</p>
+                    ) : (
+                      <AnimatePresence mode="popLayout">
+                        {participants.map((participant) => (
+                          <ParticipantCard
+                            key={participant.id}
+                            participant={participant}
+                            currentRole={currentRole}
+                            isCurrentUser={participant.user_id === auth?.user?.id}
+                          />
+                        ))}
+                      </AnimatePresence>
+                    )}
+                  </CardContent>
+                </Card>
+              </motion.div>
+            )}
 
-          {/* Daftar peserta */}
-          {!['success', 'failed', 'ended'].includes(session.status) && (
-            <motion.div variants={fadeInUp}>
-              <Card className="border-2 border-stone-700 bg-gradient-to-b from-stone-900 to-stone-800">
-                <CardHeader>
-                  <CardTitle className="text-stone-200 text-sm sm:text-base md:text-lg flex items-center gap-2">
-                    <span aria-hidden="true">👥</span> Anggota Tim ({participants.length})
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <motion.div variants={staggerContainer} initial="initial" animate="animate" className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {participants.map((participant: any, index: number) => (
-                      <ParticipantCard
-                        key={participant.id || index}
-                        participant={participant}
-                        currentRole={currentRole}
-                        isCurrentUser={participant.user_id === auth?.user?.id}
-                      />
-                    ))}
-                  </motion.div>
-                </CardContent>
-              </Card>
-            </motion.div>
-          )}
+            {renderGameContent()}
+
+            {/* ✅ FIXED: VoiceChat props - removed isCollapsed and onToggleCollapse */}
+            {showVoiceChat && session.status === 'running' && (
+              <motion.div
+                variants={fadeInUp}
+                initial="initial"
+                animate="animate"
+                className={isMobile ? 'fixed bottom-0 left-0 right-0 z-50' : ''}
+              >
+                <VoiceChat
+                  sessionId={session.id}
+                  participants={getValidParticipants()}
+                  role={getValidRole()}
+                  userId={auth?.user?.id}
+                  nickname={auth?.user?.name}
+                />
+              </motion.div>
+            )}
+
+            {isMobile && !showVoiceChat && session.status === 'running' && (
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                className="fixed bottom-4 right-4 z-40"
+              >
+                <Button
+                  onClick={handleToggleVoiceChat}
+                  className="rounded-full w-14 h-14 bg-indigo-700 hover:bg-indigo-600 shadow-lg"
+                  aria-label="Toggle Voice Chat"
+                >
+                  🎙️
+                </Button>
+              </motion.div>
+            )}
+          </motion.div>
         </div>
       </div>
-
-      {/* Styles */}
-      <style>{`
-        /* Icon Glow */
-        .dungeon-icon-glow {
-          filter: drop-shadow(0 0 6px rgba(251, 191, 36, 0.5))
-                  drop-shadow(0 0 12px rgba(251, 191, 36, 0.3));
-        }
-
-        /* Torch Flicker */
-        .dungeon-torch-flicker {
-          display: inline-block;
-        }
-
-        /* Crystal Glow */
-        .dungeon-crystal-glow {
-          box-shadow: 0 0 20px rgba(180,83,9,0.6), 0 0 40px rgba(251,191,36,0.25);
-        }
-
-        /* Card Glows */
-        .dungeon-card-glow {
-          box-shadow: 0 0 30px rgba(251, 191, 36, 0.4), 0 0 60px rgba(251, 191, 36, 0.2);
-        }
-
-        .dungeon-card-glow-green {
-          box-shadow: 0 0 30px rgba(34, 197, 94, 0.4), 0 0 60px rgba(34, 197, 94, 0.2);
-        }
-
-        .dungeon-card-glow-blue {
-          box-shadow: 0 0 30px rgba(59, 130, 246, 0.4), 0 0 60px rgba(59, 130, 246, 0.2);
-        }
-
-        .dungeon-card-glow-red {
-          box-shadow: 0 0 30px rgba(239, 68, 68, 0.4), 0 0 60px rgba(239, 68, 68, 0.2);
-        }
-
-        /* Button Glow */
-        .dungeon-button-glow:hover {
-          box-shadow: 0 0 20px rgba(251, 191, 36, 0.5), 0 0 40px rgba(251, 191, 36, 0.3);
-        }
-
-        /* Text Glow */
-        .dungeon-glow-text {
-          text-shadow: 0 0 20px rgba(251, 191, 36, 0.6), 0 0 40px rgba(251, 191, 36, 0.4);
-        }
-
-        /* Pulse Animation */
-        .dungeon-pulse {
-          animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-        }
-
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.5; }
-        }
-
-        /* Loading skeleton pulse */
-        .skeleton-pulse {
-          animation: skeleton-pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-        }
-
-        @keyframes skeleton-pulse {
-          0%, 100% {
-            opacity: 0.4;
-          }
-          50% {
-            opacity: 1;
-          }
-        }
-
-        /* Smooth transitions */
-        * {
-          transition-property: color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, filter, backdrop-filter;
-          transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-        }
-
-        /* Focus styles */
-        *:focus-visible {
-          outline: 2px solid rgba(251, 191, 36, 0.8);
-          outline-offset: 2px;
-        }
-
-        /* Touch optimization */
-        .touch-manipulation {
-          touch-action: manipulation;
-          -webkit-tap-highlight-color: transparent;
-        }
-
-        /* Responsive Adjustments */
-        @media (max-width: 768px) {
-          .dungeon-card-glow,
-          .dungeon-card-glow-green,
-          .dungeon-card-glow-blue,
-          .dungeon-card-glow-red {
-            box-shadow: 0 0 15px rgba(251, 191, 36, 0.3), 0 0 30px rgba(251, 191, 36, 0.15);
-          }
-        }
-      `}</style>
     </Authenticated>
   );
 }
