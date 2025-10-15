@@ -105,7 +105,7 @@ class TournamentController extends Controller
                     'max_completion_time' => self::TOURNAMENT_TIME_LIMIT * 60,
                     'max_groups' => self::MAX_GROUPS,
                     'max_participants_per_group' => self::MAX_PARTICIPANTS_PER_GROUP,
-                ],
+                ]
             ]);
 
             Log::info('Tournament created successfully', [
@@ -143,6 +143,9 @@ class TournamentController extends Controller
         }
     }
 
+    /**
+     * ✅ RACE CONDITION SAFE: Join tournament
+     */
     public function join(Request $request, $tournamentId)
     {
         $validated = $request->validate([
@@ -163,214 +166,196 @@ class TournamentController extends Controller
                 ], 409);
             }
 
-            DB::beginTransaction();
+            // ✅ Use atomic transaction with proper locking
+            return DB::transaction(function () use ($tournamentId, $validated, $userId, $lock) {
+                // ✅ Lock tournament first
+                $tournament = Tournament::lockForUpdate()->findOrFail($tournamentId);
 
-            $tournament = Tournament::lockForUpdate()->findOrFail($tournamentId);
-
-            if ($tournament->status !== 'waiting') {
-                throw new \InvalidArgumentException('Tournament is not accepting new participants');
-            }
-
-            $totalParticipants = TournamentParticipant::whereHas('group', function ($query) use ($tournamentId) {
-                $query->where('tournament_id', $tournamentId);
-            })->count();
-
-            if ($totalParticipants >= self::TOTAL_MAX_PARTICIPANTS) {
-                throw new \InvalidArgumentException(
-                    sprintf('Tournament is full (%d/%d participants)',
-                        $totalParticipants,
-                        self::TOTAL_MAX_PARTICIPANTS
-                    )
-                );
-            }
-
-            $existingParticipation = TournamentParticipant::whereHas('group', function ($query) use ($tournamentId) {
-                $query->where('tournament_id', $tournamentId);
-            })->where('user_id', $userId)->exists();
-
-            if ($existingParticipation) {
-                throw new \InvalidArgumentException('You are already participating in this tournament');
-            }
-
-            $currentGroupsCount = $tournament->groups()->lockForUpdate()->count();
-            if ($currentGroupsCount > self::MAX_GROUPS) {
-                throw new \InvalidArgumentException(
-                    sprintf('Maximum groups (%d) exceeded', self::MAX_GROUPS)
-                );
-            }
-
-            $group = TournamentGroup::lockForUpdate()
-                ->where('tournament_id', $tournamentId)
-                ->where('name', $validated['group_name'])
-                ->first();
-
-            if (!$group) {
-                if ($currentGroupsCount >= self::MAX_GROUPS) {
-                    throw new \InvalidArgumentException(
-                        sprintf('Cannot create new group. Maximum %d groups allowed', self::MAX_GROUPS)
-                    );
+                if ($tournament->status !== 'waiting') {
+                    throw new \RuntimeException('Tournament is not accepting new participants');
                 }
 
-                $group = TournamentGroup::create([
-                    'tournament_id' => $tournamentId,
-                    'name' => $validated['group_name'],
-                    'status' => 'waiting',
-                    'session_id' => null,
+                // ✅ Atomic count with lock
+                $totalParticipants = TournamentParticipant::whereHas('group', function ($query) use ($tournamentId) {
+                    $query->where('tournament_id', $tournamentId)
+                          ->lockForUpdate();
+                })->lockForUpdate()->count();
+
+                if ($totalParticipants >= self::TOTAL_MAX_PARTICIPANTS) {
+                    throw new \RuntimeException(sprintf('Tournament is full (%d/%d participants)',
+                        $totalParticipants, self::TOTAL_MAX_PARTICIPANTS));
+                }
+
+                // ✅ Check existing participation with lock
+                $existingParticipation = TournamentParticipant::whereHas('group', function ($query) use ($tournamentId) {
+                    $query->where('tournament_id', $tournamentId)
+                          ->lockForUpdate();
+                })->where('user_id', $userId)->exists();
+
+                if ($existingParticipation) {
+                    throw new \RuntimeException('You are already participating in this tournament');
+                }
+
+                // ✅ Lock and count groups atomically
+                $currentGroupsCount = $tournament->groups()->lockForUpdate()->count();
+
+                if ($currentGroupsCount >= self::MAX_GROUPS) {
+                    throw new \RuntimeException(sprintf('Maximum %d groups exceeded', self::MAX_GROUPS));
+                }
+
+                // ✅ Find or create group atomically
+                $group = TournamentGroup::lockForUpdate()
+                    ->where('tournament_id', $tournamentId)
+                    ->where('name', $validated['group_name'])
+                    ->first();
+
+                if (!$group) {
+                    // ✅ Double-check before create
+                    if ($currentGroupsCount >= self::MAX_GROUPS) {
+                        throw new \RuntimeException(sprintf('Cannot create new group. Maximum %d groups allowed', self::MAX_GROUPS));
+                    }
+
+                    $group = TournamentGroup::create([
+                        'tournament_id' => $tournamentId,
+                        'name' => $validated['group_name'],
+                        'status' => 'waiting',
+                        'session_id' => null,
+                    ]);
+
+                    Log::info('New tournament group created', [
+                        'tournament_id' => $tournamentId,
+                        'group_id' => $group->id,
+                        'group_name' => $group->name
+                    ]);
+                }
+
+                // ✅ Lock and count participants in group
+                $currentParticipantsInGroup = $group->participants()->lockForUpdate()->count();
+
+                if ($currentParticipantsInGroup >= self::MAX_PARTICIPANTS_PER_GROUP) {
+                    throw new \RuntimeException(sprintf('Group "%s" is full (%d/%d participants)',
+                        $group->name, $currentParticipantsInGroup, self::MAX_PARTICIPANTS_PER_GROUP));
+                }
+
+                // ✅ Check role availability with lock
+                $roleExists = $group->participants()
+                    ->lockForUpdate()
+                    ->where('role', $validated['role'])
+                    ->exists();
+
+                if ($roleExists) {
+                    $availableRole = $validated['role'] === 'defuser' ? 'expert' : 'defuser';
+                    throw new \RuntimeException(sprintf('Role "%s" is already taken in group "%s". Available role: "%s"',
+                        $validated['role'], $group->name, $availableRole));
+                }
+
+                // ✅ Create participant
+                $participant = TournamentParticipant::create([
+                    'tournament_group_id' => $group->id,
+                    'user_id' => $userId,
+                    'role' => $validated['role'],
+                    'nickname' => $validated['nickname'],
+                    'joined_at' => now(),
                 ]);
 
-                Log::info('New tournament group created', [
+                Log::info('Participant joined tournament', [
                     'tournament_id' => $tournamentId,
                     'group_id' => $group->id,
-                    'group_name' => $group->name
-                ]);
-            }
-
-            $currentParticipantsInGroup = $group->participants()->lockForUpdate()->count();
-
-            if ($currentParticipantsInGroup >= self::MAX_PARTICIPANTS_PER_GROUP) {
-                throw new \InvalidArgumentException(
-                    sprintf('Group "%s" is full (%d/%d participants)',
-                        $group->name,
-                        $currentParticipantsInGroup,
-                        self::MAX_PARTICIPANTS_PER_GROUP
-                    )
-                );
-            }
-
-            $roleExists = $group->participants()
-                ->lockForUpdate()
-                ->where('role', $validated['role'])
-                ->exists();
-
-            if ($roleExists) {
-                $availableRole = $validated['role'] === 'defuser' ? 'expert' : 'defuser';
-                throw new \InvalidArgumentException(
-                    sprintf('Role "%s" is already taken in group "%s". Available role: %s',
-                        $validated['role'],
-                        $group->name,
-                        $availableRole
-                    )
-                );
-            }
-
-            $participant = TournamentParticipant::create([
-                'tournament_group_id' => $group->id,
-                'user_id' => $userId,
-                'role' => $validated['role'],
-                'nickname' => $validated['nickname'],
-                'joined_at' => now(),
-            ]);
-
-            Log::info('Participant joined tournament', [
-                'tournament_id' => $tournamentId,
-                'group_id' => $group->id,
-                'user_id' => $userId,
-                'role' => $validated['role'],
-                'nickname' => $validated['nickname'],
-                'participants_in_group' => $currentParticipantsInGroup + 1,
-                'total_participants' => $totalParticipants + 1
-            ]);
-
-            $newParticipantsInGroup = $group->participants()->count();
-            $newTotalParticipants = $totalParticipants + 1;
-
-            if ($newParticipantsInGroup >= self::MAX_PARTICIPANTS_PER_GROUP) {
-                $group->update(['status' => 'ready']);
-
-                Log::info('Group is now ready', [
-                    'group_id' => $group->id,
-                    'group_name' => $group->name,
-                    'participants' => $newParticipantsInGroup
-                ]);
-            }
-
-            $readyGroupsCount = $tournament->groups()
-                ->where('status', 'ready')
-                ->count();
-
-            $totalGroupsCount = $tournament->groups()->count();
-
-            Log::info('Tournament status check', [
-                'tournament_id' => $tournamentId,
-                'ready_groups' => $readyGroupsCount,
-                'total_groups' => $totalGroupsCount,
-                'total_participants' => $newTotalParticipants,
-                'max_groups' => self::MAX_GROUPS,
-                'max_participants' => self::TOTAL_MAX_PARTICIPANTS
-            ]);
-
-            $canStart = (
-                $readyGroupsCount == self::MAX_GROUPS &&
-                $totalGroupsCount == self::MAX_GROUPS &&
-                $newTotalParticipants == self::TOTAL_MAX_PARTICIPANTS
-            );
-
-            if ($canStart) {
-                Log::info('All conditions met - Starting qualification round', [
-                    'tournament_id' => $tournamentId
+                    'user_id' => $userId,
+                    'role' => $validated['role'],
+                    'nickname' => $validated['nickname'],
+                    'participants_in_group' => $currentParticipantsInGroup + 1,
+                    'total_participants' => $totalParticipants + 1
                 ]);
 
-                $this->startQualificationRound($tournament);
-            }
+                // ✅ Recount after insert (within same transaction)
+                $newParticipantsInGroup = $group->participants()->count();
+                $newTotalParticipants = $totalParticipants + 1;
 
-            DB::commit();
-            $lock->release();
+                // Check if group is ready
+                if ($newParticipantsInGroup >= self::MAX_PARTICIPANTS_PER_GROUP) {
+                    $group->update(['status' => 'ready']);
+                    Log::info('Group is now ready', [
+                        'group_id' => $group->id,
+                        'group_name' => $group->name,
+                        'participants' => $newParticipantsInGroup
+                    ]);
+                }
 
-            $tournament->refresh();
-            $group->refresh();
+                // Check if tournament can start
+                $readyGroupsCount = $tournament->groups()->where('status', 'ready')->count();
+                $totalGroupsCount = $tournament->groups()->count();
 
-            return response()->json([
-                'success' => true,
-                'group' => $group->load('participants.user'),
-                'tournament' => $tournament->load('groups.participants.user'),
-                'tournament_status' => [
+                Log::info('Tournament status check', [
+                    'tournament_id' => $tournamentId,
                     'ready_groups' => $readyGroupsCount,
                     'total_groups' => $totalGroupsCount,
                     'total_participants' => $newTotalParticipants,
-                    'max_participants' => self::TOTAL_MAX_PARTICIPANTS,
-                    'can_start' => $canStart,
-                    'started' => $tournament->status !== 'waiting'
-                ],
-                'message' => 'Successfully joined tournament'
-            ], 200);
-        } catch (ModelNotFoundException $e) {
-            DB::rollBack();
-            optional($lock)->release();
+                    'max_groups' => self::MAX_GROUPS,
+                    'max_participants' => self::TOTAL_MAX_PARTICIPANTS
+                ]);
 
+                $canStart = $readyGroupsCount >= self::MAX_GROUPS &&
+                           $totalGroupsCount >= self::MAX_GROUPS &&
+                           $newTotalParticipants >= self::TOTAL_MAX_PARTICIPANTS;
+
+                if ($canStart) {
+                    Log::info('All conditions met - Starting qualification round', [
+                        'tournament_id' => $tournamentId
+                    ]);
+                    $this->startQualificationRound($tournament);
+                }
+
+                $lock->release();
+
+                $tournament->refresh();
+                $group->refresh();
+
+                return response()->json([
+                    'success' => true,
+                    'group' => $group->load('participants.user'),
+                    'tournament' => $tournament->load('groups.participants.user'),
+                    'tournament_status' => [
+                        'ready_groups' => $readyGroupsCount,
+                        'total_groups' => $totalGroupsCount,
+                        'total_participants' => $newTotalParticipants,
+                        'max_participants' => self::TOTAL_MAX_PARTICIPANTS,
+                        'can_start' => $canStart,
+                        'started' => $tournament->status !== 'waiting',
+                    ],
+                    'message' => 'Successfully joined tournament'
+                ], 200);
+            });
+
+        } catch (ModelNotFoundException $e) {
+            optional($lock)->release();
             Log::warning('Tournament not found', [
                 'tournament_id' => $tournamentId,
                 'user_id' => $userId
             ]);
-
             return response()->json([
                 'success' => false,
                 'message' => 'Tournament not found'
             ], 404);
-        } catch (\InvalidArgumentException $e) {
-            DB::rollBack();
+        } catch (\RuntimeException $e) {
             optional($lock)->release();
-
             Log::info('Tournament join validation failed', [
                 'tournament_id' => $tournamentId,
                 'user_id' => $userId,
                 'reason' => $e->getMessage()
             ]);
-
             return response()->json([
                 'success' => false,
                 'message' => $e->getMessage()
             ], 400);
         } catch (\Exception $e) {
-            DB::rollBack();
             optional($lock)->release();
-
             Log::error('Tournament join failed', [
                 'tournament_id' => $tournamentId,
                 'user_id' => $userId,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
-
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to join tournament. Please try again.'
@@ -424,7 +409,7 @@ class TournamentController extends Controller
 
                 $gameState = [
                     'session' => $session->load('participants', 'attempts'),
-                    'puzzle' => $puzzle ?: [],
+                    'puzzle' => $puzzle ?? [],
                     'stage' => $stage,
                     'serverTime' => now()->toISOString()
                 ];
@@ -504,52 +489,52 @@ class TournamentController extends Controller
         try {
             $groups = $tournament->groups()->with('participants')->get();
 
-            if ($groups->count() != self::MAX_GROUPS) {
-                throw new \RuntimeException(
-                    sprintf('Cannot start tournament: Expected %d groups, got %d',
-                        self::MAX_GROUPS,
-                        $groups->count()
-                    )
-                );
+            if ($groups->count() !== self::MAX_GROUPS) {
+                throw new \RuntimeException(sprintf(
+                    'Cannot start tournament: Expected %d groups, got %d',
+                    self::MAX_GROUPS,
+                    $groups->count()
+                ));
             }
 
-            $totalParticipants = $groups->sum(function($group) {
+            $totalParticipants = $groups->sum(function ($group) {
                 return $group->participants->count();
             });
 
-            if ($totalParticipants != self::TOTAL_MAX_PARTICIPANTS) {
-                throw new \RuntimeException(
-                    sprintf('Cannot start tournament: Expected %d participants, got %d',
-                        self::TOTAL_MAX_PARTICIPANTS,
-                        $totalParticipants
-                    )
-                );
+            if ($totalParticipants !== self::TOTAL_MAX_PARTICIPANTS) {
+                throw new \RuntimeException(sprintf(
+                    'Cannot start tournament: Expected %d participants, got %d',
+                    self::TOTAL_MAX_PARTICIPANTS,
+                    $totalParticipants
+                ));
             }
 
             foreach ($groups as $group) {
                 $participantCount = $group->participants->count();
 
-                if ($participantCount != self::MAX_PARTICIPANTS_PER_GROUP) {
-                    throw new \RuntimeException(
-                        sprintf('Group "%s" has %d participants, expected %d',
-                            $group->name,
-                            $participantCount,
-                            self::MAX_PARTICIPANTS_PER_GROUP
-                        )
-                    );
+                if ($participantCount !== self::MAX_PARTICIPANTS_PER_GROUP) {
+                    throw new \RuntimeException(sprintf(
+                        'Group "%s" has %d participants, expected %d',
+                        $group->name,
+                        $participantCount,
+                        self::MAX_PARTICIPANTS_PER_GROUP
+                    ));
                 }
 
                 $roles = $group->participants->pluck('role')->toArray();
                 if (!in_array('defuser', $roles) || !in_array('expert', $roles)) {
-                    throw new \RuntimeException(
-                        sprintf('Group "%s" must have both defuser and expert roles', $group->name)
-                    );
+                    throw new \RuntimeException(sprintf(
+                        'Group "%s" must have both defuser and expert roles',
+                        $group->name
+                    ));
                 }
 
                 if ($group->status !== 'ready') {
-                    throw new \RuntimeException(
-                        sprintf('Group "%s" is not ready (status: %s)', $group->name, $group->status)
-                    );
+                    throw new \RuntimeException(sprintf(
+                        'Group "%s" is not ready (status: %s)',
+                        $group->name,
+                        $group->status
+                    ));
                 }
             }
 
@@ -590,7 +575,7 @@ class TournamentController extends Controller
                     'status' => 'running',
                     'started_at' => now(),
                     'stage_started_at' => now(),
-                    'ends_at' => now()->addMinutes(self::TOURNAMENT_TIME_LIMIT)
+                    'ends_at' => now()->addMinutes(self::TOURNAMENT_TIME_LIMIT),
                 ]);
             }
 
@@ -650,7 +635,7 @@ class TournamentController extends Controller
             return response()->json([
                 'success' => true,
                 'group' => $group,
-                'tournament' => $tournament->fresh(['groups', 'matches'])
+                'tournament' => $tournament->fresh('groups', 'matches')
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
@@ -668,12 +653,10 @@ class TournamentController extends Controller
 
     private function checkRoundCompletion(Tournament $tournament)
     {
-        $completedGroups = $tournament->groups()
-            ->where('status', 'completed')
-            ->get();
+        $completedGroups = $tournament->groups()->where('status', 'completed')->get();
 
         if ($tournament->status === 'qualification') {
-            if ($completedGroups->count() == self::MAX_GROUPS) {
+            if ($completedGroups->count() >= self::MAX_GROUPS) {
                 $this->processQualificationResults($tournament);
             }
         } elseif ($tournament->status === 'semifinals') {
@@ -681,7 +664,7 @@ class TournamentController extends Controller
                 ->whereIn('status', ['playing', 'ready'])
                 ->count();
 
-            if ($activeSemifinalGroups == 0) {
+            if ($activeSemifinalGroups === 0) {
                 $this->processSemifinalResults($tournament);
             }
         } elseif ($tournament->status === 'finals') {
@@ -910,11 +893,9 @@ class TournamentController extends Controller
 
         $attemptCount = 0;
         try {
-            $attemptCount = $session->attempts()->count();
+            $attemptCount = $session->attempts->count();
         } catch (\Exception $e) {
-            Log::warning('Could not get attempt count', [
-                'session_id' => $session->id
-            ]);
+            Log::warning('Could not get attempt count', ['session_id' => $session->id]);
         }
 
         $attemptPenalty = max(0, ($attemptCount - 3) * 50);
@@ -922,14 +903,14 @@ class TournamentController extends Controller
         return max(100, $baseScore + $timeBonus - $attemptPenalty);
     }
 
-    private function generateBracketStructure(Tournament $tournament)
+    private function generateBracketStructure(Tournament $tournament): array
     {
         $brackets = [];
 
         $brackets[] = [
             'round' => 1,
             'name' => 'Qualification',
-            'groups' => $tournament->groups->take(4)->map(function ($group) {
+            'groups' => $tournament->groups()->take(4)->map(function ($group) {
                 return [
                     'id' => $group->id,
                     'name' => $group->name,
@@ -944,7 +925,7 @@ class TournamentController extends Controller
             $brackets[] = [
                 'round' => 2,
                 'name' => 'Semifinals',
-                'groups' => $tournament->groups
+                'groups' => $tournament->groups()
                     ->where('status', '!=', 'eliminated')
                     ->take(3)
                     ->values(),
@@ -955,9 +936,9 @@ class TournamentController extends Controller
             $brackets[] = [
                 'round' => 3,
                 'name' => 'Finals',
-                'groups' => $tournament->groups
+                'groups' => $tournament->groups()
                     ->whereIn('status', ['playing', 'completed', 'champion'])
-                    ->where('rank', '<=', 2)
+                    ->whereIn('rank', [1, 2])
                     ->values(),
             ];
         }
@@ -1000,9 +981,7 @@ class TournamentController extends Controller
     public function leaderboard($id)
     {
         try {
-            $tournament = Tournament::with([
-                'groups.participants.user'
-            ])->findOrFail($id);
+            $tournament = Tournament::with('groups.participants.user')->findOrFail($id);
 
             $leaderboard = $tournament->groups()
                 ->orderBy('rank', 'asc')
@@ -1049,6 +1028,9 @@ class TournamentController extends Controller
         }
     }
 
+    /**
+     * ✅ RACE CONDITION SAFE: Leave tournament
+     */
     public function leave(Request $request, $tournamentId)
     {
         $lockKey = "tournament:leave:{$tournamentId}:" . auth()->id();
@@ -1062,64 +1044,58 @@ class TournamentController extends Controller
                 ], 409);
             }
 
-            DB::beginTransaction();
+            return DB::transaction(function () use ($tournamentId, $lock) {
+                $tournament = Tournament::lockForUpdate()->findOrFail($tournamentId);
 
-            $tournament = Tournament::lockForUpdate()->findOrFail($tournamentId);
+                if ($tournament->status !== 'waiting') {
+                    throw new \RuntimeException('Cannot leave tournament that has already started');
+                }
 
-            if ($tournament->status !== 'waiting') {
-                throw new \InvalidArgumentException('Cannot leave tournament that has already started');
-            }
+                $participant = TournamentParticipant::whereHas('group', function ($query) use ($tournamentId) {
+                    $query->where('tournament_id', $tournamentId);
+                })->where('user_id', auth()->id())->first();
 
-            $participant = TournamentParticipant::whereHas('group', function ($query) use ($tournamentId) {
-                $query->where('tournament_id', $tournamentId);
-            })->where('user_id', auth()->id())->first();
+                if (!$participant) {
+                    throw new \RuntimeException('You are not participating in this tournament');
+                }
 
-            if (!$participant) {
-                throw new \InvalidArgumentException('You are not participating in this tournament');
-            }
+                $group = $participant->group;
+                $participant->delete();
 
-            $group = $participant->group;
-            $participant->delete();
+                if ($group->participants()->count() === 0) {
+                    $group->delete();
+                } else {
+                    $group->update(['status' => 'waiting']);
+                }
 
-            if ($group->participants()->count() == 0) {
-                $group->delete();
-            } else {
-                $group->update(['status' => 'waiting']);
-            }
+                Log::info('User left tournament', [
+                    'tournament_id' => $tournamentId,
+                    'user_id' => auth()->id(),
+                    'group_deleted' => $group->participants()->count() === 0
+                ]);
 
-            Log::info('User left tournament', [
-                'tournament_id' => $tournamentId,
-                'user_id' => auth()->id(),
-                'group_deleted' => $group->participants()->count() == 0
-            ]);
+                $lock->release();
 
-            DB::commit();
-            $lock->release();
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Successfully left tournament'
+                ]);
+            });
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Successfully left tournament'
-            ]);
         } catch (ModelNotFoundException $e) {
-            DB::rollBack();
             optional($lock)->release();
-
             return response()->json([
                 'success' => false,
                 'message' => 'Tournament not found'
             ], 404);
-        } catch (\InvalidArgumentException $e) {
-            DB::rollBack();
+        } catch (\RuntimeException $e) {
             optional($lock)->release();
-
             return response()->json([
                 'success' => false,
                 'message' => $e->getMessage()
             ], 400);
         } catch (\Exception $e) {
-            DB::rollBack();
             optional($lock)->release();
-
             Log::error('Failed to leave tournament', [
                 'tournament_id' => $tournamentId,
                 'user_id' => auth()->id(),

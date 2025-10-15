@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
 
 class Tournament extends Model
 {
@@ -243,7 +244,7 @@ class Tournament extends Model
 
     /*
     |--------------------------------------------------------------------------
-    | Query Methods
+    | Query Methods (Race Condition Safe)
     |--------------------------------------------------------------------------
     */
 
@@ -253,6 +254,124 @@ class Tournament extends Model
     public function isFull(): bool
     {
         return $this->groups()->count() >= $this->max_groups;
+    }
+
+    /**
+     * ✅ RACE CONDITION SAFE: Check if user can join tournament
+     * Uses pessimistic locking to prevent concurrent access issues
+     */
+    public function canUserJoin(int $userId): bool
+    {
+        return DB::transaction(function () use ($userId) {
+            // ✅ Lock tournament row to prevent concurrent reads
+            $tournament = self::where('id', $this->id)
+                ->lockForUpdate()
+                ->first();
+
+            if (!$tournament || $tournament->status !== 'waiting') {
+                return false;
+            }
+
+            // ✅ Lock and count groups atomically
+            $currentGroupsCount = TournamentGroup::where('tournament_id', $this->id)
+                ->lockForUpdate()
+                ->count();
+
+            if ($currentGroupsCount >= $this->max_groups) {
+                Log::info('Tournament join rejected: full', [
+                    'tournament_id' => $this->id,
+                    'user_id' => $userId,
+                    'current_groups' => $currentGroupsCount,
+                    'max_groups' => $this->max_groups,
+                ]);
+                return false;
+            }
+
+            // ✅ Check existing participation
+            $existingParticipation = TournamentParticipant::whereHas('group', function ($query) {
+                $query->where('tournament_id', $this->id)
+                      ->lockForUpdate();
+            })->where('user_id', $userId)->exists();
+
+            if ($existingParticipation) {
+                Log::info('Tournament join rejected: already participating', [
+                    'tournament_id' => $this->id,
+                    'user_id' => $userId,
+                ]);
+                return false;
+            }
+
+            return true;
+        });
+    }
+
+    /**
+     * ✅ RACE CONDITION SAFE: Join tournament
+     * Atomic operation with retry mechanism
+     */
+    public function joinTournament(int $userId, string $groupName, int $maxRetries = 3): ?TournamentGroup
+    {
+        $retryCount = 0;
+
+        while ($retryCount < $maxRetries) {
+            try {
+                return DB::transaction(function () use ($userId, $groupName) {
+                    // ✅ Double-check with lock
+                    if (!$this->canUserJoin($userId)) {
+                        throw new \RuntimeException('Cannot join tournament: full or already joined');
+                    }
+
+                    // ✅ Create group atomically
+                    $group = TournamentGroup::create([
+                        'tournament_id' => $this->id,
+                        'name' => $groupName,
+                        'status' => 'waiting',
+                    ]);
+
+                    // ✅ Create participant
+                    TournamentParticipant::create([
+                        'tournament_group_id' => $group->id,
+                        'user_id' => $userId,
+                        'role' => 'leader',
+                    ]);
+
+                    Log::info('User successfully joined tournament', [
+                        'tournament_id' => $this->id,
+                        'user_id' => $userId,
+                        'group_id' => $group->id,
+                        'group_name' => $groupName,
+                        'groups_count' => $this->groups()->count(),
+                    ]);
+
+                    return $group->fresh();
+                });
+
+            } catch (\Exception $e) {
+                $retryCount++;
+
+                Log::warning('Tournament join attempt failed', [
+                    'tournament_id' => $this->id,
+                    'user_id' => $userId,
+                    'attempt' => $retryCount,
+                    'max_retries' => $maxRetries,
+                    'error' => $e->getMessage(),
+                ]);
+
+                if ($retryCount >= $maxRetries) {
+                    Log::error('Tournament join failed after max retries', [
+                        'tournament_id' => $this->id,
+                        'user_id' => $userId,
+                        'error' => $e->getMessage(),
+                    ]);
+                    throw $e;
+                }
+
+                // ✅ Exponential backoff: 100ms, 200ms, 400ms
+                usleep(pow(2, $retryCount) * 100000);
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -317,27 +436,6 @@ class Tournament extends Model
         }
 
         return $brackets;
-    }
-
-    /**
-     * Check if user can join tournament
-     */
-    public function canUserJoin(int $userId): bool
-    {
-        if ($this->status !== 'waiting') {
-            return false;
-        }
-
-        if ($this->groups()->count() >= $this->max_groups) {
-            return false;
-        }
-
-        // Check if user is already participating
-        $existingParticipation = TournamentParticipant::whereHas('group', function ($query) {
-            $query->where('tournament_id', $this->id);
-        })->where('user_id', $userId)->exists();
-
-        return !$existingParticipation;
     }
 
     /**
