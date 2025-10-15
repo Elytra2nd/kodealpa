@@ -7,25 +7,13 @@ use Inertia\Middleware;
 
 class HandleInertiaRequests extends Middleware
 {
-    /**
-     * The root template that's loaded on the first page visit.
-     */
     protected $rootView = 'app';
 
-    /**
-     * Determines the current asset version.
-     *
-     * ✅ PENTING: Return null untuk disable version checking
-     * Ini mengatasi 409 conflict issues
-     */
     public function version(Request $request): ?string
     {
-        return null;
+        return null; // Disable version checking
     }
 
-    /**
-     * Define the props that are shared by default.
-     */
     public function share(Request $request): array
     {
         return [
@@ -42,6 +30,8 @@ class HandleInertiaRequests extends Middleware
                 'success' => fn () => $request->session()->get('success'),
                 'error' => fn () => $request->session()->get('error'),
             ],
+            // ✅ TAMBAHKAN INI - Share CSRF token
+            'csrf_token' => csrf_token(),
         ];
     }
 }
