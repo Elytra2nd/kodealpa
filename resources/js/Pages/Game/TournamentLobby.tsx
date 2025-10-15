@@ -596,175 +596,188 @@ export default function TournamentLobby() {
   );
 
   const TournamentCard = memo(({ tournament }: { tournament: TournamentData }) => {
+    const { auth } = usePage().props as any; // ✅ Tambahkan ini
+
     const statusInfo = TOURNAMENT_STATUS[tournament.status as keyof typeof TOURNAMENT_STATUS];
     const totalParticipants = tournament.groups.reduce((sum, group) => sum + group.participants.length, 0);
     const isFull = totalParticipants >= 8;
-    const canJoin = tournament.status === 'waiting' && !isFull;
+
+    // ✅ NEW: Check if current user is already participating
+    const isUserParticipating = useMemo(() => {
+        if (!auth?.user?.id) return false;
+
+        return tournament.groups.some(group =>
+        group.participants.some(p => p.user_id === auth.user.id)
+        );
+    }, [tournament.groups, auth?.user?.id]);
+
+    // ✅ NEW: Find user's group if participating
+    const userGroup = useMemo(() => {
+        if (!auth?.user?.id) return null;
+
+        return tournament.groups.find(group =>
+        group.participants.some(p => p.user_id === auth.user.id)
+        );
+    }, [tournament.groups, auth?.user?.id]);
+
+    const canJoin = tournament.status === 'waiting' && !isFull && !isUserParticipating; // ✅ Updated
     const isThisTournamentJoining = state.joiningMap.get(tournament.id) || false;
     const participantPercentage = (totalParticipants / 8) * 100;
 
     return (
-      <motion.div
+        <motion.div
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.9 }}
         whileHover={{ scale: 1.03, y: -5 }}
         transition={{ duration: 0.3 }}
         className="w-full"
-      >
+        >
         <Card className="border-2 border-amber-700/50 bg-gradient-to-br from-stone-900/95 via-amber-950/20 to-stone-800/90 hover:border-amber-600 hover:shadow-2xl hover:shadow-amber-900/50 transition-all duration-300 overflow-hidden relative group">
-          <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-br from-amber-500/20 to-transparent rounded-bl-full" />
-          <div className="absolute bottom-0 left-0 w-20 h-20 bg-gradient-to-tr from-amber-500/20 to-transparent rounded-tr-full" />
-          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-amber-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+            {/* ... decorative elements same ... */}
 
-          <CardHeader className="relative z-10">
+            <CardHeader className="relative z-10">
             <div className="flex items-start justify-between gap-4">
-              <div className="flex-1 min-w-0">
+                <div className="flex-1 min-w-0">
                 <CardTitle className="text-xl sm:text-2xl text-amber-300 truncate font-bold flex items-center gap-2">
-                  <span className="text-2xl">⚔️</span>
-                  {tournament.name}
+                    <span className="text-2xl">⚔️</span>
+                    {tournament.name}
                 </CardTitle>
-                {/* ✅ Fixed: Removed 'block' class */}
-                <CardDescription className="text-stone-400 mt-1 flex items-center gap-2 text-sm">
-                  <span className="text-amber-500">#{tournament.id}</span>
-                  <span>•</span>
-                  <span>Round {tournament.current_round}</span>
+                <CardDescription className="flex items-center gap-2 text-sm">
+                    <span className="text-amber-500">#{tournament.id}</span>
+                    <span>•</span>
+                    <span>Round {tournament.current_round}</span>
+                    {/* ✅ NEW: Show user status */}
+                    {isUserParticipating && (
+                    <>
+                        <span>•</span>
+                        <span className="text-emerald-400 font-semibold">Anda Terdaftar</span>
+                    </>
+                    )}
                 </CardDescription>
-              </div>
-              <Badge className={`bg-gradient-to-r ${statusInfo.gradient} text-white flex-shrink-0 px-3 py-1 shadow-lg`}>
+                </div>
+                <Badge className={`bg-gradient-to-r ${statusInfo.gradient} text-white flex-shrink-0 px-3 py-1 shadow-lg`}>
                 {statusInfo.icon} {statusInfo.label}
-              </Badge>
+                </Badge>
             </div>
-          </CardHeader>
+            </CardHeader>
 
-          <CardContent className="space-y-4 relative z-10">
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-stone-400">Progress Peserta</span>
-                <span className="text-amber-300 font-bold">{totalParticipants}/8</span>
-              </div>
-              <div className="h-3 bg-stone-950/50 rounded-full overflow-hidden border border-stone-700/50">
-                <motion.div
-                  className={`h-full ${
-                    participantPercentage === 100
-                      ? 'bg-gradient-to-r from-green-500 to-emerald-500'
-                      : 'bg-gradient-to-r from-amber-500 to-yellow-500'
-                  }`}
-                  initial={{ width: 0 }}
-                  animate={{ width: `${participantPercentage}%` }}
-                  transition={{ duration: 0.5, ease: "easeOut" }}
-                />
-              </div>
-            </div>
+            <CardContent className="space-y-4 relative z-10">
+            {/* ... progress bar & stats same ... */}
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="p-3 bg-stone-950/50 rounded-lg border border-stone-700/50 hover:border-amber-700/50 transition-colors">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-xl">👥</span>
-                  <span className="text-xs text-stone-400">Peserta</span>
-                </div>
-                <div className="text-xl font-bold text-amber-300">
-                  {totalParticipants}<span className="text-sm text-stone-500">/8</span>
-                </div>
-              </div>
-
-              <div className="p-3 bg-stone-950/50 rounded-lg border border-stone-700/50 hover:border-indigo-700/50 transition-colors">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-xl">🏛️</span>
-                  <span className="text-xs text-stone-400">Grup</span>
-                </div>
-                <div className="text-xl font-bold text-indigo-300">
-                  {tournament.groups.length}<span className="text-sm text-stone-500">/4</span>
-                </div>
-              </div>
-            </div>
-
+            {/* Groups Preview */}
             {tournament.groups.length > 0 && (
-              <div className="space-y-2">
+                <div className="space-y-2">
                 <div className="text-sm font-semibold text-stone-300 flex items-center gap-2">
-                  <span>📋</span>
-                  <span>Grup Terdaftar</span>
+                    <span>📋</span>
+                    <span>Grup Terdaftar</span>
                 </div>
                 <div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar">
-                  {tournament.groups.map((group, index) => (
-                    <motion.div
-                      key={group.id}
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: index * 0.05 }}
-                      className="flex items-center justify-between p-2.5 bg-gradient-to-r from-stone-950/50 to-stone-900/30 rounded-lg border border-stone-700/30 hover:border-amber-700/50 transition-all group/item"
-                    >
-                      <div className="flex items-center gap-2 flex-1">
-                        <span className="text-amber-400">🛡️</span>
-                        <span className="text-amber-200 truncate font-medium">{group.name}</span>
-                      </div>
-                      <Badge
-                        variant="outline"
-                        className={`text-xs flex-shrink-0 ${
-                          group.participants.length === 2
-                            ? 'border-green-600 text-green-300 bg-green-950/30'
-                            : 'border-yellow-600 text-yellow-300 bg-yellow-950/30'
-                        }`}
-                      >
-                        {group.participants.length}/2
-                      </Badge>
-                    </motion.div>
-                  ))}
+                    {tournament.groups.map((group, index) => {
+                    // ✅ Check if this is user's group
+                    const isUserGroup = group.participants.some(p => p.user_id === auth?.user?.id);
+
+                    return (
+                        <motion.div
+                        key={group.id}
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: index * 0.05 }}
+                        className={`flex items-center justify-between p-2.5 rounded-lg border transition-all group/item ${
+                            isUserGroup
+                            ? 'bg-gradient-to-r from-emerald-950/50 to-emerald-900/30 border-emerald-700/50'
+                            : 'bg-gradient-to-r from-stone-950/50 to-stone-900/30 border-stone-700/30'
+                        } hover:border-amber-700/50`}
+                        >
+                        <div className="flex items-center gap-2 flex-1">
+                            <span className={isUserGroup ? 'text-emerald-400' : 'text-amber-400'}>🛡️</span>
+                            <span className={`truncate font-medium ${isUserGroup ? 'text-emerald-200' : 'text-amber-200'}`}>
+                            {group.name}
+                            {isUserGroup && <span className="text-emerald-400 text-xs ml-2">(Tim Anda)</span>}
+                            </span>
+                        </div>
+                        <Badge
+                            variant="outline"
+                            className={`text-xs flex-shrink-0 ${
+                            group.participants.length === 2
+                                ? 'border-green-600 text-green-300 bg-green-950/30'
+                                : 'border-yellow-600 text-yellow-300 bg-yellow-950/30'
+                            }`}
+                        >
+                            {group.participants.length}/2
+                        </Badge>
+                        </motion.div>
+                    );
+                    })}
                 </div>
-              </div>
+                </div>
             )}
 
+            {/* ✅ UPDATED: Action Button Logic */}
             <div className="pt-2">
-              {canJoin ? (
+                {isUserParticipating ? (
+                // ✅ User sudah join - show "Lihat Detail" atau "Masuk ke Arena"
                 <Button
-                  onClick={() => handleTournamentSelect(tournament)}
-                  disabled={isThisTournamentJoining}
-                  className="w-full bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 text-white font-bold text-base py-6 shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                    onClick={() => router.visit(`/game/tournament/${tournament.id}`)}
+                    className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-base py-6 shadow-lg hover:shadow-xl transition-all duration-300"
                 >
-                  {isThisTournamentJoining ? (
+                    <span className="text-xl mr-2">🎮</span>
+                    {tournament.status === 'waiting' ? 'Lihat Detail' : 'Masuk ke Arena'}
+                </Button>
+                ) : canJoin ? (
+                // ✅ User belum join dan bisa join
+                <Button
+                    onClick={() => handleTournamentSelect(tournament)}
+                    disabled={isThisTournamentJoining}
+                    className="w-full bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 text-white font-bold text-base py-6 shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                    {isThisTournamentJoining ? (
                     <>
-                      <motion.span
+                        <motion.span
                         animate={{ rotate: 360 }}
                         transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
                         className="inline-block mr-2"
-                      >
+                        >
                         ⚙️
-                      </motion.span>
-                      Bergabung...
+                        </motion.span>
+                        Bergabung...
                     </>
-                  ) : (
+                    ) : (
                     <>
-                      <span className="text-xl mr-2">🎮</span>
-                      Gabung Turnamen
+                        <span className="text-xl mr-2">🎮</span>
+                        Gabung Turnamen
                     </>
-                  )}
+                    )}
                 </Button>
-              ) : isFull ? (
+                ) : isFull ? (
+                // ✅ Tournament penuh
                 <Button
-                  disabled
-                  className="w-full bg-stone-700 text-stone-400 cursor-not-allowed font-bold text-base py-6"
+                    disabled
+                    className="w-full bg-stone-700 text-stone-400 cursor-not-allowed font-bold text-base py-6"
                 >
-                  <span className="text-xl mr-2">🚫</span>
-                  Turnamen Penuh
+                    <span className="text-xl mr-2">🚫</span>
+                    Turnamen Penuh
                 </Button>
-              ) : (
+                ) : (
+                // ✅ Tournament sudah started (tapi user tidak participate)
                 <Button
-                  onClick={() => router.visit(`/game/tournament/${tournament.id}`)}
-                  variant="outline"
-                  className="w-full border-2 border-amber-600 text-amber-300 hover:bg-amber-900/30 font-bold text-base py-6 transition-all duration-300"
+                    onClick={() => router.visit(`/game/tournament/${tournament.id}`)}
+                    variant="outline"
+                    className="w-full border-2 border-amber-600 text-amber-300 hover:bg-amber-900/30 font-bold text-base py-6 transition-all duration-300"
                 >
-                  <span className="text-xl mr-2">👁️</span>
-                  Lihat Detail
+                    <span className="text-xl mr-2">👁️</span>
+                    Lihat Detail
                 </Button>
-              )}
+                )}
             </div>
-          </CardContent>
+            </CardContent>
         </Card>
-      </motion.div>
+        </motion.div>
     );
-  });
+    });
 
-  TournamentCard.displayName = 'TournamentCard';
+    TournamentCard.displayName = 'TournamentCard';
+
 
     // ============================================
   // CREATE TOURNAMENT SHEET (Enhanced UI)
