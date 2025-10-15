@@ -18,6 +18,7 @@ const CONFIG = {
   LEVEL_HEIGHT_MOBILE: 65,
   NODE_SPACING: 60,
   NODE_SPACING_MOBILE: 40,
+  MOBILE_BREAKPOINT: 768,
 } as const;
 
 // ============================================
@@ -60,7 +61,7 @@ const normalizeStep = (step: string): Direction | null => {
 const buildArrayFromTree = (root: TreeNode | null | undefined): any[] => {
   if (!root) return [];
   const result: any[] = [];
-  const queue: Array<{ node: TreeNode | null, index: number }> = [{ node: root, index: 0 }];
+  const queue: Array<{ node: TreeNode | null; index: number }> = [{ node: root, index: 0 }];
 
   while (queue.length > 0) {
     const { node, index } = queue.shift()!;
@@ -83,7 +84,6 @@ const buildArrayFromTree = (root: TreeNode | null | undefined): any[] => {
   return result;
 };
 
-// ✅ Helper to check if node has valid children
 const hasLeftChild = (node: any): boolean => {
   if (!node || typeof node !== 'object') return false;
   if (!node.left) return false;
@@ -120,9 +120,12 @@ const useDungeonAtmosphere = () => {
     return () => clearInterval(torchInterval);
   }, []);
 
-  const setTorchRef = (index: number) => (el: HTMLSpanElement | null) => {
-    torchRefs.current[index] = el;
-  };
+  const setTorchRef = useCallback(
+    (index: number) => (el: HTMLSpanElement | null) => {
+      torchRefs.current[index] = el;
+    },
+    []
+  );
 
   return { setTorchRef };
 };
@@ -131,7 +134,7 @@ const useIsMobile = () => {
   const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
-    const checkMobile = () => setIsMobile(window.innerWidth <= 768);
+    const checkMobile = () => setIsMobile(window.innerWidth <= CONFIG.MOBILE_BREAKPOINT);
     checkMobile();
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
@@ -157,8 +160,8 @@ const SvgBinaryTree = memo(({ array, isMobile = false }: { array: any[]; isMobil
   const nodeSpacing = isMobile ? CONFIG.NODE_SPACING_MOBILE : CONFIG.NODE_SPACING;
 
   const levels = Math.ceil(Math.log2(array.length + 1));
-  const nodes: Array<{ val: any, x: number, y: number, i: number, depth: number }> = [];
-  const edges: Array<{ x1: number, y1: number, x2: number, y2: number, label: string }> = [];
+  const nodes: Array<{ val: any; x: number; y: number; i: number; depth: number }> = [];
+  const edges: Array<{ x1: number; y1: number; x2: number; y2: number; label: string }> = [];
 
   for (let i = 0; i < array.length; i++) {
     if (array[i] === null || array[i] === undefined) continue;
@@ -381,22 +384,6 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
   const isExpert = role === 'expert';
   const isHost = role === 'host';
 
-  // 🐛 DEBUG: Console log props
-  useEffect(() => {
-    console.log('🔍 NavigationChallengeView Props:', {
-      puzzle,
-      role,
-      submitting,
-      hasPuzzle: !!puzzle,
-      hasExpertView: !!puzzle?.expertView,
-      hasDefuserView: !!puzzle?.defuserView,
-      hasTreeInExpert: !!puzzle?.expertView?.tree,
-      hasTreeInDefuser: !!puzzle?.defuserView?.tree,
-      expertViewTree: puzzle?.expertView?.tree,
-      defuserViewTree: puzzle?.defuserView?.tree
-    });
-  }, [puzzle, role, submitting]);
-
   const pickLabel = useCallback(
     (dir: 'left' | 'right' | 'up' | 'down'): string => {
       const defaults = { left: 'Kiri', right: 'Kanan', up: 'Kembali', down: 'Otomatis' };
@@ -405,7 +392,6 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
     []
   );
 
-  // ✅ FIX: Check both expertView and defuserView for tree
   const treeStructure: TreeNode | undefined = useMemo(() => {
     // Try expertView first (for expert/host)
     let tree = puzzle?.expertView?.tree;
@@ -416,7 +402,6 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
     }
 
     if (!tree || typeof tree !== 'object') {
-      console.warn('⚠️ No tree from backend');
       return undefined;
     }
 
@@ -427,7 +412,6 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
     return buildArrayFromTree(treeStructure);
   }, [treeStructure]);
 
-  // ✅ Navigate through tree with proper null checks
   const currentNode = useMemo((): TreeNode | null => {
     if (!treeStructure) return null;
 
@@ -452,7 +436,6 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
     return current;
   }, [treeStructure, path]);
 
-  // ✅ Check available directions
   const availableDirections = useMemo((): Direction[] => {
     const dirs: Direction[] = [];
 
@@ -501,7 +484,7 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
       if (path.length === 0) return;
 
       // Format: ROOT,KIRI,KANAN (uppercase)
-      const fullPath = ['ROOT', ...path.map(p => p.toUpperCase())].join(',');
+      const fullPath = ['ROOT', ...path.map((p) => p.toUpperCase())].join(',');
       onSubmitAttempt(fullPath);
     },
     [path, onSubmitAttempt]
@@ -510,9 +493,7 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
   if (!puzzle) {
     return (
       <Alert variant="destructive" className="min-h-[180px] flex items-center justify-center">
-        <AlertDescription className="text-center">
-          Data teka-teki tidak tersedia
-        </AlertDescription>
+        <AlertDescription className="text-center">Data teka-teki tidak tersedia</AlertDescription>
       </Alert>
     );
   }
@@ -524,10 +505,14 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
       <Card className="overflow-hidden border border-amber-700/40 bg-gradient-to-br from-stone-900 via-stone-800 to-amber-950 dungeon-card-glow">
         <CardHeader className={`relative ${isMobile ? 'p-3' : 'p-4 sm:p-6'}`}>
           <div className={`absolute ${isMobile ? 'top-2 left-2 text-lg' : 'top-2 left-2 text-lg sm:text-xl'}`}>
-            <span ref={setTorchRef(0)} className="dungeon-torch-flicker">🔥</span>
+            <span ref={setTorchRef(0)} className="dungeon-torch-flicker">
+              🔥
+            </span>
           </div>
           <div className={`absolute ${isMobile ? 'top-2 right-2 text-lg' : 'top-2 right-2 text-lg sm:text-xl'}`}>
-            <span ref={setTorchRef(1)} className="dungeon-torch-flicker">🔥</span>
+            <span ref={setTorchRef(1)} className="dungeon-torch-flicker">
+              🔥
+            </span>
           </div>
           <CardTitle className={`text-amber-300 ${isMobile ? 'text-lg' : 'text-xl sm:text-2xl'} relative z-10 dungeon-glow-text text-center`}>
             {puzzle.title || 'Tantangan Navigasi Pohon'}
@@ -558,7 +543,6 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
 
         <CardContent className={`space-y-4 ${isMobile ? 'p-3' : 'p-4 sm:p-6'}`}>
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-
             {/* DEFUSER PANEL - 5 cols */}
             {(isDefuser || isHost) && (
               <div className="lg:col-span-5">
@@ -590,64 +574,11 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
                           <span>Posisi Saat Ini</span>
                         </h5>
                         <div className="flex items-center gap-3">
-                          <div className="text-3xl font-bold text-blue-300">
-                            {currentNode.value ?? '?'}
-                          </div>
-                          <div className="text-sm text-blue-200">
-                            {path.length === 0 ? 'Di titik awal' : `Sudah ${path.length} langkah`}
-                          </div>
+                          <div className="text-3xl font-bold text-blue-300">{currentNode.value ?? '?'}</div>
+                          <div className="text-sm text-blue-200">{path.length === 0 ? 'Di titik awal' : `Sudah ${path.length} langkah`}</div>
                         </div>
                       </div>
                     )}
-
-                    {/* 🐛 DEBUG PANEL */}
-                    <div className="rounded-lg p-3 border-2 border-yellow-600 bg-yellow-950/60">
-                      <h5 className="text-yellow-300 font-bold mb-2 text-sm flex items-center gap-2">
-                        <span>🔍</span>
-                        <span>Debug Panel</span>
-                      </h5>
-                      <div className="space-y-1 text-xs font-mono">
-                        <div className="text-yellow-200">
-                          <strong>Puzzle:</strong> {puzzle ? '✅ YES' : '❌ NO'}
-                        </div>
-                        <div className="text-yellow-200">
-                          <strong>ExpertView:</strong> {puzzle?.expertView ? '✅ YES' : '❌ NO'}
-                        </div>
-                        <div className="text-yellow-200">
-                          <strong>DefuserView:</strong> {puzzle?.defuserView ? '✅ YES' : '❌ NO'}
-                        </div>
-                        <div className="text-yellow-200">
-                          <strong>Tree exists:</strong> {treeStructure ? '✅ YES' : '❌ NO'}
-                        </div>
-                        <div className="text-yellow-200">
-                          <strong>Current node:</strong> {currentNode ? `✅ ${currentNode.value}` : '❌ NULL'}
-                        </div>
-                        <div className="text-yellow-200">
-                          <strong>Has left:</strong> {currentNode && hasLeftChild(currentNode) ? '✅ YES' : '❌ NO'}
-                        </div>
-                        <div className="text-yellow-200">
-                          <strong>Has right:</strong> {currentNode && hasRightChild(currentNode) ? '✅ YES' : '❌ NO'}
-                        </div>
-                        <div className="text-yellow-200">
-                          <strong>Available:</strong> [{availableDirections.join(', ') || 'NONE'}]
-                        </div>
-                        <div className="text-yellow-200">
-                          <strong>Path:</strong> [{path.join(' → ') || 'empty'}]
-                        </div>
-                        <div className="text-yellow-200">
-                          <strong>Role:</strong> {role || 'undefined'}
-                        </div>
-
-                        <details className="mt-2">
-                          <summary className="cursor-pointer text-yellow-300 hover:text-yellow-100 font-semibold">
-                            📦 Show Full Puzzle
-                          </summary>
-                          <pre className="mt-2 p-2 bg-stone-950 rounded text-[10px] overflow-auto max-h-40 text-green-400">
-                            {JSON.stringify(puzzle, null, 2)}
-                          </pre>
-                        </details>
-                      </div>
-                    </div>
 
                     {/* Navigation Controls */}
                     <div>
@@ -736,7 +667,9 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
                       <Button
                         type="submit"
                         disabled={path.length === 0 || submitting}
-                        className={`w-full bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-stone-900 font-semibold ${isMobile ? 'text-sm py-3' : 'text-base py-3.5'}`}
+                        className={`w-full bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-stone-900 font-semibold ${
+                          isMobile ? 'text-sm py-3' : 'text-base py-3.5'
+                        }`}
                       >
                         {submitting ? '⚙️ Mengirim...' : '✨ Kirim Jawaban'}
                       </Button>
@@ -765,7 +698,6 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
             {(isExpert || isHost) && (
               <div className="lg:col-span-7">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-
                   {/* Tree Visualization */}
                   <Card className="md:col-span-2 border border-emerald-700/40 bg-gradient-to-b from-stone-900/60 to-emerald-950/40">
                     <CardHeader className={`${isMobile ? 'pb-2 pt-2 px-3' : 'pb-2 pt-3 px-4'}`}>
@@ -786,14 +718,10 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
                           <SvgBinaryTree array={treeArray} isMobile={isMobile} />
                         </div>
                       ) : (
-                        <div className={`text-stone-400 italic ${isMobile ? 'text-sm' : 'text-base'} text-center p-4`}>
-                          Data pohon tidak tersedia
-                        </div>
+                        <div className={`text-stone-400 italic ${isMobile ? 'text-sm' : 'text-base'} text-center p-4`}>Data pohon tidak tersedia</div>
                       )}
                       <div className="mt-3 flex flex-wrap gap-2">
-                        <Badge className={`bg-amber-800 text-amber-100 border border-amber-700/40 ${isMobile ? 'text-xs' : 'text-sm'}`}>
-                          🟡 Titik Awal
-                        </Badge>
+                        <Badge className={`bg-amber-800 text-amber-100 border border-amber-700/40 ${isMobile ? 'text-xs' : 'text-sm'}`}>🟡 Titik Awal</Badge>
                         <Badge className={`bg-emerald-800 text-emerald-100 border border-emerald-700/40 ${isMobile ? 'text-xs' : 'text-sm'}`}>
                           🟢 Titik Cabang
                         </Badge>
@@ -850,11 +778,9 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
                       </div>
                     </div>
                   </Card>
-
                 </div>
               </div>
             )}
-
           </div>
         </CardContent>
       </Card>
