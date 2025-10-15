@@ -123,7 +123,6 @@ interface StageResult {
   attemptsRemaining?: number;
 }
 
-// ✅ FIXED: Updated to match StageConfig from game.ts
 interface MultiStageGameState {
   session: GameState['session'];
   puzzle: GameState['puzzle'];
@@ -131,9 +130,9 @@ interface MultiStageGameState {
     current?: number;
     total?: number;
     config?: {
-      title: string;        // Required (not optional)
-      timeLimit: number;    // Required (not optional)
-      maxAttempts: number;  // Required (not optional)
+      title: string;
+      timeLimit: number;
+      maxAttempts: number;
       maxHints?: number;
       difficulty?: 'beginner' | 'intermediate' | 'advanced';
       learningObjectives?: string[];
@@ -204,7 +203,6 @@ const useDungeonAtmosphere = () => {
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
-    // Torch flicker animation
     intervalRef.current = setInterval(() => {
       torchRefs.current.forEach((torch) => {
         if (torch) {
@@ -218,7 +216,6 @@ const useDungeonAtmosphere = () => {
       });
     }, CONFIG.TORCH_FLICKER_INTERVAL);
 
-    // Crystal glow animation
     crystalRefs.current.forEach((crystal, index) => {
       if (crystal) {
         gsap.to(crystal, {
@@ -232,7 +229,6 @@ const useDungeonAtmosphere = () => {
       }
     });
 
-    // Rune float animation
     runeRefs.current.forEach((rune, index) => {
       if (rune) {
         gsap.to(rune, {
@@ -409,6 +405,7 @@ const ErrorCard = memo(({ error, onRetry }: { error: string; onRetry: () => void
 
 ErrorCard.displayName = 'ErrorCard';
 
+// ✅ UPDATED: SessionHeader with Team Code Display
 const SessionHeader = memo(
   ({
     session,
@@ -427,6 +424,12 @@ const SessionHeader = memo(
     const statusConfig = STATUS_CONFIG[session.status as keyof typeof STATUS_CONFIG] || STATUS_CONFIG.waiting;
     const roleConfig = ROLE_CONFIG[currentRole as keyof typeof ROLE_CONFIG] || ROLE_CONFIG.observer;
 
+    // ✅ NEW: Copy to clipboard function
+    const copyTeamCode = useCallback(() => {
+      navigator.clipboard.writeText(session.team_code);
+      toast.success('Kode tim berhasil disalin! 📋');
+    }, [session.team_code]);
+
     return (
       <motion.div variants={fadeInUp}>
         <Card
@@ -443,13 +446,42 @@ const SessionHeader = memo(
                 🔥
               </span>
             </div>
-            <CardTitle className="text-amber-300 text-lg sm:text-2xl md:text-3xl text-center sm:text-left dungeon-glow-text">
-              Sesi: {session.team_code}
-            </CardTitle>
-            <CardDescription className="text-stone-300 text-center sm:text-left text-xs sm:text-sm">
+
+            {/* ✅ UPDATED: Team Code Display with Copy Button */}
+            <div className="text-center sm:text-left space-y-2 pt-8 sm:pt-0">
+              <CardTitle className="text-amber-300 text-lg sm:text-2xl md:text-3xl dungeon-glow-text">
+                🎮 Game Session
+              </CardTitle>
+
+              {/* ✅ NEW: Prominent Team Code Display */}
+              <div className="flex flex-col sm:flex-row items-center sm:items-center gap-2 bg-stone-900/60 p-3 sm:p-4 rounded-lg border-2 border-amber-600 dungeon-crystal-glow">
+                <div className="flex-1 text-center sm:text-left">
+                  <div className="text-xs sm:text-sm text-stone-400 mb-1">Kode Tim:</div>
+                  <div className="text-2xl sm:text-3xl md:text-4xl font-bold text-amber-300 font-mono tracking-wider dungeon-glow-text">
+                    {session.team_code}
+                  </div>
+                </div>
+
+                {/* ✅ NEW: Copy Button */}
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={copyTeamCode}
+                  className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-stone-900 font-bold rounded-lg transition-all duration-200 flex items-center gap-2 touch-manipulation"
+                  title="Salin Kode Tim"
+                  type="button"
+                >
+                  <span>📋</span>
+                  <span className="text-sm">Salin</span>
+                </motion.button>
+              </div>
+            </div>
+
+            <CardDescription className="text-stone-300 text-center sm:text-left text-xs sm:text-sm mt-2">
               Status: <span className={`font-semibold ${statusConfig.color}`}>{String(session.status).toUpperCase()}</span>
             </CardDescription>
           </CardHeader>
+
           <CardContent className="flex flex-col sm:flex-row items-center justify-between gap-4 pb-4 sm:pb-6">
             <div className="flex flex-wrap items-center gap-3 justify-center sm:justify-start">
               <Badge className={`${roleConfig.badge} font-bold text-xs sm:text-sm`}>
@@ -546,7 +578,7 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
   const [retryCount, setRetryCount] = useState(0);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
-  // ✅ NEW: Finalization state
+  // Finalization state
   const [isFinalized, setIsFinalized] = useState(false);
   const finalizeRef = useRef(false);
 
@@ -575,7 +607,7 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
   const isValidSessionId = useMemo(() => sessionId && !isNaN(Number(sessionId)), [sessionId]);
 
   // ============================================
-  // ✅ NEW: FINALIZE SESSION FUNCTION
+  // FINALIZE SESSION FUNCTION
   // ============================================
   const finalizeSession = useCallback(async () => {
     if (finalizeRef.current || !gameState?.session?.id) {
@@ -583,7 +615,6 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
       return;
     }
 
-    // Prevent double finalization
     finalizeRef.current = true;
 
     try {
@@ -595,7 +626,6 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
     } catch (error: any) {
       console.error('❌ Failed to finalize session:', error);
 
-      // Only retry if not 404/403 (session might already be closed)
       if (![404, 403].includes(error.response?.status)) {
         toast.error('Gagal menyimpan riwayat. Mencoba lagi...', {
           action: {
@@ -608,7 +638,6 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
           duration: 10000,
         });
       } else {
-        // Session already ended or not found - mark as finalized anyway
         setIsFinalized(true);
       }
     }
@@ -664,7 +693,6 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
 
       setError(errorMessage);
 
-      // Auto-retry dengan exponential backoff
       if (retryCount < CONFIG.MAX_RETRY_ATTEMPTS && ![404, 403].includes(err.response?.status)) {
         const delay = Math.pow(2, retryCount) * 1000;
         setTimeout(() => {
@@ -690,7 +718,6 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
     }
   }, [sessionId, loadGameState]);
 
-  // ✅ UPDATED: handleAttemptSubmit dengan finalisasi
   const handleAttemptSubmit = useCallback(
     async (inputValue: string) => {
       if (!gameState) return;
@@ -702,7 +729,6 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
           setStageResult(result);
           setShowTransition(true);
 
-          // ✅ KRITIS: Finalize saat game complete
           if (result.gameComplete && !isFinalized) {
             console.log('🎮 Game completed, triggering finalization...');
             await finalizeSession();
@@ -756,13 +782,10 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
     setShowVoiceChat((prev) => !prev);
   }, []);
 
-  // ✅ NEW: Helper functions for type-safe props
-  // Helper to get valid role for components that don't support 'observer'
   const getValidRole = useCallback((): 'defuser' | 'expert' | 'host' => {
     return currentRole === 'observer' ? 'host' : currentRole;
   }, [currentRole]);
 
-  // Helper to filter participants with valid user_id
   const getValidParticipants = useCallback(() => {
     return participants.filter((p): p is typeof p & { user_id: number } =>
       p.user_id !== undefined
@@ -789,10 +812,8 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
     };
   }, [loadGameState, isValidSessionId]);
 
-  // ✅ NEW: Cleanup saat component unmount
   useEffect(() => {
     return () => {
-      // Finalize when user leaves the page if session is still running
       if (
         gameState?.session?.status === 'running' &&
         !isFinalized &&
@@ -806,7 +827,6 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
     };
   }, [gameState?.session?.status, gameState?.session?.id, isFinalized]);
 
-  // ✅ NEW: beforeunload handler untuk menutup tab/browser
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (
@@ -814,7 +834,6 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
         !isFinalized &&
         gameState?.session?.id
       ) {
-        // Use synchronous XHR for beforeunload (fetch/axios may not complete)
         try {
           const xhr = new XMLHttpRequest();
           xhr.open('POST', `/api/sessions/${gameState.session.id}/end`, false);
@@ -832,7 +851,6 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
           console.error('❌ Failed to finalize on beforeunload:', err);
         }
 
-        // Show browser confirmation dialog
         e.preventDefault();
         e.returnValue = 'Permainan sedang berlangsung. Yakin ingin keluar?';
         return e.returnValue;
@@ -843,7 +861,6 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [gameState?.session?.status, gameState?.session?.id, isFinalized]);
 
-  // Keyboard shortcuts
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && showVoiceChat && isMobile) {
@@ -871,7 +888,6 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
     );
   }
 
-  // Loading State
   if (loading) {
     return (
       <Authenticated>
@@ -890,7 +906,6 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
     );
   }
 
-  // Error State
   if (error || !gameState) {
     return (
       <Authenticated>
@@ -906,7 +921,6 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
 
   const { session, puzzle, stage } = gameState;
 
-  // Transition State
   if (showTransition && stageResult) {
     return (
       <Authenticated>
@@ -920,6 +934,7 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
   // RENDER FUNCTIONS
   // ============================================
 
+  // ✅ UPDATED: renderWaiting with Join Instructions
   const renderWaiting = () => (
     <motion.div variants={scaleIn} initial="initial" animate="animate" className="py-4 sm:py-6">
       <Card className="border-2 sm:border-4 border-amber-700 bg-gradient-to-b from-stone-900 to-amber-950 dungeon-card-glow">
@@ -939,13 +954,34 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
               ? 'Menunggu pemain lain bergabung...'
               : 'Tim lengkap! Menunggu permainan dimulai...'}
           </p>
+
+          {/* ✅ NEW: Join Instructions */}
+          {participants.length < CONFIG.MAX_PARTICIPANTS && (
+            <Card className="bg-indigo-900/40 border-2 border-indigo-600 max-w-lg mx-auto mb-6 dungeon-card-glow">
+              <CardContent className="p-4 sm:p-6">
+                <h3 className="text-lg sm:text-xl font-bold text-indigo-200 mb-3 dungeon-glow-text">
+                  📢 Cara Bergabung
+                </h3>
+                <div className="text-indigo-100 text-sm sm:text-base text-left space-y-2">
+                  <p>Bagikan <strong>kode tim</strong> di atas kepada teman Anda:</p>
+                  <ol className="list-decimal list-inside space-y-1 ml-2">
+                    <li>Buka halaman <strong>Game Lobby</strong></li>
+                    <li>Klik tombol <strong>"Gabung Sesi"</strong></li>
+                    <li>Masukkan kode tim: <span className="font-mono text-amber-300 font-bold text-lg">{session.team_code}</span></li>
+                    <li>Pilih role dan bergabung!</li>
+                  </ol>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {currentRole === 'host' && participants.length >= CONFIG.MAX_PARTICIPANTS && (
             <motion.div whileTap={{ scale: 0.95 }}>
               <Button
                 onClick={handleStartSession}
-                className="bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-stone-900 font-bold dungeon-button-glow touch-manipulation"
+                className="bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-stone-900 font-bold dungeon-button-glow touch-manipulation text-base sm:text-lg px-6 sm:px-8 py-3 sm:py-4"
               >
-                Mulai Tantangan
+                ⚔️ Mulai Tantangan
               </Button>
             </motion.div>
           )}
@@ -956,20 +992,20 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
 
   const renderRunning = () => (
     <motion.div variants={scaleIn} initial="initial" animate="animate" className="py-4 sm:py-6">
-        <GamePlay
+      <GamePlay
         gameState={{
-            session,
-            puzzle,
-            stage,
-            serverTime: gameState.serverTime
+          session,
+          puzzle,
+          stage,
+          serverTime: gameState.serverTime
         }}
         role={getValidRole()}
         onGameStateUpdate={handleGameStateUpdate}
         onSubmitAttempt={handleAttemptSubmit}
         submitting={false}
-        />
+      />
     </motion.div>
-    );
+  );
 
   const renderSuccess = () => (
     <motion.div variants={scaleIn} initial="initial" animate="animate" className="py-4 sm:py-6">
@@ -1317,7 +1353,6 @@ export default function GameSession({ sessionId, role: propRole }: Props) {
 
             {renderGameContent()}
 
-            {/* ✅ FIXED: VoiceChat props - removed isCollapsed and onToggleCollapse */}
             {showVoiceChat && session.status === 'running' && (
               <motion.div
                 variants={fadeInUp}
