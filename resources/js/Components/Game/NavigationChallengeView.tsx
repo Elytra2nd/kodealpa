@@ -478,13 +478,28 @@ export default function NavigationChallengeView({ puzzle, role, onSubmitAttempt,
     }
   }, [availableDirections, addDirection]);
 
+  // ✅ FIXED: Translate Indonesian to English for backend
   const handleSubmit = useCallback(
     (e: React.FormEvent) => {
       e.preventDefault();
       if (path.length === 0) return;
 
-      // Format: ROOT,KIRI,KANAN (uppercase)
-      const fullPath = ['ROOT', ...path.map((p) => p.toUpperCase())].join(',');
+      // ✅ Translation function: Indonesian → English
+      const translatePath = (label: string): string => {
+        const normalized = label.toUpperCase();
+        const translations: Record<string, string> = {
+          'KIRI': 'LEFT',
+          'KANAN': 'RIGHT',
+          'ROOT': 'ROOT',
+          'KEMBALI': 'BACK', // just in case
+          'OTOMATIS': 'AUTO', // just in case
+        };
+        return translations[normalized] || normalized;
+      };
+
+      // Format: ROOT,LEFT,RIGHT (uppercase English)
+      const fullPath = ['ROOT', ...path.map(translatePath)].join(',');
+
       onSubmitAttempt(fullPath);
     },
     [path, onSubmitAttempt]
