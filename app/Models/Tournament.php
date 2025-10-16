@@ -47,6 +47,13 @@ class Tournament extends Model
      */
     protected static function booted(): void
     {
+        // ✅ Auto-fill created_by dengan user yang sedang login
+        static::creating(function (Tournament $tournament) {
+            if (!$tournament->isDirty('created_by') && auth()->check()) {
+                $tournament->created_by = auth()->id();
+            }
+        });
+
         // Event sebelum tournament dihapus
         static::deleting(function (Tournament $tournament) {
             // Hitung jumlah related data
