@@ -903,6 +903,7 @@ class SessionController extends Controller
         return max(0, $baseScore - $attemptPenalty + $timeBonus);
     }
 
+
     /**
      * Calculate time bonus
      */
@@ -912,7 +913,18 @@ class SessionController extends Controller
         $stageCompleted = now();
         $timeTaken = $stageStarted->diffInSeconds($stageCompleted);
 
-        $timeLimit = $this->stageConfigurations[$stage]['timeLimit'];
+        // ✅ Get time limit from Stage model if tournament session
+        if ($session->is_tournament_session ?? false) {
+            $stageModel = \App\Models\Stage::find($session->stage_id);
+            $stageConfig = $stageModel ? $stageModel->config : [];
+            $timeLimit = $stageConfig['time_limit_seconds']
+                        ?? $stageConfig['timeLimit']
+                        ?? 1800; // Default 30 minutes
+        } else {
+            // Regular session: use hardcoded config
+            $timeLimit = $this->stageConfigurations[$stage]['timeLimit'] ?? 1800;
+        }
+
         $timeRemaining = max(0, $timeLimit - $timeTaken);
 
         // Bonus: 1 point per 10 seconds remaining
