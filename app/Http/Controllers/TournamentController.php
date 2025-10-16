@@ -45,10 +45,14 @@ class TournamentController extends Controller
                         $totalParticipants += $participantCount;
                     }
 
+                    // ✅ Add phase calculation
+                    $phase = $this->getTournamentPhase($tournament);
+
                     $result[] = [
                         'id' => $tournament->id,
                         'name' => $tournament->name,
                         'status' => $tournament->status,
+                        'phase' => $phase, // ✅ NEW
                         'tournament_type' => $tournament->tournament_type,
                         'max_groups' => $tournament->max_groups,
                         'current_round' => $tournament->current_round,
@@ -67,6 +71,7 @@ class TournamentController extends Controller
                         'id' => $tournament->id,
                         'name' => $tournament->name,
                         'status' => $tournament->status ?? 'unknown',
+                        'phase' => 'unknown', // ✅ NEW
                         'error' => 'Failed to load tournament details'
                     ];
                 }
@@ -84,6 +89,7 @@ class TournamentController extends Controller
             ], 500);
         }
     }
+
 
     /**
      * Create a new tournament
@@ -289,6 +295,7 @@ class TournamentController extends Controller
 
             $leaderboard = TournamentGroup::where('tournament_id', $tournament->id)
                 ->with('participants')
+                ->orderBy('rank', 'asc')
                 ->orderBy('score', 'desc')
                 ->orderBy('completion_time', 'asc')
                 ->get()
@@ -312,8 +319,13 @@ class TournamentController extends Controller
                     ];
                 });
 
+            // ✅ Calculate tournament phase
+            $phase = $this->getTournamentPhase($tournament);
+
             return response()->json([
-                'tournament' => $tournament,
+                'tournament' => array_merge($tournament->toArray(), [
+                    'phase' => $phase // ✅ Add phase to tournament data
+                ]),
                 'group' => $group,
                 'session' => $session,
                 'gameState' => [
@@ -342,6 +354,7 @@ class TournamentController extends Controller
             ], 500);
         }
     }
+
 
     /**
      * Filter puzzle by role
@@ -538,6 +551,32 @@ class TournamentController extends Controller
     }
 
     /**
+ * ✅ NEW: Get current tournament phase based on groups and round
+ */
+    private function getTournamentPhase(Tournament $tournament): string
+    {
+        $groups = $tournament->groups;
+        $champion = $groups->where('status', 'champion')->first();
+
+        // If there's a champion, tournament is completed
+        if ($champion) {
+            return 'completed';
+        }
+
+        // Determine phase based on current round
+        if ($tournament->current_round >= 3) {
+            return 'finals';
+        }
+
+        if ($tournament->current_round >= 2) {
+            return 'semifinals';
+        }
+
+        return 'qualification';
+    }
+
+
+    /**
      * Check if round is completed
      */
     private function checkRoundCompletion(Tournament $tournament)
@@ -621,10 +660,15 @@ class TournamentController extends Controller
         try {
             $tournament = Tournament::with(['groups.participants.user'])->findOrFail($tournamentId);
 
+            // ✅ Calculate tournament phase
+            $phase = $this->getTournamentPhase($tournament);
+
             $bracket = $this->generateBracket($tournament);
 
             return response()->json([
-                'tournament' => $tournament,
+                'tournament' => array_merge($tournament->toArray(), [
+                    'phase' => $phase // ✅ Add phase to response
+                ]),
                 'bracket' => $bracket
             ]);
         } catch (\Exception $e) {
@@ -638,6 +682,7 @@ class TournamentController extends Controller
             ], 500);
         }
     }
+
 
     /**
      * Generate tournament bracket
