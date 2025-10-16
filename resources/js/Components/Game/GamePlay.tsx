@@ -234,7 +234,7 @@ export default function GamePlay({ gameState, role, onGameStateUpdate, onSubmitA
   const isDefuser = role === 'defuser';
   const attempts = gameState.session.attempts || [];
   const recentAttempts = useMemo(() => attempts.slice(-CONFIG.RECENT_ATTEMPTS_LIMIT).reverse(), [attempts]);
-  const puzzleType = gameState.puzzle.type || 'symbol_mapping';
+  const puzzleType = gameState.puzzle.type || 'code_analysis'; // ✅ Default to code_analysis
 
   const maxHints = useMemo(() => {
     return gameState.session.max_hints_per_stage || CONFIG.MAX_HINTS;
@@ -276,7 +276,6 @@ export default function GamePlay({ gameState, role, onGameStateUpdate, onSubmitA
   // ============================================
   // HANDLERS
   // ============================================
-  // ✅ FIXED: Updated handleSubmitAttempt dengan pengecekan status lengkap
   const handleSubmitAttempt = useCallback(
     async (inputValue: string) => {
       if (onSubmitAttempt) {
@@ -300,26 +299,18 @@ export default function GamePlay({ gameState, role, onGameStateUpdate, onSubmitA
         onGameStateUpdate(newGameState);
         setInput('');
 
-        // ✅ FIXED: Prioritas pengecekan status yang benar
-        // 1. Cek game complete dulu (prioritas tertinggi)
+        // ✅ Prioritas pengecekan status yang benar
         if (result.gameComplete) {
           showNotice('info', '🎉 Semua tahap selesai! Sesi berhasil diselesaikan.');
           setShowFeedbackForm(true);
-        }
-        // 2. Cek status session
-        else if (result.session.status === 'success') {
+        } else if (result.session.status === 'success') {
           setShowFeedbackForm(true);
           showNotice('info', '✨ Dungeon berhasil ditaklukkan! Bagikan pengalaman Anda.');
-        }
-        else if (result.session.status === 'failed') {
+        } else if (result.session.status === 'failed') {
           showNotice('error', '💥 Misi Gagal! Waktu habis atau percobaan maksimal tercapai.');
-        }
-        // 3. Cek stage complete
-        else if (result.stageComplete) {
+        } else if (result.stageComplete) {
           showNotice('info', '⚡ Tahap diselesaikan! Melanjutkan ke tahap berikutnya...');
-        }
-        // 4. Cek result dari attempt
-        else {
+        } else {
           if (result.correct) {
             showNotice('info', '✅ Jawaban benar! Lanjutkan ke tahap selanjutnya.');
           } else {
@@ -367,123 +358,8 @@ export default function GamePlay({ gameState, role, onGameStateUpdate, onSubmitA
   }, [gameState.session.id, feedbackData, role, showNotice]);
 
   // ============================================
-  // RENDER PUZZLE VIEW
+  // ✅ UPDATED: RENDER PUZZLE VIEW (NO SYMBOL MAPPING)
   // ============================================
-  const renderSymbolMappingView = () => {
-    return (
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-        {(isDefuser || role === 'host') && (
-          <Card className="border-4 border-red-700 bg-gradient-to-b from-stone-900 to-red-950 dungeon-card-glow-red">
-            <CardHeader className="p-4 sm:p-6 relative">
-              <div className="absolute top-3 left-3 text-xl">
-                <span ref={setTorchRef(0)} className="dungeon-torch-flicker">
-                  🔥
-                </span>
-              </div>
-              <CardTitle className="text-center text-red-200 text-lg sm:text-xl relative z-10 dungeon-glow-text">
-                💣 Panel Penjinakkan Perangkat
-              </CardTitle>
-              <CardDescription className="text-center text-stone-300 text-sm">Masukkan mantra tiga huruf rune</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4 sm:space-y-5 p-4 sm:p-6">
-              <div className="rounded-xl p-4 border-2 border-stone-700 bg-black backdrop-blur-sm">
-                <div className="text-red-400 text-xs sm:text-sm mb-4 font-mono text-center">DEFUSING MODULE</div>
-                <div className="flex justify-center flex-wrap gap-3 sm:gap-4 mb-4">
-                  {gameState.puzzle.symbols?.map((symbol: string, index: number) => (
-                    <div
-                      key={index}
-                      className="w-14 h-14 sm:w-16 sm:h-16 bg-red-900/60 border-2 border-red-500 rounded flex items-center justify-center text-xl sm:text-2xl text-red-200 font-mono dungeon-rune-float shadow-lg"
-                    >
-                      {symbol}
-                    </div>
-                  ))}
-                </div>
-                {isDefuser && (
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      handleSubmitAttempt(input);
-                    }}
-                    className="flex flex-col sm:flex-row items-center justify-center gap-3"
-                  >
-                    <input
-                      type="text"
-                      value={input}
-                      onChange={(e) => setInput(e.target.value.toUpperCase().slice(0, 3))}
-                      placeholder="ABC"
-                      maxLength={3}
-                      disabled={submitting}
-                      className="w-32 h-12 text-center text-2xl font-mono bg-stone-900 text-emerald-300 border-2 border-emerald-600 rounded focus:outline-none focus:ring-4 focus:ring-emerald-600 dungeon-crystal-glow"
-                      aria-label="Input mantra tiga huruf"
-                    />
-                    <Button type="submit" disabled={input.length !== 3 || submitting} className="bg-emerald-700 hover:bg-emerald-600 disabled:bg-stone-700 disabled:cursor-not-allowed font-bold transition-all duration-300">
-                      {submitting ? 'Mengirim...' : '⚡ Jinakkan'}
-                    </Button>
-                  </form>
-                )}
-              </div>
-              {isDefuser && (
-                <Card className="border-2 border-blue-700 bg-gradient-to-r from-blue-950/40 to-stone-900 backdrop-blur-sm">
-                  <CardContent className="p-3 sm:p-4">
-                    <h5 className="text-blue-200 font-medium mb-2 text-sm sm:text-base">📜 Instruksi Penjinakkan</h5>
-                    <ul className="text-xs sm:text-sm text-blue-200/90 space-y-1 list-disc pl-5">
-                      <li>Jelaskan simbol yang terlihat kepada Ahli Grimoire secara jelas.</li>
-                      <li>Masukkan tiga huruf sesuai arahan Ahli.</li>
-                      <li>Periksa kembali urutan sebelum menekan Jinakkan.</li>
-                    </ul>
-                  </CardContent>
-                </Card>
-              )}
-            </CardContent>
-          </Card>
-        )}
-
-        {(role === 'expert' || role === 'host') && (
-          <Card className="border-4 border-indigo-700 bg-gradient-to-b from-stone-900 to-indigo-950 dungeon-card-glow-blue">
-            <CardHeader className="p-4 sm:p-6 relative">
-              <div className="absolute top-3 right-3 text-xl">
-                <span ref={setTorchRef(1)} className="dungeon-torch-flicker">
-                  🔥
-                </span>
-              </div>
-              <CardTitle className="text-center text-indigo-200 text-lg sm:text-xl relative z-10 dungeon-glow-text">
-                📖 Grimoire Expert
-              </CardTitle>
-              <CardDescription className="text-center text-stone-300 text-sm">Pemetaan simbol ke huruf kuno</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4 p-4 sm:p-6">
-              <div className="rounded-xl p-4 border border-stone-700 bg-stone-800/60 backdrop-blur-sm">
-                <h4 className="text-stone-200 font-semibold mb-3 text-sm sm:text-base">Tabel Pemetaan Rune</h4>
-                {gameState.puzzle.mapping && (
-                  <div className="grid grid-cols-2 gap-2 text-sm">
-                    {Object.entries(gameState.puzzle.mapping).map(([symbol, letter]) => (
-                      <div key={symbol} className="flex items-center justify-between p-2 bg-stone-900/60 rounded border border-stone-700 hover:border-indigo-700 transition-colors">
-                        <span className="font-mono text-lg text-stone-200">{symbol}</span>
-                        <span className="font-bold text-indigo-300">&rarr; {String(letter)}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-              {role === 'expert' && (
-                <Card className="border-2 border-amber-700 bg-gradient-to-r from-amber-900/40 to-stone-900 backdrop-blur-sm">
-                  <CardContent className="p-3 sm:p-4">
-                    <h5 className="text-amber-300 font-medium mb-2 text-sm sm:text-base">⚔️ Peran Ahli Grimoire</h5>
-                    <ul className="text-xs sm:text-sm text-amber-200 space-y-1 list-disc pl-5">
-                      <li>Dengarkan deskripsi simbol dari Penjinakkan dengan saksama.</li>
-                      <li>Gunakan tabel untuk menerjemahkan simbol ke huruf.</li>
-                      <li>Ucapkan urutan tiga huruf dengan jelas dan berurutan.</li>
-                    </ul>
-                  </CardContent>
-                </Card>
-              )}
-            </CardContent>
-          </Card>
-        )}
-      </div>
-    );
-  };
-
   const renderPuzzleView = useCallback(() => {
     switch (puzzleType) {
       case 'code_analysis': {
@@ -503,7 +379,23 @@ export default function GamePlay({ gameState, role, onGameStateUpdate, onSubmitA
       case 'navigation_challenge':
         return <NavigationChallengeView puzzle={gameState.puzzle} role={role} onSubmitAttempt={handleSubmitAttempt} submitting={submitting} />;
       default:
-        return renderSymbolMappingView();
+        // ✅ Show error for unknown puzzle types
+        return (
+          <Card className="border-2 border-red-700 bg-gradient-to-b from-stone-900 to-red-950">
+            <CardContent className="p-8 text-center">
+              <div className="text-6xl mb-4">⚠️</div>
+              <h3 className="text-2xl font-bold text-red-300 mb-2">Unknown Puzzle Type</h3>
+              <p className="text-stone-300 mb-4">
+                Puzzle type "<span className="text-red-400 font-mono">{puzzleType}</span>" is not recognized.
+              </p>
+              <p className="text-stone-400 text-sm">
+                Valid types: <span className="text-emerald-400 font-mono">code_analysis</span>,
+                <span className="text-emerald-400 font-mono"> pattern_analysis</span>,
+                <span className="text-emerald-400 font-mono"> navigation_challenge</span>
+              </p>
+            </CardContent>
+          </Card>
+        );
     }
   }, [puzzleType, gameState.puzzle, role, handleSubmitAttempt, submitting]);
 
@@ -613,7 +505,7 @@ export default function GamePlay({ gameState, role, onGameStateUpdate, onSubmitA
       </Card>
 
       {/* Learning Objectives */}
-      {puzzleType !== 'symbol_mapping' && gameState.puzzle.learningObjectives && (
+      {gameState.puzzle.learningObjectives && (
         <Card className="border-2 border-indigo-700 bg-gradient-to-b from-stone-900 to-indigo-950 dungeon-card-glow">
           <CardHeader className="pb-2 p-4 sm:p-6">
             <CardTitle className="text-indigo-300 text-base sm:text-lg dungeon-glow-text">🎓 Tujuan Pembelajaran Ekspedisi</CardTitle>

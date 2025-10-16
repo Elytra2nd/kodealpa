@@ -31,22 +31,18 @@ class TournamentController extends Controller
     public function index()
     {
         try {
-            // Get tournaments tanpa eager loading kompleks
             $tournaments = Tournament::orderBy('created_at', 'desc')->get();
 
-            // Manual mapping untuk avoid relationship error
             $result = [];
 
             foreach ($tournaments as $tournament) {
                 $groups = [];
 
-                // Get groups untuk tournament ini
                 $groupModels = TournamentGroup::where('tournament_id', $tournament->id)->get();
 
                 foreach ($groupModels as $group) {
                     $participants = [];
 
-                    // Get participants untuk group ini
                     $participantModels = TournamentParticipant::where('tournament_group_id', $group->id)->get();
 
                     foreach ($participantModels as $participant) {
@@ -165,7 +161,7 @@ class TournamentController extends Controller
     }
 
     /**
-     * ✅ RACE CONDITION SAFE: Join tournament (Fixed for 8 participants)
+     * ✅ RACE CONDITION SAFE: Join tournament
      */
     public function join(Request $request, $tournamentId)
     {
@@ -488,6 +484,9 @@ class TournamentController extends Controller
         }
     }
 
+    /**
+     * ✅ UPDATED: Use Stage ID 1 (same as regular game)
+     */
     private function startQualificationRound(Tournament $tournament)
     {
         try {
@@ -547,11 +546,18 @@ class TournamentController extends Controller
                 'starts_at' => now(),
             ]);
 
+            // ✅ Use Stage 1 (same as regular game)
+            $stage = Stage::find(1);
+
+            if (!$stage) {
+                throw new \RuntimeException('Stage 1 not found. Please create stages first using /game/stages/sample');
+            }
+
             foreach ($groups as $group) {
                 $session = GameSession::create([
                     'team_code' => strtoupper(Str::random(6)),
                     'status' => 'waiting',
-                    'stage_id' => 1,
+                    'stage_id' => $stage->id, // ✅ Use same stage as regular game
                     'current_stage' => 1,
                     'seed' => rand(10000, 99999),
                     'tournament_id' => $tournament->id,
@@ -587,6 +593,8 @@ class TournamentController extends Controller
                 'tournament_id' => $tournament->id,
                 'groups_count' => $groups->count(),
                 'total_participants' => $totalParticipants,
+                'stage_id' => $stage->id,
+                'stage_name' => $stage->name,
                 'started_at' => now()->toISOString()
             ]);
         } catch (\Exception $e) {
@@ -710,6 +718,9 @@ class TournamentController extends Controller
         $this->startSemifinalsRound($tournament, $advancingGroups);
     }
 
+    /**
+     * ✅ UPDATED: Use Stage ID 1
+     */
     private function startSemifinalsRound(Tournament $tournament, $advancingGroups)
     {
         $tournament->update([
@@ -717,13 +728,19 @@ class TournamentController extends Controller
             'current_round' => 2,
         ]);
 
+        $stage = Stage::find(1);
+
+        if (!$stage) {
+            throw new \RuntimeException('Stage 1 not found');
+        }
+
         DB::beginTransaction();
         try {
             foreach ($advancingGroups as $group) {
                 $session = GameSession::create([
                     'team_code' => strtoupper(Str::random(6)),
                     'status' => 'running',
-                    'stage_id' => 1,
+                    'stage_id' => $stage->id,
                     'current_stage' => 1,
                     'seed' => rand(10000, 99999),
                     'tournament_id' => $tournament->id,
@@ -755,7 +772,8 @@ class TournamentController extends Controller
 
             Log::info('Semifinals round started', [
                 'tournament_id' => $tournament->id,
-                'competing_groups' => $advancingGroups->count()
+                'competing_groups' => $advancingGroups->count(),
+                'stage_id' => $stage->id
             ]);
 
             DB::commit();
@@ -793,6 +811,9 @@ class TournamentController extends Controller
         $this->startFinalsRound($tournament, $finalists);
     }
 
+    /**
+     * ✅ UPDATED: Use Stage ID 1
+     */
     private function startFinalsRound(Tournament $tournament, $finalists)
     {
         $tournament->update([
@@ -800,13 +821,19 @@ class TournamentController extends Controller
             'current_round' => 3,
         ]);
 
+        $stage = Stage::find(1);
+
+        if (!$stage) {
+            throw new \RuntimeException('Stage 1 not found');
+        }
+
         DB::beginTransaction();
         try {
             foreach ($finalists as $group) {
                 $session = GameSession::create([
                     'team_code' => strtoupper(Str::random(6)),
                     'status' => 'running',
-                    'stage_id' => 1,
+                    'stage_id' => $stage->id,
                     'current_stage' => 1,
                     'seed' => rand(10000, 99999),
                     'tournament_id' => $tournament->id,
@@ -838,7 +865,8 @@ class TournamentController extends Controller
 
             Log::info('Finals round started', [
                 'tournament_id' => $tournament->id,
-                'finalists' => $finalists->pluck('id')->toArray()
+                'finalists' => $finalists->pluck('id')->toArray(),
+                'stage_id' => $stage->id
             ]);
 
             DB::commit();
