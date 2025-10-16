@@ -11,7 +11,6 @@ import type {
   TournamentCreateRequest
 } from '@/types/game';
 
-
 // Interface khusus untuk Voice Chat (tidak ada di game.ts)
 export interface VoiceChatSettings {
   enabled: boolean;
@@ -20,7 +19,6 @@ export interface VoiceChatSettings {
   noiseSuppression: boolean;
   autoGainControl: boolean;
 }
-
 
 // ✅ NEW: Interface untuk Tournament Cleanup Stats
 export interface TournamentCleanupStats {
@@ -56,6 +54,20 @@ export interface TournamentCleanupStats {
   };
 }
 
+// ✅ Get CSRF token from meta tag or cookie
+const getCSRFToken = (): string | null => {
+  // Try meta tag first (Inertia standard)
+  const metaToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+  if (metaToken) return metaToken;
+
+  // Fallback to XSRF-TOKEN cookie (Laravel Sanctum)
+  const xsrfToken = document.cookie
+    .split('; ')
+    .find(row => row.startsWith('XSRF-TOKEN='))
+    ?.split('=')[1];
+
+  return xsrfToken ? decodeURIComponent(xsrfToken) : null;
+};
 
 // Create separate axios instance for CSRF calls (no baseURL prefix)
 const csrfAxios = axios.create({
@@ -64,7 +76,6 @@ const csrfAxios = axios.create({
     'X-Requested-With': 'XMLHttpRequest',
   }
 });
-
 
 // Create main API instance for other calls (with /api prefix)
 const api = axios.create({
@@ -75,8 +86,8 @@ const api = axios.create({
     'X-Requested-With': 'XMLHttpRequest',
   },
   withCredentials: true,
+  withXSRFToken: true, // ✅ Enable automatic XSRF token handling
 });
-
 
 // Initialize CSRF Cookie using separate instance
 export const initializeCSRF = async (): Promise<void> => {
@@ -89,14 +100,34 @@ export const initializeCSRF = async (): Promise<void> => {
   }
 };
 
-
-// Get CSRF token from meta tag and set as default header
-const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+// ✅ Set CSRF token as default header
+const token = getCSRFToken();
 if (token) {
   api.defaults.headers.common['X-CSRF-TOKEN'] = token;
+  api.defaults.headers.common['X-XSRF-TOKEN'] = token;
   csrfAxios.defaults.headers.common['X-CSRF-TOKEN'] = token;
+  csrfAxios.defaults.headers.common['X-XSRF-TOKEN'] = token;
+  console.log('✅ CSRF token set from meta/cookie');
 }
 
+// ✅ Add request interceptor to refresh token before each request
+api.interceptors.request.use(
+  (config) => {
+    // Refresh token from cookie/meta before each request
+    const currentToken = getCSRFToken();
+    if (currentToken) {
+      config.headers['X-CSRF-TOKEN'] = currentToken;
+      config.headers['X-XSRF-TOKEN'] = currentToken;
+    }
+
+    console.log(`🚀 ${config.method?.toUpperCase()} ${config.baseURL}${config.url}`);
+    return config;
+  },
+  (error) => {
+    console.error('❌ Request error:', error);
+    return Promise.reject(error);
+  }
+);
 
 // Add response interceptor to handle CSRF token expiration
 api.interceptors.response.use(
@@ -108,12 +139,15 @@ api.interceptors.response.use(
       try {
         await initializeCSRF();
 
-        const newToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+        const newToken = getCSRFToken();
         if (newToken) {
           api.defaults.headers.common['X-CSRF-TOKEN'] = newToken;
+          api.defaults.headers.common['X-XSRF-TOKEN'] = newToken;
           csrfAxios.defaults.headers.common['X-CSRF-TOKEN'] = newToken;
+          csrfAxios.defaults.headers.common['X-XSRF-TOKEN'] = newToken;
         }
 
+        // Retry original request
         return api(error.config);
       } catch (refreshError) {
         console.error('❌ Failed to refresh CSRF token:', refreshError);
@@ -150,20 +184,6 @@ api.interceptors.response.use(
     return Promise.reject(error);
   }
 );
-
-
-// Add request interceptor for debugging
-api.interceptors.request.use(
-  (config) => {
-    console.log(`🚀 ${config.method?.toUpperCase()} ${config.baseURL}${config.url}`);
-    return config;
-  },
-  (error) => {
-    console.error('❌ Request error:', error);
-    return Promise.reject(error);
-  }
-);
-
 
 export const gameApi = {
   // Initialize CSRF before making authenticated requests
@@ -217,11 +237,11 @@ export const gameApi = {
   },
 
   startSession: async (sessionId: number): Promise<GameSession> => {
+    await initializeCSRF();
     const response = await api.post(`/sessions/${sessionId}/start`);
     return response.data;
   },
 
-  // ✅ NEW: End session for regular games (non-tournament)
   endSession: async (sessionId: number): Promise<{
     success: boolean;
     session: GameSession;
@@ -270,6 +290,7 @@ export const gameApi = {
   },
 
   submitAttempt: async (sessionId: number, puzzleKey: string, input: string) => {
+    await initializeCSRF(); // ✅ Ensure CSRF before submit
     const response = await api.post(`/sessions/${sessionId}/attempt`, {
       puzzle_key: puzzleKey,
       input,
@@ -277,8 +298,8 @@ export const gameApi = {
     return response.data;
   },
 
-  // ✅ UPDATED: Legacy hint system (kept for backward compatibility)
   getHint: async (sessionId: number, hintType: 'general' | 'specific' | 'debugging' = 'general') => {
+    await initializeCSRF();
     const response = await api.post(`/sessions/${sessionId}/hint`, {
       hint_type: hintType,
     });
@@ -291,6 +312,7 @@ export const gameApi = {
     rating?: number;
     feedback_from: string;
   }) => {
+    await initializeCSRF();
     const response = await api.post(`/sessions/${sessionId}/feedback`, feedback);
     return response.data;
   },
@@ -302,11 +324,6 @@ export const gameApi = {
 
   // === ✅ DUNGEON MASTER AI HINT SYSTEM ===
 
-  /**
-   * Use a hint from DM (decrements available hints)
-   * Note: This is a server-side decrement endpoint, NOT the streaming chat
-   * The streaming chat uses SSE endpoint: /game/dm/stream (handled separately)
-   */
   useDMHint: async (sessionId: number, stage: number): Promise<{
     hint: string;
     hintsRemaining: number;
@@ -326,9 +343,6 @@ export const gameApi = {
     }
   },
 
-  /**
-   * Get hint usage statistics for current stage
-   */
   getDMHintUsage: async (sessionId: number): Promise<{
     currentStage: number;
     hintsUsed: number;
@@ -488,7 +502,6 @@ export const gameApi = {
     }
   },
 
-  // ✅ NEW: Delete Tournament (Admin/Host only - optional, backend will validate)
   deleteTournament: async (tournamentId: number): Promise<{
     success: boolean;
     message: string;
@@ -505,7 +518,6 @@ export const gameApi = {
     }
   },
 
-  // ✅ NEW: Get Tournament Cleanup Statistics
   getTournamentCleanupStats: async (): Promise<TournamentCleanupStats> => {
     try {
       const response = await api.get('/tournaments/cleanup-stats');
@@ -516,8 +528,7 @@ export const gameApi = {
       throw error;
     }
   },
-
-  // === VOICE CHAT SYSTEM ===
+    // === VOICE CHAT SYSTEM ===
 
   getVoiceToken: async (sessionId?: number): Promise<{
     token: string;
@@ -810,6 +821,6 @@ export const gameApi = {
   },
 };
 
-
 // Export both instances for advanced usage
 export { api, csrfAxios };
+
