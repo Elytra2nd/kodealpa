@@ -36,6 +36,34 @@ const ANIMATION_CONFIG = {
 } as const;
 
 // ============================================
+// TOURNAMENT PHASE HELPER
+// ============================================
+/**
+ * ✅ Get tournament phase - supports both backend-provided and derived
+ */
+const getTournamentPhase = (tournament: TournamentData): string => {
+  // Use backend-provided phase if available
+  if (tournament.phase) {
+    return tournament.phase;
+  }
+
+  // Fallback: derive from status and current_round
+  if (tournament.status === 'completed') {
+    return 'completed';
+  }
+
+  if (tournament.current_round >= 3) {
+    return 'finals';
+  }
+
+  if (tournament.current_round >= 2) {
+    return 'semifinals';
+  }
+
+  return 'qualification';
+};
+
+// ============================================
 // TYPE DEFINITIONS
 // ============================================
 interface TournamentBracketProps {
@@ -324,6 +352,9 @@ export default function TournamentBracket({
   const normalizedTournament = useMemo(() => normalizeTournamentData(tournament), [tournament]);
   const normalizedGroups = useMemo(() => groups.map(normalizeTournamentGroup), [groups]);
 
+  // ✅ Calculate tournament phase with fallback
+  const tournamentPhase = useMemo(() => getTournamentPhase(normalizedTournament), [normalizedTournament]);
+
   const renderQualificationRound = useCallback(() => {
     const qualificationGroups = normalizedGroups.slice(0, 4);
     const eliminatedCount = qualificationGroups.filter((g) => g.status === 'eliminated').length;
@@ -416,12 +447,13 @@ export default function TournamentBracket({
           </div>
         )}
 
-        {(normalizedTournament.current_round > 1 || normalizedTournament.status !== 'qualification') && (
+        {/* ✅ UPDATED: Use tournamentPhase instead of status */}
+        {(normalizedTournament.current_round > 1 || tournamentPhase !== 'qualification') && (
           <ConnectorLine isAdvancing={true} />
         )}
       </div>
     );
-  }, [normalizedGroups, normalizedTournament, isCompactMode, shouldShowGroupDetails]);
+  }, [normalizedGroups, normalizedTournament, tournamentPhase, isCompactMode, shouldShowGroupDetails]);
 
   const renderSemifinals = useCallback(() => {
     const semifinalGroups = normalizedGroups.filter(
@@ -479,12 +511,13 @@ export default function TournamentBracket({
           </div>
         </div>
 
-        {(normalizedTournament.current_round >= 3 ||
-          normalizedTournament.status === 'finals' ||
-          normalizedTournament.status === 'completed') && <ConnectorLine isAdvancing={true} />}
+        {/* ✅ UPDATED: Use tournamentPhase */}
+        {(normalizedTournament.current_round >= 3 || ['finals', 'completed'].includes(tournamentPhase)) && (
+          <ConnectorLine isAdvancing={true} />
+        )}
       </div>
     );
-  }, [normalizedGroups, normalizedTournament, isCompactMode, shouldShowGroupDetails]);
+  }, [normalizedGroups, normalizedTournament, tournamentPhase, isCompactMode, shouldShowGroupDetails]);
 
   const renderFinals = useCallback(() => {
     const finalists = normalizedGroups.filter((g) => g.rank && g.rank <= 2);
@@ -662,28 +695,29 @@ export default function TournamentBracket({
             <Badge className="bg-purple-700 text-purple-100 text-sm sm:text-base px-4 py-2 font-bold shadow-md dungeon-badge-glow">
               Babak {normalizedTournament.current_round}/3
             </Badge>
+            {/* ✅ UPDATED: Use tournamentPhase */}
             <Badge
               className={`text-sm sm:text-base px-4 py-2 font-bold shadow-md dungeon-badge-glow ${
-                normalizedTournament.status === 'qualification'
+                tournamentPhase === 'qualification'
                   ? 'bg-yellow-700 text-yellow-100'
-                  : normalizedTournament.status === 'semifinals'
+                  : tournamentPhase === 'semifinals'
                   ? 'bg-blue-700 text-blue-100'
-                  : normalizedTournament.status === 'finals'
+                  : tournamentPhase === 'finals'
                   ? 'bg-purple-700 text-purple-100'
-                  : normalizedTournament.status === 'completed'
+                  : tournamentPhase === 'completed'
                   ? 'bg-green-700 text-green-100'
                   : 'bg-stone-700 text-stone-100'
               }`}
             >
-              {normalizedTournament.status === 'qualification'
+              {tournamentPhase === 'qualification'
                 ? 'KUALIFIKASI'
-                : normalizedTournament.status === 'semifinals'
+                : tournamentPhase === 'semifinals'
                 ? 'SEMI FINAL'
-                : normalizedTournament.status === 'finals'
+                : tournamentPhase === 'finals'
                 ? 'FINAL'
-                : normalizedTournament.status === 'completed'
+                : tournamentPhase === 'completed'
                 ? 'SELESAI'
-                : normalizedTournament.status.toUpperCase()}
+                : tournamentPhase.toUpperCase()}
             </Badge>
           </div>
         </div>
@@ -691,15 +725,14 @@ export default function TournamentBracket({
       <CardContent className="p-4 sm:p-6">
         {renderQualificationRound()}
 
+        {/* ✅ UPDATED: Use tournamentPhase */}
         {(normalizedTournament.current_round >= 2 ||
-          normalizedTournament.status === 'semifinals' ||
-          normalizedTournament.status === 'finals' ||
-          normalizedTournament.status === 'completed') &&
+          ['semifinals', 'finals', 'completed'].includes(tournamentPhase)) &&
           renderSemifinals()}
 
+        {/* ✅ UPDATED: Use tournamentPhase */}
         {(normalizedTournament.current_round >= 3 ||
-          normalizedTournament.status === 'finals' ||
-          normalizedTournament.status === 'completed') &&
+          ['finals', 'completed'].includes(tournamentPhase)) &&
           renderFinals()}
       </CardContent>
 

@@ -406,6 +406,7 @@ export interface TournamentData {
   id: number;
   name: string;
   status: 'waiting' | 'qualification' | 'semifinals' | 'finals' | 'completed';
+  phase?: 'qualification' | 'semifinals' | 'finals' | 'completed';
   current_round: number;
   max_groups: number;
   groups: TournamentGroup[];
