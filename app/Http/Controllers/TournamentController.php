@@ -41,7 +41,7 @@ class TournamentController extends Controller
 
                     $totalParticipants = 0;
                     foreach ($groups as $group) {
-                        $participantCount = TournamentParticipant::where('group_id', $group->id)->count();
+                        $participantCount = TournamentParticipant::where('tournament_group_id', $group->id)->count();
                         $totalParticipants += $participantCount;
                     }
 
@@ -795,7 +795,7 @@ class TournamentController extends Controller
                 ], 404);
             }
 
-            TournamentParticipant::where('group_id', $group->id)->delete();
+            TournamentParticipant::where('tournament_group_id', $group->id)->delete();
             $group->delete();
 
             Log::info('User left tournament', [
@@ -837,7 +837,7 @@ class TournamentController extends Controller
             $groups = TournamentGroup::where('tournament_id', $tournament->id)->get();
 
             foreach ($groups as $group) {
-                TournamentParticipant::where('group_id', $group->id)->delete();
+                TournamentParticipant::where('tournament_group_id', $group->id)->delete();
 
                 if ($group->session) {
                     GameParticipant::where('game_session_id', $group->session->id)->delete();
