@@ -909,7 +909,12 @@ class SessionController extends Controller
      */
     private function calculateTimeBonus($session, $stage)
     {
+        // ✅ Convert to Carbon instance if string
         $stageStarted = $session->stage_started_at ?? $session->started_at;
+        if (is_string($stageStarted)) {
+            $stageStarted = \Carbon\Carbon::parse($stageStarted);
+        }
+
         $stageCompleted = now();
         $timeTaken = $stageStarted->diffInSeconds($stageCompleted);
 
@@ -919,17 +924,16 @@ class SessionController extends Controller
             $stageConfig = $stageModel ? $stageModel->config : [];
             $timeLimit = $stageConfig['time_limit_seconds']
                         ?? $stageConfig['timeLimit']
-                        ?? 1800; // Default 30 minutes
+                        ?? 1800;
         } else {
-            // Regular session: use hardcoded config
             $timeLimit = $this->stageConfigurations[$stage]['timeLimit'] ?? 1800;
         }
 
         $timeRemaining = max(0, $timeLimit - $timeTaken);
 
-        // Bonus: 1 point per 10 seconds remaining
         return floor($timeRemaining / 10);
     }
+
 
     /**
      * Calculate collaboration score
