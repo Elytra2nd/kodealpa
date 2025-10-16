@@ -229,12 +229,23 @@ export default function GamePlay({ gameState, role, onGameStateUpdate, onSubmitA
   });
 
   // ============================================
+  // ✅ DEBUG LOGGING
+  // ============================================
+  useEffect(() => {
+    console.log('🎮 GamePlay Component Rendered');
+    console.log('📦 GameState:', gameState);
+    console.log('🧩 Puzzle:', gameState?.puzzle);
+    console.log('🎯 Puzzle Type:', gameState?.puzzle?.type);
+    console.log('👤 Role:', role);
+  }, [gameState, role]);
+
+  // ============================================
   // COMPUTED VALUES
   // ============================================
   const isDefuser = role === 'defuser';
   const attempts = gameState.session.attempts || [];
   const recentAttempts = useMemo(() => attempts.slice(-CONFIG.RECENT_ATTEMPTS_LIMIT).reverse(), [attempts]);
-  const puzzleType = gameState.puzzle.type || 'code_analysis'; // ✅ Default to code_analysis
+  const puzzleType = gameState.puzzle?.type || 'code_analysis';
 
   const maxHints = useMemo(() => {
     return gameState.session.max_hints_per_stage || CONFIG.MAX_HINTS;
@@ -243,7 +254,6 @@ export default function GamePlay({ gameState, role, onGameStateUpdate, onSubmitA
   // ============================================
   // EFFECTS
   // ============================================
-  // Timer effect
   useEffect(() => {
     if (gameState.session.ends_at) {
       const endTime = new Date(gameState.session.ends_at).getTime();
@@ -268,7 +278,6 @@ export default function GamePlay({ gameState, role, onGameStateUpdate, onSubmitA
     }
   }, [gameState.session.ends_at, gameState.session.id, onGameStateUpdate, showNotice]);
 
-  // Reset hints when stage changes
   useEffect(() => {
     setAvailableHints(maxHints);
   }, [gameState.session.current_stage, maxHints]);
@@ -299,7 +308,6 @@ export default function GamePlay({ gameState, role, onGameStateUpdate, onSubmitA
         onGameStateUpdate(newGameState);
         setInput('');
 
-        // ✅ Prioritas pengecekan status yang benar
         if (result.gameComplete) {
           showNotice('info', '🎉 Semua tahap selesai! Sesi berhasil diselesaikan.');
           setShowFeedbackForm(true);
@@ -358,11 +366,40 @@ export default function GamePlay({ gameState, role, onGameStateUpdate, onSubmitA
   }, [gameState.session.id, feedbackData, role, showNotice]);
 
   // ============================================
-  // ✅ UPDATED: RENDER PUZZLE VIEW (NO SYMBOL MAPPING)
+  // ✅ UPDATED: RENDER PUZZLE VIEW WITH BETTER ERROR HANDLING
   // ============================================
   const renderPuzzleView = useCallback(() => {
+    console.log('🎯 renderPuzzleView called');
+    console.log('   puzzleType:', puzzleType);
+    console.log('   puzzle data:', gameState.puzzle);
+
+    // ✅ Check if puzzle data exists
+    if (!gameState.puzzle || Object.keys(gameState.puzzle).length === 0) {
+      return (
+        <Card className="border-2 border-yellow-700 bg-gradient-to-b from-stone-900 to-yellow-950">
+          <CardContent className="p-8 text-center">
+            <div className="text-6xl mb-4">⚠️</div>
+            <h3 className="text-2xl font-bold text-yellow-300 mb-2">Puzzle Data Missing</h3>
+            <p className="text-stone-300 mb-4">Backend tidak mengirim data puzzle.</p>
+            <pre className="text-left text-xs bg-black/50 p-4 rounded overflow-auto max-h-64">
+              {JSON.stringify({
+                puzzleType,
+                puzzle: gameState.puzzle,
+                session: {
+                  id: gameState.session.id,
+                  status: gameState.session.status,
+                  current_stage: gameState.session.current_stage
+                }
+              }, null, 2)}
+            </pre>
+          </CardContent>
+        </Card>
+      );
+    }
+
     switch (puzzleType) {
       case 'code_analysis': {
+        console.log('✅ Rendering CodeAnalysisView');
         const transformedPuzzle = {
           ...gameState.puzzle,
           expertView: gameState.puzzle.expertView
@@ -375,11 +412,13 @@ export default function GamePlay({ gameState, role, onGameStateUpdate, onSubmitA
         return <CodeAnalysisView puzzle={transformedPuzzle} role={role} onSubmitAttempt={handleSubmitAttempt} submitting={submitting} />;
       }
       case 'pattern_analysis':
+        console.log('✅ Rendering PatternAnalysisView');
         return <PatternAnalysisView puzzle={gameState.puzzle} role={role} onSubmitAttempt={handleSubmitAttempt} submitting={submitting} />;
       case 'navigation_challenge':
+        console.log('✅ Rendering NavigationChallengeView');
         return <NavigationChallengeView puzzle={gameState.puzzle} role={role} onSubmitAttempt={handleSubmitAttempt} submitting={submitting} />;
       default:
-        // ✅ Show error for unknown puzzle types
+        console.error('❌ Unknown puzzle type:', puzzleType);
         return (
           <Card className="border-2 border-red-700 bg-gradient-to-b from-stone-900 to-red-950">
             <CardContent className="p-8 text-center">
@@ -388,11 +427,14 @@ export default function GamePlay({ gameState, role, onGameStateUpdate, onSubmitA
               <p className="text-stone-300 mb-4">
                 Puzzle type "<span className="text-red-400 font-mono">{puzzleType}</span>" is not recognized.
               </p>
-              <p className="text-stone-400 text-sm">
+              <p className="text-stone-400 text-sm mb-4">
                 Valid types: <span className="text-emerald-400 font-mono">code_analysis</span>,
                 <span className="text-emerald-400 font-mono"> pattern_analysis</span>,
                 <span className="text-emerald-400 font-mono"> navigation_challenge</span>
               </p>
+              <pre className="text-left text-xs bg-black/50 p-4 rounded overflow-auto max-h-64">
+                {JSON.stringify({ puzzleType, puzzle: gameState.puzzle }, null, 2)}
+              </pre>
             </CardContent>
           </Card>
         );
@@ -505,7 +547,7 @@ export default function GamePlay({ gameState, role, onGameStateUpdate, onSubmitA
       </Card>
 
       {/* Learning Objectives */}
-      {gameState.puzzle.learningObjectives && (
+      {gameState.puzzle?.learningObjectives && (
         <Card className="border-2 border-indigo-700 bg-gradient-to-b from-stone-900 to-indigo-950 dungeon-card-glow">
           <CardHeader className="pb-2 p-4 sm:p-6">
             <CardTitle className="text-indigo-300 text-base sm:text-lg dungeon-glow-text">🎓 Tujuan Pembelajaran Ekspedisi</CardTitle>
