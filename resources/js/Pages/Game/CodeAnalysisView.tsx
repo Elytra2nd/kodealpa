@@ -27,17 +27,19 @@ interface TestCase {
 }
 
 interface DefuserView {
-  codeLines: string[];
+  codeLines?: string[];
+  code?: string;
   testCase?: TestCase;
 }
 
 interface ExpertView {
-  bugs: Bug[];
-  solutions: Solution[];
+  bugs?: Bug[] | number[];
+  solutions?: Solution[];
+  hint?: string;
 }
 
 interface Puzzle {
-  title: string;
+  title?: string;
   description?: string;
   defuserView?: DefuserView;
   expertView?: ExpertView;
@@ -239,7 +241,7 @@ const InstructionCard = memo(({ role, instructions, isMobile }: { role: string; 
         </CardHeader>
         <CardContent className={isMobile ? 'p-3 pt-0' : 'p-4 pt-0'}>
           <ul className="space-y-1 sm:space-y-2">
-            {instructions.map((instruction, index) => (
+            {instructions.map((instruction: string, index: number) => (
               <motion.li
                 key={index}
                 variants={fadeInUp}
@@ -271,10 +273,64 @@ export default function CodeAnalysisView({ puzzle, role, onSubmitAttempt, submit
   const inputRef = useRef<HTMLInputElement>(null);
 
   // ============================================
+  // PARSE DATA FROM BACKEND
+  // ============================================
+  const codeLines = useMemo(() => {
+    console.log('🔍 Parsing codeLines from:', puzzle?.defuserView);
+
+    if (puzzle?.defuserView?.codeLines) {
+      return puzzle.defuserView.codeLines;
+    }
+
+    if (puzzle?.defuserView?.code) {
+      const lines = (puzzle.defuserView.code as any).split('\n');
+      console.log('✅ Converted code string to array:', lines);
+      return lines;
+    }
+
+    return [];
+  }, [puzzle?.defuserView]);
+
+  const bugs = useMemo(() => {
+    console.log('🔍 Parsing bugs from:', puzzle?.expertView?.bugs);
+
+    if (!puzzle?.expertView?.bugs) return [];
+
+    const parsedBugs = puzzle.expertView.bugs.map((bug: any, index: number) => {
+      if (typeof bug === 'number') {
+        return {
+          line: bug,
+          description: `Bug detected on line ${bug}`,
+          type: 'Logic Error',
+          hint: puzzle.expertView?.hint || 'Check the code logic on this line',
+        };
+      }
+      return bug;
+    });
+
+    console.log('✅ Parsed bugs:', parsedBugs);
+    return parsedBugs;
+  }, [puzzle?.expertView]);
+
+  const solutions = useMemo(() => {
+    if (puzzle?.expertView?.solutions) {
+      return puzzle.expertView.solutions;
+    }
+
+    const generatedSolutions = bugs.map((bug: Bug) => ({
+      line: bug.line,
+      correct: `// Fix required on line ${bug.line}`,
+    }));
+
+    console.log('✅ Generated solutions:', generatedSolutions);
+    return generatedSolutions;
+  }, [puzzle?.expertView, bugs]);
+
+  // ============================================
   // MEMOIZED VALUES
   // ============================================
-  const hasDefuserView = useMemo(() => !!puzzle?.defuserView, [puzzle?.defuserView]);
-  const hasExpertView = useMemo(() => !!puzzle?.expertView, [puzzle?.expertView]);
+  const hasDefuserView = useMemo(() => codeLines.length > 0, [codeLines]);
+  const hasExpertView = useMemo(() => bugs.length > 0, [bugs]);
 
   const shouldShowDefuserView = useMemo(() => role === 'defuser' || role === 'host', [role]);
   const shouldShowExpertView = useMemo(() => role === 'expert' || role === 'host', [role]);
@@ -308,8 +364,8 @@ export default function CodeAnalysisView({ puzzle, role, onSubmitAttempt, submit
         return;
       }
 
-      if (puzzle?.defuserView?.codeLines && lineNumber > puzzle.defuserView.codeLines.length) {
-        toast.error(`Nomor baris harus antara 1 dan ${puzzle.defuserView.codeLines.length}`);
+      if (lineNumber > codeLines.length) {
+        toast.error(`Nomor baris harus antara 1 dan ${codeLines.length}`);
         return;
       }
 
@@ -317,12 +373,11 @@ export default function CodeAnalysisView({ puzzle, role, onSubmitAttempt, submit
       onSubmitAttempt(trimmedInput);
       setInput('');
     },
-    [input, puzzle?.defuserView?.codeLines, onSubmitAttempt, highlightLine]
+    [input, codeLines, onSubmitAttempt, highlightLine]
   );
 
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
-    // Only allow numbers
     if (value === '' || /^\d+$/.test(value)) {
       setInput(value);
       const lineNum = parseInt(value);
@@ -338,13 +393,11 @@ export default function CodeAnalysisView({ puzzle, role, onSubmitAttempt, submit
   // EFFECTS
   // ============================================
   useEffect(() => {
-    // Auto-focus input when component mounts (desktop only)
     if (!isMobile && inputRef.current && role === 'defuser') {
       inputRef.current.focus();
     }
   }, [isMobile, role]);
 
-  // Keyboard shortcuts
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
       if (e.key === 'Enter' && !submitting && input.trim() && role === 'defuser') {
@@ -390,7 +443,7 @@ export default function CodeAnalysisView({ puzzle, role, onSubmitAttempt, submit
         <Card className="border-2 sm:border-4 border-amber-600 bg-gradient-to-r from-amber-900/30 to-stone-900 dungeon-card-glow">
           <CardHeader className={isMobile ? 'p-4' : 'p-6'}>
             <CardTitle className={`text-amber-300 ${isMobile ? 'text-lg' : 'text-xl sm:text-2xl'} text-center dungeon-glow-text`}>
-              {puzzle.title}
+              {puzzle.title || 'Code Analysis Challenge'}
             </CardTitle>
             {puzzle.description && (
               <CardDescription className={`text-stone-300 text-center ${isMobile ? 'text-xs' : 'text-sm sm:text-base'} mt-2`}>
@@ -417,13 +470,13 @@ export default function CodeAnalysisView({ puzzle, role, onSubmitAttempt, submit
                 </CardHeader>
                 <CardContent className={`space-y-4 ${isMobile ? 'p-4 pt-0' : 'p-6 pt-0'}`}>
                   {/* Code Display */}
-                  {puzzle?.defuserView?.codeLines && (
+                  {codeLines.length > 0 && (
                     <motion.div variants={fadeInUp}>
                       <h4 className={`font-semibold text-stone-200 mb-2 ${isMobile ? 'text-sm' : 'text-base'}`}>Code to Analyze:</h4>
                       <Card className="bg-stone-950 border-2 border-stone-700 overflow-hidden">
                         <CardContent className={`${isMobile ? 'p-3' : 'p-4'} font-mono ${isMobile ? 'text-xs' : 'text-sm'} overflow-x-auto`}>
                           <motion.div variants={staggerContainer} className="space-y-0.5">
-                            {puzzle.defuserView.codeLines.map((line, index) => (
+                            {codeLines.map((line: string, index: number) => (
                               <CodeLine key={index} line={line} index={index} isMobile={isMobile} />
                             ))}
                           </motion.div>
@@ -552,14 +605,14 @@ export default function CodeAnalysisView({ puzzle, role, onSubmitAttempt, submit
                 </CardHeader>
                 <CardContent className={`space-y-4 ${isMobile ? 'p-4 pt-0' : 'p-6 pt-0'}`}>
                   {/* Bug Information */}
-                  {puzzle.expertView?.bugs && puzzle.expertView.bugs.length > 0 && (
+                  {bugs.length > 0 && (
                     <motion.div variants={fadeInUp}>
                       <h4 className={`font-bold text-red-300 mb-3 ${isMobile ? 'text-sm' : 'text-base sm:text-lg'} flex items-center gap-2`}>
                         <span aria-hidden="true">🐛</span>
                         Bug Information
                       </h4>
                       <motion.div variants={staggerContainer} className="space-y-3">
-                        {puzzle.expertView.bugs.map((bug, index) => (
+                        {bugs.map((bug: Bug, index: number) => (
                           <BugCard key={index} bug={bug} index={index} isMobile={isMobile} />
                         ))}
                       </motion.div>
@@ -567,14 +620,14 @@ export default function CodeAnalysisView({ puzzle, role, onSubmitAttempt, submit
                   )}
 
                   {/* Solution Information */}
-                  {puzzle.expertView?.solutions && puzzle.expertView.solutions.length > 0 && (
+                  {solutions.length > 0 && (
                     <motion.div variants={fadeInUp}>
                       <h4 className={`font-bold text-emerald-300 mb-3 ${isMobile ? 'text-sm' : 'text-base sm:text-lg'} flex items-center gap-2`}>
                         <span aria-hidden="true">✅</span>
                         Correct Solutions
                       </h4>
                       <motion.div variants={staggerContainer} className="space-y-3">
-                        {puzzle.expertView.solutions.map((solution, index) => (
+                        {solutions.map((solution: Solution, index: number) => (
                           <SolutionCard key={index} solution={solution} index={index} isMobile={isMobile} />
                         ))}
                       </motion.div>
@@ -592,46 +645,32 @@ export default function CodeAnalysisView({ puzzle, role, onSubmitAttempt, submit
 
       {/* Styles */}
       <style>{`
-        /* Card Glows */
         .dungeon-card-glow {
           box-shadow: 0 0 30px rgba(251, 191, 36, 0.4), 0 0 60px rgba(251, 191, 36, 0.2);
         }
-
         .dungeon-card-glow-red {
           box-shadow: 0 0 30px rgba(239, 68, 68, 0.4), 0 0 60px rgba(239, 68, 68, 0.2);
         }
-
         .dungeon-card-glow-blue {
           box-shadow: 0 0 30px rgba(59, 130, 246, 0.4), 0 0 60px rgba(59, 130, 246, 0.2);
         }
-
         .dungeon-card-glow-green {
           box-shadow: 0 0 30px rgba(34, 197, 94, 0.4), 0 0 60px rgba(34, 197, 94, 0.2);
         }
-
-        /* Button Glow */
         .dungeon-button-glow:hover:not(:disabled) {
           box-shadow: 0 0 20px rgba(239, 68, 68, 0.5), 0 0 40px rgba(239, 68, 68, 0.3);
         }
-
-        /* Text Glow */
         .dungeon-glow-text {
           text-shadow: 0 0 20px rgba(251, 191, 36, 0.6), 0 0 40px rgba(251, 191, 36, 0.4);
         }
-
-        /* Touch optimization */
         .touch-manipulation {
           touch-action: manipulation;
           -webkit-tap-highlight-color: transparent;
         }
-
-        /* Focus styles */
         *:focus-visible {
           outline: 2px solid rgba(251, 191, 36, 0.8);
           outline-offset: 2px;
         }
-
-        /* Smooth transitions */
         * {
           transition-property: color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, filter, backdrop-filter;
           transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
