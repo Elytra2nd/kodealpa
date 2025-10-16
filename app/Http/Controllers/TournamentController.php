@@ -399,13 +399,23 @@ class TournamentController extends Controller
                 $puzzle = null;
 
                 if ($stage && $session->status === 'running') {
-                    $stageData = json_decode($stage->stage_data, true);
+                    // ✅ Use 'config' column instead of 'stage_data'
+                    $stageData = $stage->config;
                     $currentStageIndex = $session->current_stage - 1;
 
-                    if (isset($stageData['stages'][$currentStageIndex])) {
-                        $puzzle = $stageData['stages'][$currentStageIndex];
+                    // ✅ Use 'puzzles' key instead of 'stages'
+                    if (isset($stageData['puzzles'][$currentStageIndex])) {
+                        $puzzle = $stageData['puzzles'][$currentStageIndex];
+                    } else {
+                        Log::warning('Puzzle not found', [
+                            'stage_id' => $stage->id,
+                            'current_stage' => $session->current_stage,
+                            'available_puzzles' => count($stageData['puzzles'] ?? [])
+                        ]);
+                        $puzzle = null;
                     }
                 }
+
 
                 $gameState = [
                     'session' => $session->load('participants', 'attempts'),
