@@ -36,7 +36,7 @@ interface TournamentSessionData {
       id: number;
       user_id: number;
       nickname: string;
-      role: 'defuser' | 'expert'; // ✅ Fixed: Strong type
+      role: 'defuser' | 'expert';
     }>;
   };
   session: {
@@ -61,7 +61,6 @@ interface TournamentSessionData {
   }>;
 }
 
-// ✅ API Response type
 interface TournamentSessionResponse {
   success?: boolean;
   tournament?: any;
@@ -71,7 +70,6 @@ interface TournamentSessionResponse {
   leaderboard?: any[];
 }
 
-// ✅ Action types for reducer
 type SessionAction =
   | { type: 'SET_DATA'; payload: TournamentSessionData }
   | { type: 'SET_LOADING'; payload: boolean }
@@ -81,7 +79,6 @@ type SessionAction =
   | { type: 'RESET_RETRY' }
   | { type: 'RESET_ERROR' };
 
-// ✅ State type
 interface SessionState {
   tournamentData: TournamentSessionData | null;
   loading: boolean;
@@ -89,7 +86,6 @@ interface SessionState {
   retryCount: number;
 }
 
-// ✅ Reducer for atomic state updates
 const sessionReducer = (state: SessionState, action: SessionAction): SessionState => {
   switch (action.type) {
     case 'SET_DATA':
@@ -206,7 +202,6 @@ export default function TournamentSession({ tournamentId, groupId }: Props) {
   const isMobile = useIsMobile();
   useTouchOptimized();
 
-  // ✅ Use reducer for atomic state updates
   const [state, dispatch] = useReducer(sessionReducer, {
     tournamentData: null,
     loading: true,
@@ -214,19 +209,16 @@ export default function TournamentSession({ tournamentId, groupId }: Props) {
     retryCount: 0,
   });
 
-  // ✅ Refs for request management
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const requestControllerRef = useRef<AbortController | null>(null);
   const isPollingPausedRef = useRef(false);
   const lastSubmitTimeRef = useRef<number>(0);
 
-  // Validation
   const isValidTournamentId = useMemo(
     () => tournamentId && !isNaN(Number(tournamentId)),
     [tournamentId]
   );
 
-  // ✅ Pause/Resume polling functions
   const pausePolling = useCallback(() => {
     isPollingPausedRef.current = true;
     if (pollingIntervalRef.current) {
@@ -246,11 +238,7 @@ export default function TournamentSession({ tournamentId, groupId }: Props) {
     }
   }, []);
 
-  // ============================================
-  // DATA LOADING (Race Condition Safe)
-  // ============================================
   const loadTournamentSession = useCallback(async () => {
-    // ✅ Skip if polling is paused
     if (isPollingPausedRef.current) {
       return;
     }
@@ -261,20 +249,22 @@ export default function TournamentSession({ tournamentId, groupId }: Props) {
     }
 
     try {
-      // ✅ Cancel previous request if still running
       if (requestControllerRef.current) {
         requestControllerRef.current.abort();
       }
 
       requestControllerRef.current = new AbortController();
 
-      // ✅ Fixed: gameApi.getTournamentSession only accepts tournamentId and groupId
       const response: TournamentSessionResponse = await gameApi.getTournamentSession(
         tournamentId,
         groupId
       );
 
-      // ✅ Fixed: Check response.success property
+      // ✅ ADD CONSOLE LOG FOR DEBUGGING
+      console.log('🎮 Tournament Session Response:', response);
+      console.log('   - gameState exists:', !!response.gameState);
+      console.log('   - gameState:', response.gameState);
+
       if (response.success && response.tournament && response.group) {
         const normalizedData: TournamentSessionData = {
           tournament: response.tournament,
@@ -289,7 +279,6 @@ export default function TournamentSession({ tournamentId, groupId }: Props) {
         throw new Error('Data tidak lengkap');
       }
     } catch (error: any) {
-      // ✅ Don't show error if request was cancelled
       if (error.name === 'AbortError' || error.message?.includes('cancel')) {
         return;
       }
@@ -305,7 +294,6 @@ export default function TournamentSession({ tournamentId, groupId }: Props) {
 
       dispatch({ type: 'SET_ERROR', payload: errorMessage });
 
-      // ✅ Retry logic
       if (state.retryCount < CONFIG.MAX_RETRY_ATTEMPTS && ![404, 403].includes(error.response?.status)) {
         dispatch({ type: 'INCREMENT_RETRY' });
         const delay = Math.pow(2, state.retryCount) * 1000;
@@ -316,16 +304,10 @@ export default function TournamentSession({ tournamentId, groupId }: Props) {
     }
   }, [isValidTournamentId, tournamentId, groupId, state.retryCount]);
 
-  // ============================================
-  // GAME HANDLERS (Race Condition Safe)
-  // ============================================
-
-  // ✅ Optimistic game state update
   const handleGameStateUpdate = useCallback((updatedGameState: any) => {
     dispatch({ type: 'UPDATE_GAME_STATE', payload: updatedGameState });
   }, []);
 
-  // ✅ Submit attempt with polling pause
   const handleAttemptSubmit = useCallback(
     async (inputValue: string) => {
       if (!state.tournamentData?.session) {
@@ -333,7 +315,6 @@ export default function TournamentSession({ tournamentId, groupId }: Props) {
         return;
       }
 
-      // ✅ Debounce: Prevent rapid submissions
       const now = Date.now();
       if (now - lastSubmitTimeRef.current < 1000) {
         toast.warning('Mohon tunggu sebentar...');
@@ -341,7 +322,6 @@ export default function TournamentSession({ tournamentId, groupId }: Props) {
       }
       lastSubmitTimeRef.current = now;
 
-      // ✅ Pause polling during critical operation
       pausePolling();
 
       try {
@@ -351,10 +331,8 @@ export default function TournamentSession({ tournamentId, groupId }: Props) {
           inputValue
         );
 
-        // ✅ Handle stage/game completion
         if (result.stageComplete || result.gameComplete) {
           if (result.gameComplete) {
-            // Notify backend about game completion
             try {
               await gameApi.completeTournamentSession(state.tournamentData.session.id);
               toast.success('🏆 Permainan selesai! Menunggu grup lain...');
@@ -363,13 +341,9 @@ export default function TournamentSession({ tournamentId, groupId }: Props) {
             }
           }
 
-          // ✅ Wait before reload to ensure backend processed
           await new Promise((resolve) => setTimeout(resolve, 1000));
-
-          // ✅ Reload fresh data
           await loadTournamentSession();
         } else {
-          // ✅ Optimistic update for regular attempts
           if (result.session) {
             handleGameStateUpdate({
               ...state.tournamentData.gameState,
@@ -386,11 +360,8 @@ export default function TournamentSession({ tournamentId, groupId }: Props) {
             : error.response?.data?.message || 'Gagal mengirim jawaban';
 
         toast.error(errorMessage);
-
-        // ✅ Reload to sync state
         await loadTournamentSession();
       } finally {
-        // ✅ Resume polling after delay
         setTimeout(() => {
           resumePolling();
         }, 1000);
@@ -406,11 +377,6 @@ export default function TournamentSession({ tournamentId, groupId }: Props) {
     loadTournamentSession();
   }, [loadTournamentSession]);
 
-  // ============================================
-  // EFFECTS
-  // ============================================
-
-  // ✅ Initial load and polling setup (run once)
   useEffect(() => {
     if (!isValidTournamentId) {
       dispatch({ type: 'SET_ERROR', payload: 'ID turnamen tidak valid' });
@@ -434,20 +400,18 @@ export default function TournamentSession({ tournamentId, groupId }: Props) {
         requestControllerRef.current.abort();
       }
     };
-  }, []); // ✅ Empty deps - only run once on mount
+  }, []);
 
-  // ✅ Cleanup on unmount
   useEffect(() => {
     return () => {
       pausePolling();
     };
   }, [pausePolling]);
 
-  // ============================================
+    // ============================================
   // RENDER COMPONENTS
   // ============================================
 
-  // ✅ Loading State
   const renderLoading = () => (
     <div className="min-h-screen bg-gradient-to-br from-stone-900 via-stone-800 to-amber-950 flex items-center justify-center p-4">
       <Card className="border-4 border-amber-700 bg-gradient-to-b from-stone-900 to-stone-800 max-w-md w-full">
@@ -471,7 +435,6 @@ export default function TournamentSession({ tournamentId, groupId }: Props) {
     </div>
   );
 
-  // ✅ Error State
   const renderError = () => (
     <div className="min-h-screen bg-gradient-to-br from-stone-900 via-stone-800 to-amber-950 flex items-center justify-center p-4">
       <Card className="border-4 border-red-700 bg-gradient-to-b from-stone-900 to-red-950 max-w-md w-full">
@@ -505,7 +468,6 @@ export default function TournamentSession({ tournamentId, groupId }: Props) {
     </div>
   );
 
-  // ✅ Tournament Header
   const TournamentHeader = memo(() => {
     if (!state.tournamentData) return null;
 
@@ -568,7 +530,6 @@ export default function TournamentSession({ tournamentId, groupId }: Props) {
               </div>
             </div>
 
-            {/* Participants */}
             <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
               {group.participants.map((participant) => (
                 <div
@@ -604,7 +565,6 @@ export default function TournamentSession({ tournamentId, groupId }: Props) {
 
   TournamentHeader.displayName = 'TournamentHeader';
 
-  // ✅ Leaderboard Component
   const LeaderboardPanel = memo(() => {
     if (!state.tournamentData?.leaderboard || state.tournamentData.leaderboard.length === 0) {
       return null;
@@ -718,7 +678,6 @@ export default function TournamentSession({ tournamentId, groupId }: Props) {
 
   const { tournament, group, session, gameState } = state.tournamentData;
 
-  // ✅ Fixed: Ensure role is typed correctly
   const userParticipant = group.participants.find((p) => p.user_id === auth?.user?.id);
   const userRole: 'defuser' | 'expert' | 'host' | undefined = userParticipant?.role;
 
@@ -730,20 +689,87 @@ export default function TournamentSession({ tournamentId, groupId }: Props) {
         <div className="max-w-7xl mx-auto">
           <TournamentHeader />
 
+          {/* ✅ CONDITION CHECK - Remove after debugging */}
+          <Card className="border-2 border-yellow-700 bg-stone-900 mb-4">
+            <CardContent className="p-4">
+              <h3 className="text-yellow-300 font-bold mb-2">🔍 Debug - Condition Check:</h3>
+              <pre className="text-xs bg-black/50 p-2 rounded overflow-auto">
+                {JSON.stringify({
+                  has_session: !!session,
+                  has_gameState: !!gameState,
+                  group_status: group.status,
+                  condition_met: !!(session && gameState && group.status === 'playing'),
+                }, null, 2)}
+              </pre>
+            </CardContent>
+          </Card>
+
           {/* Game Session */}
           {session && gameState && group.status === 'playing' ? (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-            >
-              <GamePlay
-                gameState={gameState}
-                role={userRole}
-                onGameStateUpdate={handleGameStateUpdate}
-                onSubmitAttempt={handleAttemptSubmit}
-                submitting={false}
-              />
-            </motion.div>
+            <>
+              {/* ✅ DEBUG PANEL - Remove after fixing */}
+              <Card className="border-2 border-purple-700 bg-gradient-to-b from-stone-900 to-purple-950 mb-4">
+                <CardHeader>
+                  <CardTitle className="text-purple-300">🔍 Debug Info (Remove in Production)</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                    <div>
+                      <h4 className="text-purple-300 font-bold mb-2">Session Info</h4>
+                      <pre className="bg-black/50 p-2 rounded overflow-auto max-h-40">
+                        {JSON.stringify({
+                          session_id: session?.id,
+                          session_status: session?.status,
+                          team_code: session?.team_code,
+                        }, null, 2)}
+                      </pre>
+                    </div>
+                    <div>
+                      <h4 className="text-purple-300 font-bold mb-2">GameState Check</h4>
+                      <pre className="bg-black/50 p-2 rounded overflow-auto max-h-40">
+                        {JSON.stringify({
+                          gameState_exists: !!gameState,
+                          gameState_type: typeof gameState,
+                          gameState_is_null: gameState === null,
+                          gameState_keys: gameState ? Object.keys(gameState) : [],
+                        }, null, 2)}
+                      </pre>
+                    </div>
+                    <div>
+                      <h4 className="text-purple-300 font-bold mb-2">Puzzle Check</h4>
+                      <pre className="bg-black/50 p-2 rounded overflow-auto max-h-40">
+                        {JSON.stringify({
+                          puzzle_exists: !!gameState?.puzzle,
+                          puzzle_type: gameState?.puzzle?.type,
+                          puzzle_keys: gameState?.puzzle ? Object.keys(gameState.puzzle) : [],
+                          has_defuserView: !!gameState?.puzzle?.defuserView,
+                          has_expertView: !!gameState?.puzzle?.expertView,
+                        }, null, 2)}
+                      </pre>
+                    </div>
+                    <div>
+                      <h4 className="text-purple-300 font-bold mb-2">Full Puzzle Data</h4>
+                      <pre className="bg-black/50 p-2 rounded overflow-auto max-h-40">
+                        {JSON.stringify(gameState?.puzzle || null, null, 2)}
+                      </pre>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+              >
+                <GamePlay
+                  gameState={gameState}
+                  role={userRole}
+                  onGameStateUpdate={handleGameStateUpdate}
+                  onSubmitAttempt={handleAttemptSubmit}
+                  submitting={false}
+                />
+              </motion.div>
+            </>
           ) : (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
